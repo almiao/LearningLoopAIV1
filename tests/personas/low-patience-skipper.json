@@ -1,0 +1,8 @@
+{
+  "id": "low-patience-skipper",
+  "name": "低耐心跳题用户",
+  "description": "不喜欢被连续追问，遇到陌生知识点很快会说'下一题'或'总结一下'。",
+  "answer_style": "极短回答，经常中途跳题",
+  "control_tendency": "高概率说'下一题'、'总结一下'",
+  "knowledge_profile": "只愿意回答自己确定的内容"
+}

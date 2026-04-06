@@ -1,0 +1,55 @@
+{
+  "id": "volatile-dcl-user-case",
+  "topic": "volatile necessity in double-checked locking",
+  "source": "user-real-conversation",
+  "user_goal": "Understand why volatile is required in DCL and what concrete bug it prevents",
+  "transcript": [
+    {
+      "role": "tutor",
+      "content": "在双重校验锁单例模式中，为什么uniqueInstance变量必须用volatile修饰？"
+    },
+    {
+      "role": "learner",
+      "content": "不这么用的话， 指令重拍序可能导致读到旧值"
+    },
+    {
+      "role": "tutor",
+      "content": "你提到了指令重排序，这个方向是对的，但需要更精确一点。问题不是简单地读到“旧值”，而是可能读到“未完全初始化的对象”。"
+    },
+    {
+      "role": "tutor",
+      "content": "现在你能具体说说，如果没有volatile，其他线程可能遇到什么具体问题吗？"
+    },
+    {
+      "role": "learner",
+      "content": "不知道"
+    },
+    {
+      "role": "tutor",
+      "content": "好的，我来具体说明一下。如果没有volatile修饰，其他线程可能拿到一个“半成品”对象——引用已经非null，但构造函数里的字段赋值还没完成。"
+    },
+    {
+      "role": "learner",
+      "content": "讲一下"
+    },
+    {
+      "role": "tutor",
+      "content": "好，我先不让你继续猜了。先把“双重校验锁单例中volatile的必要性”最关键的一层讲清楚。"
+    }
+  ],
+  "observed_problems": [
+    "第一次 teach 后没有快速收敛，仍继续长链追问",
+    "用户多次不会时，没有及时转为可带走的清晰结论",
+    "quick action“讲一下”触发了 teach，但讲解仍不够体系化"
+  ],
+  "desired_behavior": [
+    "明确给出 1-2-3 重排序与半初始化对象问题",
+    "用一句稳定结论收口：volatile 防止引用先暴露、对象后初始化",
+    "讲解后只做一个轻 check，或者 defer 到后续 revisit"
+  ],
+  "success_signals": [
+    "回复明确说明读到的是未完全初始化对象，不是简单旧值",
+    "teach 后有 takeaway",
+    "不会出现 teach -> ask -> teach -> ask 的循环"
+  ]
+}

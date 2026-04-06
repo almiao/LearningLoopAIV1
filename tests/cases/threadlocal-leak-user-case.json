@@ -1,0 +1,39 @@
+{
+  "id": "threadlocal-leak-user-case",
+  "topic": "ThreadLocal memory leak root cause and weak reference design",
+  "source": "user-real-conversation",
+  "user_goal": "Understand the necessary conditions for ThreadLocal memory leak and why weak-reference key is involved",
+  "transcript": [
+    {
+      "role": "tutor",
+      "content": "What are the two conditions required for a ThreadLocal memory leak to occur?"
+    },
+    {
+      "role": "learner",
+      "content": "没主动释放就会泄露吧"
+    },
+    {
+      "role": "tutor",
+      "content": "你说对了一半——确实需要“没主动释放”这个条件。但还有另一个关键条件，我帮你补上：内存泄漏需要两个条件同时满足：一是ThreadLocal实例被回收了（key变null），二是持有这个Entry的线程还一直活着。"
+    },
+    {
+      "role": "tutor",
+      "content": "那如果是在Web服务器这种长期运行的线程池环境里，这两个条件是不是特别容易同时满足？"
+    }
+  ],
+  "observed_problems": [
+    "前半段纠偏是对的，但讲完必要条件后没有及时收口成稳定结论",
+    "继续追问Web服务器线程池场景的收益不高，打断了当前知识点的收敛",
+    "用户已经拿到主要答案后，系统没有给出简洁可带走总结"
+  ],
+  "desired_behavior": [
+    "承认用户抓到了“需要主动释放”这一部分",
+    "明确补齐另外两个必要条件：key失效 + 线程长期存活",
+    "给一句完整总结，再决定是否轻量扩展到线程池场景"
+  ],
+  "success_signals": [
+    "回复明确说明两个条件要同时满足",
+    "有一句可记忆的结论",
+    "不会在已经收口后继续高成本追问"
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "id": "threadlocal-storage-user-case",
+  "topic": "ThreadLocal storage mechanism and thread safety",
+  "source": "user-real-conversation",
+  "user_goal": "Understand where ThreadLocal stores values and why same ThreadLocal can yield different values across threads",
+  "transcript": [
+    {
+      "role": "tutor",
+      "content": "Where exactly does a ThreadLocal store the value you set with set(T value)?"
+    },
+    {
+      "role": "learner",
+      "content": "应该是放到线程本地内存吧？"
+    },
+    {
+      "role": "tutor",
+      "content": "你提到线程本地内存这个方向是对的，ThreadLocal确实实现了线程隔离。不过具体存储位置不是笼统的“线程本地内存”，而是每个线程对象内部的一个特殊数据结构里。"
+    },
+    {
+      "role": "tutor",
+      "content": "那你能说说，为什么这种设计能让不同线程访问同一个ThreadLocal对象时，却拿到各自不同的值呢？"
+    },
+    {
+      "role": "learner",
+      "content": "不知道"
+    },
+    {
+      "role": "tutor",
+      "content": "好的，没关系，这个问题确实需要理解它的内部结构。我帮你拆解一下：关键就在于每个线程自己都有一个“储物柜”，而ThreadLocal只是这个储物柜的钥匙。"
+    }
+  ],
+  "observed_problems": [
+    "用户明确不会后，系统仍然继续追问而不是快速收敛当前 unit",
+    "讲解不完整，更多是比喻，没有明确讲清 value 存在当前线程对象内部的 ThreadLocalMap",
+    "没有形成一条可带走的标准答案"
+  ],
+  "desired_behavior": [
+    "先确认用户方向接近",
+    "直接给出精确结论：value 存在当前线程对象的 ThreadLocalMap 中",
+    "讲清为什么同一个 ThreadLocal 在不同线程会拿到不同值",
+    "给一句可带走的总结，并最多一个轻量 teach-back"
+  ],
+  "success_signals": [
+    "回复包含明确对象关系：Thread -> ThreadLocalMap -> value",
+    "回复不是只有比喻，且比喻只做辅助",
+    "单轮解释结束后用户能复述“值挂在线程自己的 map 上”"
+  ]
+}

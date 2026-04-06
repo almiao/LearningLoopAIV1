@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Learning Loop AI</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <p class="eyebrow">Document-Grounded Tutor Loop</p>
+        <h1>先理解材料，再判断你的理解。</h1>
+        <p class="lede">
+          首期只支持文档内容和单页 URL。系统会先拆解材料重点，再进入追问、证据记录和掌握判断。
+        </p>
+      </section>
+
+      <section class="panel source-panel">
+        <div class="panel-header">
+          <h2>1. 提交材料</h2>
+          <p>支持粘贴文档文本或输入单页 URL。</p>
+        </div>
+
+        <div class="source-switch">
+          <button type="button" data-source-tab="document" class="active">文档</button>
+          <button type="button" data-source-tab="url">URL</button>
+        </div>
+
+        <form id="document-form" class="source-form active">
+          <label>
+            文档标题
+            <input name="title" placeholder="例如：Java 集合与并发总结" />
+          </label>
+          <label>
+            互动风格
+            <select name="interactionPreference">
+              <option value="balanced">平衡：先判断，再按需要讲解</option>
+              <option value="probe-heavy">偏追问：更愿意被多问几轮</option>
+              <option value="explain-first">偏讲解：卡住时尽快解释</option>
+            </select>
+          </label>
+          <label>
+            文档内容
+            <textarea
+              name="content"
+              rows="10"
+              placeholder="把材料粘贴到这里。建议至少 80 个字符。"
+            ></textarea>
+          </label>
+          <button type="submit">开始拆解材料</button>
+        </form>
+
+        <form id="url-form" class="source-form">
+          <label>
+            互动风格
+            <select name="interactionPreference">
+              <option value="balanced">平衡：先判断，再按需要讲解</option>
+              <option value="probe-heavy">偏追问：更愿意被多问几轮</option>
+              <option value="explain-first">偏讲解：卡住时尽快解释</option>
+            </select>
+          </label>
+          <label>
+            单页 URL
+            <input name="url" placeholder="https://example.com/article" />
+          </label>
+          <button type="submit">抓取并拆解</button>
+        </form>
+      </section>
+
+      <section class="grid">
+        <section class="panel" id="summary-panel">
+        <div class="panel-header">
+          <h2>2. 教学切入点</h2>
+          <p>先提炼材料中的几个关键机制，再进入具体问题，而不是原文搬运。</p>
+        </div>
+          <div id="summary-empty" class="empty-state">提交材料后，这里会显示几个可教学切入点和对应问题。</div>
+          <div id="summary-content" class="hidden">
+            <h3 id="source-title"></h3>
+            <p id="source-framing"></p>
+            <ul id="concept-list"></ul>
+          </div>
+        </section>
+
+        <section class="panel" id="probe-panel">
+          <div class="panel-header">
+            <h2>3. Tutor Loop</h2>
+            <p>追问只围绕当前材料，不做泛聊天。</p>
+          </div>
+          <div id="probe-empty" class="empty-state">材料拆解完成后，这里会开始追问。</div>
+          <div id="probe-content" class="hidden">
+            <div class="callout">
+              <span class="tag">当前问题</span>
+              <p id="current-probe"></p>
+            </div>
+            <div class="panel-header">
+              <h3>对话记录</h3>
+              <p>保留多轮问答，方便回看学习过程。</p>
+            </div>
+            <div id="turn-history" class="turn-history"></div>
+            <form id="answer-form">
+              <label>
+                你的回答
+                <textarea name="answer" rows="6" placeholder="用自己的话解释，不要只贴原文。"></textarea>
+              </label>
+              <div class="quick-actions">
+                <button type="button" data-answer-intent="teach">先讲一下</button>
+                <button type="button" data-answer-intent="advance">下一题</button>
+                <button type="button" data-answer-intent="summarize">先总结</button>
+              </div>
+              <label>
+                互动风格
+                <select name="interactionPreference">
+                  <option value="balanced">平衡</option>
+                  <option value="probe-heavy">偏追问</option>
+                  <option value="explain-first">偏讲解</option>
+                </select>
+              </label>
+              <label>
+                当前负荷
+                <select name="burdenSignal">
+                  <option value="normal">正常</option>
+                  <option value="high">任务很重，少追问一点</option>
+                </select>
+              </label>
+              <button type="submit">提交回答</button>
+            </form>
+            <div id="latest-feedback" class="feedback hidden"></div>
+          </div>
+        </section>
+      </section>
+
+      <section class="grid">
+        <section class="panel">
+          <div class="panel-header">
+            <h2>4. 掌握图谱</h2>
+            <p>每个判断都必须给出原因。</p>
+          </div>
+          <div id="mastery-empty" class="empty-state">回答几轮后，这里会出现概念级掌握判断。</div>
+          <ul id="mastery-map" class="mastery-map"></ul>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>5. 下一步</h2>
+            <p>从简单补强到更难迁移。</p>
+          </div>
+          <div id="next-steps-empty" class="empty-state">掌握图谱更新后，这里会给出下一步练习建议。</div>
+          <ol id="next-steps" class="next-steps"></ol>
+          <div class="panel-header" style="margin-top: 18px;">
+            <h3>后续回访</h3>
+            <p>当前先放下、后面要回头检查的点。</p>
+          </div>
+          <div id="revisit-empty" class="empty-state">还没有需要后续回访的知识点。</div>
+          <ul id="revisit-queue" class="next-steps"></ul>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+  </html>

@@ -1,0 +1,8 @@
+{
+  "id": "half-knowledge-interviewee",
+  "name": "半懂面试型用户",
+  "description": "会说一些关键词，但常常停在术语层面；有时会方向对但解释不完整。",
+  "answer_style": "会答术语，但机制薄弱",
+  "control_tendency": "一般会先尝试回答，卡住后才说'讲一下'",
+  "knowledge_profile": "能命中部分关键词，但容易缺少对象关系和因果链"
+}

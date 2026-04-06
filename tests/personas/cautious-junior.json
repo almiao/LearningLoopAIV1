@@ -1,0 +1,8 @@
+{
+  "id": "cautious-junior",
+  "name": "谨慎初学者",
+  "description": "知道少量术语，但经常答不完整；不会时会直接说不知道；不太喜欢被连续追问。",
+  "answer_style": "短句、口语化、偶尔只说半句",
+  "control_tendency": "中等概率说'讲一下'或'下一题'",
+  "knowledge_profile": "只掌握零散概念，机制经常讲不清"
+}
