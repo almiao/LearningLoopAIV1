@@ -118,5 +118,13 @@ export function chooseNextConcept(session) {
 }
 
 export function createInitialProbe(concept) {
+  if (concept?.interviewAnchor?.prompt) {
+    return concept.interviewAnchor.prompt;
+  }
+
+  if (concept?.diagnosticQuestion) {
+    return concept.diagnosticQuestion;
+  }
+
   return generateInitialProbe(concept);
 }

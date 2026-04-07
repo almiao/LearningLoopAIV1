@@ -92,16 +92,6 @@ h1 {
   margin-top: 12px;
 }
 
-.source-switch {
-  display: inline-flex;
-  gap: 8px;
-  padding: 6px;
-  border-radius: 999px;
-  background: rgba(45, 36, 22, 0.06);
-  margin-bottom: 18px;
-}
-
-.source-switch button,
 button[type="submit"] {
   border: 0;
   border-radius: 999px;
@@ -109,29 +99,20 @@ button[type="submit"] {
   font: inherit;
   cursor: pointer;
   transition: transform 180ms ease, background 180ms ease;
+  background: var(--accent);
+  color: white;
 }
 
-.source-switch button {
-  background: transparent;
-  color: var(--muted);
-}
-
-.source-switch button.active,
 button[type="submit"] {
   background: var(--accent);
   color: white;
 }
 
-.source-switch button:hover,
 button[type="submit"]:hover {
   transform: translateY(-1px);
 }
 
 .source-form {
-  display: none;
-}
-
-.source-form.active {
   display: grid;
   gap: 14px;
 }
@@ -188,6 +169,14 @@ textarea {
   padding: 16px;
   border-radius: 18px;
   background: rgba(186, 106, 52, 0.1);
+}
+
+.feedback-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0;
 }
 
 .turn-history {
@@ -277,6 +266,83 @@ textarea {
   font-size: 0.82rem;
 }
 
+.provenance-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(186, 106, 52, 0.12);
+  color: var(--warm);
+  font-size: 0.78rem;
+}
+
+.match-strip {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 18px;
+  align-items: start;
+  margin-bottom: 14px;
+}
+
+.match-card,
+.domain-card,
+.material-card,
+.memory-event {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(255, 253, 247, 0.82);
+}
+
+.match-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.progress-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(45, 36, 22, 0.08);
+  overflow: hidden;
+  margin: 10px 0 6px;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--warm), var(--accent));
+}
+
+.mini-label,
+.muted-copy {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.memory-strip {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.domain-list,
+.materials {
+  display: grid;
+  gap: 12px;
+}
+
+.domain-card ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
+.materials {
+  margin-top: 10px;
+}
+
 @media (max-width: 880px) {
   .grid {
     grid-template-columns: 1fr;
@@ -289,5 +355,9 @@ textarea {
 
   h1 {
     max-width: none;
+  }
+
+  .match-strip {
+    grid-template-columns: 1fr;
   }
 }

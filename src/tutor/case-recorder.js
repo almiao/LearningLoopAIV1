@@ -18,13 +18,18 @@ function buildCaseSnapshot(session) {
     interactionPreference: session.interactionPreference,
     burdenSignal: session.burdenSignal,
     summary: session.summary,
+    targetBaseline: session.targetBaseline,
+    memoryProfileId: session.memoryProfileId,
     concepts: session.concepts,
     currentConceptId: session.currentConceptId,
     currentProbe: session.currentProbe,
     masteryMap: session.masteryMap,
+    abilityDomains: session.abilityDomains,
+    targetMatch: session.targetMatch,
     nextSteps: session.nextSteps,
     engagement: session.engagement,
     revisitQueue: session.revisitQueue,
+    memoryEvents: session.memoryEvents,
     turns: session.turns ?? []
   };
 }

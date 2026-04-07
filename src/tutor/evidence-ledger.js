@@ -37,9 +37,13 @@ export function summarizeLedger(ledger, concepts) {
     const conceptLedger = getConceptLedger(ledger, concept.id);
     return {
       conceptId: concept.id,
+      abilityItemId: concept.abilityItemId || concept.id,
+      domainTitle: concept.domainTitle || "",
       title: concept.title,
       state: conceptLedger.state,
       reasons: conceptLedger.reasons,
+      provenanceLabel: concept.provenance?.label || "",
+      remediationAssets: concept.remediationAssets || [],
       evidence: conceptLedger.entries.slice(-2).map((entry) => ({
         signal: entry.signal,
         explanation: entry.explanation,

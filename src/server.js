@@ -2,9 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import http from "node:http";
+import {
+  createBaselinePackDecomposition,
+  createBaselinePackSource,
+  getBaselinePackById,
+  listBaselinePacks
+} from "./baseline/baseline-packs.js";
 import { parseDocumentInput } from "./ingestion/document-parser.js";
 import { fetchSubmittedPage } from "./ingestion/url-fetcher.js";
 import { createSession, answerSession } from "./tutor/session-orchestrator.js";
+import { createMemoryProfileStore } from "./tutor/memory-profile-store.js";
 import { recordSessionCase } from "./tutor/case-recorder.js";
 import { createTutorIntelligence } from "./tutor/tutor-intelligence.js";
 
@@ -71,15 +78,64 @@ function projectSession(session) {
     revisitQueue: session.revisitQueue,
     burdenSignal: session.burdenSignal,
     interactionPreference: session.interactionPreference,
-    memoryMode: session.memoryMode
+    memoryMode: session.memoryMode,
+    targetBaseline: session.targetBaseline,
+    memoryProfileId: session.memoryProfileId,
+    targetMatch: session.targetMatch,
+    abilityDomains: session.abilityDomains,
+    memoryEvents: session.memoryEvents,
+    latestMemoryEvents: session.latestMemoryEvents
   };
 }
 
 export function createAppService({ fetchImpl = globalThis.fetch, intelligence } = {}) {
   const sessions = new Map();
+  const memoryProfiles = new Map();
+  const memoryProfileStore = createMemoryProfileStore();
   const tutorIntelligence = intelligence ?? createTutorIntelligence({ fetchImpl });
 
+  async function getOrCreateMemoryProfile(memoryProfileId) {
+    if (memoryProfileId && memoryProfiles.has(memoryProfileId)) {
+      return memoryProfiles.get(memoryProfileId);
+    }
+
+    const profile = await memoryProfileStore.getOrCreate(memoryProfileId);
+    memoryProfiles.set(profile.id, profile);
+    return profile;
+  }
+
   return {
+    listBaselines() {
+      return listBaselinePacks();
+    },
+
+    async startTargetSession(body) {
+      const baselinePack = getBaselinePackById(body.targetBaselineId);
+      const memoryProfile = await getOrCreateMemoryProfile(body.memoryProfileId);
+      memoryProfile.sessionsStarted += 1;
+      await memoryProfileStore.save(memoryProfile);
+      const session = await createSession({
+        source: createBaselinePackSource(baselinePack),
+        intelligence: tutorIntelligence,
+        interactionPreference: body.interactionPreference ?? "balanced",
+        preparedDecomposition: createBaselinePackDecomposition(baselinePack),
+        targetBaseline: {
+          id: baselinePack.id,
+          title: baselinePack.title,
+          targetRole: baselinePack.targetRole,
+          flagship: baselinePack.flagship
+        },
+        memoryProfile,
+        mode: "target",
+        learnerId: memoryProfile.id,
+        availableBaselineIds: listBaselinePacks().map((baseline) => baseline.id)
+      });
+      sessions.set(session.id, session);
+      memoryProfiles.set(memoryProfile.id, memoryProfile);
+      await recordSessionCase(session);
+      return projectSession(session);
+    },
+
     async analyzeSource(body) {
       const source =
         body.type === "url"
@@ -112,6 +168,10 @@ export function createAppService({ fetchImpl = globalThis.fetch, intelligence } 
         intelligence: tutorIntelligence
       });
       sessions.set(updated.id, updated);
+      if (updated.memoryProfile) {
+        memoryProfiles.set(updated.memoryProfile.id, updated.memoryProfile);
+        await memoryProfileStore.save(updated.memoryProfile);
+      }
       await recordSessionCase(updated);
       return {
         ...projectSession(updated),
@@ -145,6 +205,18 @@ export function createAppServer(options = {}) {
       if (request.method === "POST" && url.pathname === "/api/source/analyze") {
         const body = await readJsonBody(request);
         const payload = await service.analyzeSource(body);
+        sendJson(response, 200, payload);
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/baselines") {
+        sendJson(response, 200, { baselines: service.listBaselines() });
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/session/start-target") {
+        const body = await readJsonBody(request);
+        const payload = await service.startTargetSession(body);
         sendJson(response, 200, payload);
         return;
       }
