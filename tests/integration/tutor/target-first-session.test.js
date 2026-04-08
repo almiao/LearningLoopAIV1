@@ -8,6 +8,10 @@ test("target-first session starts from flagship baseline and returns visible mem
     intelligence: createHeuristicTutorIntelligence()
   });
 
+  const baselines = service.listBaselines();
+  assert.equal(baselines.length, 1);
+  assert.equal(baselines[0].id, "bigtech-java-backend");
+
   const session = await service.startTargetSession({
     targetBaselineId: "bigtech-java-backend",
     interactionPreference: "balanced"
@@ -18,6 +22,8 @@ test("target-first session starts from flagship baseline and returns visible mem
   assert.equal(session.memoryMode, "profile-scoped");
   assert.ok(session.currentProbe.length > 0);
   assert.ok(session.concepts.length >= 5);
+  assert.ok(Array.isArray(session.summary.javaGuideSourceClusters));
+  assert.ok(session.summary.javaGuideSourceClusters.length >= 3);
   assert.ok(session.targetMatch);
   assert.ok(Array.isArray(session.abilityDomains));
 });
@@ -55,6 +61,25 @@ test("answering target-first session updates memory events, remediation, and lat
   assert.ok(
     reentrySession.memoryEvents.some((event) => event.type === "self_test_reentry_context")
   );
+});
+
+test("target session can focus a selected domain and switch current assessment there", async () => {
+  const service = createAppService({
+    intelligence: createHeuristicTutorIntelligence()
+  });
+
+  const session = await service.startTargetSession({
+    targetBaselineId: "bigtech-java-backend",
+    interactionPreference: "balanced"
+  });
+
+  const focused = await service.focusDomain({
+    sessionId: session.sessionId,
+    domainId: "network-http-tcp"
+  });
+
+  assert.equal(focused.currentConceptId, "tcp-handshake-backlog-timewait");
+  assert.match(focused.currentProbe, /TCP|backlog|TIME_WAIT/);
 });
 
 test("target memory profile survives service recreation through file-backed storage", async () => {

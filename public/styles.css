@@ -70,6 +70,10 @@ h1 {
   margin-top: 18px;
 }
 
+.grid.single-panel {
+  grid-template-columns: 1fr;
+}
+
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -294,6 +298,24 @@ textarea {
   background: rgba(255, 253, 247, 0.82);
 }
 
+.domain-button {
+  width: 100%;
+  border: 1px solid var(--border);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.domain-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(13, 91, 89, 0.28);
+}
+
+.domain-button.active {
+  background: linear-gradient(135deg, rgba(13, 91, 89, 0.12), rgba(13, 91, 89, 0.04));
+  border-color: rgba(13, 91, 89, 0.32);
+}
+
 .match-row {
   display: flex;
   align-items: center;
@@ -329,7 +351,9 @@ textarea {
 }
 
 .domain-list,
-.materials {
+.materials,
+.guide-source-list,
+.guide-link-row {
   display: grid;
   gap: 12px;
 }
@@ -340,6 +364,69 @@ textarea {
 }
 
 .materials {
+  margin-top: 10px;
+}
+
+.guide-source-list {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 16px;
+}
+
+.guide-link-row {
+  margin-top: 8px;
+  gap: 6px;
+}
+
+.guide-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  margin-right: 8px;
+  margin-bottom: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(13, 91, 89, 0.14);
+  background: rgba(13, 91, 89, 0.08);
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.guide-link:hover {
+  background: rgba(13, 91, 89, 0.14);
+}
+
+.tier-chip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(45, 36, 22, 0.08);
+  color: var(--muted);
+  font-size: 0.76rem;
+  vertical-align: middle;
+}
+
+.workspace-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workspace-tab {
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  color: var(--text);
+  padding: 10px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.workspace-tab.active {
+  background: var(--accent);
+  color: white;
+}
+
+.concept-actions {
   margin-top: 10px;
 }
 

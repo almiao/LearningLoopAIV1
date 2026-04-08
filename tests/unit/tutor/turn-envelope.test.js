@@ -1,0 +1,101 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  assertConsistentTurnEnvelope,
+  assertValidTurnEnvelope,
+  turnEnvelopeToTutorMove
+} from "../../../src/tutor/turn-envelope.js";
+
+function createEnvelope(overrides = {}) {
+  return {
+    runtime_map: {
+      anchor_id: "mvcc",
+      turn_signal: "positive",
+      anchor_assessment: {
+        state: "partial",
+        confidence_level: "medium",
+        reasons: ["已经知道 MVCC 跟快照读有关。"]
+      },
+      hypotheses: [],
+      misunderstandings: [],
+      open_questions: ["为什么当前读还需要锁"],
+      verification_targets: [],
+      info_gain_level: "medium",
+      ...overrides.runtime_map
+    },
+    next_move: {
+      intent: "继续确认当前读和锁边界。",
+      reason: "用户已经摸到主干，可以再做一次验证。",
+      expected_gain: "medium",
+      ui_mode: "verify",
+      ...overrides.next_move
+    },
+    reply: {
+      visible_reply: "你已经碰到关键点了，不过还要把当前读和锁边界带上。",
+      teaching_paragraphs: [],
+      evidence_reference: "RR 为什么还要 next-key lock。",
+      next_prompt: "那你继续说说，为什么 RR 有 MVCC 以后当前读还是要 next-key lock？",
+      takeaway: "MVCC 主要管快照读，当前读边界还要看锁。",
+      confirmed_understanding: "你已经知道 MVCC 处理历史快照。",
+      remaining_gap: "还没把当前读和锁边界讲清楚。",
+      revisit_reason: "",
+      requires_response: true,
+      complete_current_unit: false,
+      ...overrides.reply
+    },
+    writeback_suggestion: {
+      should_write: true,
+      mode: "update",
+      reason: "new_high_value_partial_signal",
+      anchor_patch: {
+        state: "partial",
+        confidence_level: "medium",
+        derived_principle: "知道 MVCC 管快照读，但锁边界不稳。"
+      },
+      ...overrides.writeback_suggestion
+    }
+  };
+}
+
+test("valid positive verify envelopes map to deepen tutor moves for compatibility", () => {
+  const envelope = createEnvelope();
+  assertValidTurnEnvelope(envelope, "mvcc");
+  assertConsistentTurnEnvelope(envelope, {
+    stop_conditions: {
+      should_discourage_more_probe: false
+    }
+  });
+
+  const tutorMove = turnEnvelopeToTutorMove(envelope, {
+    id: "mvcc",
+    summary: "MVCC 概念总结",
+    excerpt: "MVCC 证据"
+  });
+
+  assert.equal(tutorMove.moveType, "deepen");
+  assert.equal(tutorMove.judge.state, "partial");
+  assert.equal(tutorMove.nextQuestion, envelope.reply.next_prompt);
+});
+
+test("inconsistent negligible-gain probe envelopes are rejected", () => {
+  const envelope = createEnvelope({
+    runtime_map: {
+      info_gain_level: "negligible",
+      turn_signal: "negative"
+    },
+    next_move: {
+      ui_mode: "probe"
+    }
+  });
+
+  assert.throws(
+    () =>
+      assertConsistentTurnEnvelope(envelope, {
+        stop_conditions: {
+          should_discourage_more_probe: false
+        }
+      }),
+    /negligible info gain/
+  );
+});
+

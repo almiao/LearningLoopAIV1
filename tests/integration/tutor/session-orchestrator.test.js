@@ -135,6 +135,7 @@ test("control intents can advance or teach without being treated as learner cont
   assert.match(taught.latestFeedback.explanation, /先不让你继续猜|先带走这一层|先补一小段关键解释/);
   assert.equal(taught.engagement.controlCount, 1);
   assert.equal(taught.engagement.teachRequestCount, 1);
+  assert.equal(taught.currentConceptId, initialConceptId);
 
   const advanced = await answerSession(taught, {
     answer: "下一题",
@@ -150,7 +151,7 @@ test("control intents can advance or teach without being treated as learner cont
   assert.ok(advanced.revisitQueue.length >= 1);
 });
 
-test("repeated teach requests summarize and defer instead of looping forever", async () => {
+test("repeated teach requests stay on the same concept and continue teach-back", async () => {
   const source = parseDocumentInput({
     title: "AQS 详解",
     content: aqsMarkdownDocument
@@ -177,9 +178,9 @@ test("repeated teach requests summarize and defer instead of looping forever", a
     intelligence
   });
 
-  assert.match(afterSecondTeach.latestFeedback.explanation, /先记住一句最关键的话|先带走这一层/);
-  assert.ok(afterSecondTeach.revisitQueue.some((item) => item.reason.includes("teach")));
-  assert.notEqual(afterSecondTeach.currentConceptId, conceptBeforeSecondTeach);
+  assert.match(afterSecondTeach.latestFeedback.explanation, /我换个角度再讲一次|先带走这一层/);
+  assert.equal(afterSecondTeach.currentConceptId, conceptBeforeSecondTeach);
+  assert.match(afterSecondTeach.currentProbe, /复述|自己的话|为什么/);
 });
 
 test("deferred units can be revisited after the primary pass completes", async () => {

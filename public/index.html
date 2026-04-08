@@ -28,6 +28,13 @@
             <select id="target-baseline" name="targetBaselineId"></select>
           </label>
           <label>
+            进入模式
+            <select id="entry-mode" name="entryMode">
+              <option value="test-first">先测后学</option>
+              <option value="learn-first">先学后测</option>
+            </select>
+          </label>
+          <label>
             互动风格
             <select name="interactionPreference">
               <option value="balanced">平衡：先判断，再按需要讲解</option>
@@ -39,11 +46,34 @@
         </form>
       </section>
 
+      <section class="panel hidden" id="workspace-shell">
+        <div class="panel-header">
+          <h2>2. Workspace 导航</h2>
+          <p>这里决定当前工作的对象和页面：可以测整包、测某个能力域、测某个能力项，也可以切到阅读或记忆视图。</p>
+        </div>
+        <div id="workspace-scope" class="callout">
+          <span class="tag">当前工作对象</span>
+          <p id="workspace-scope-copy"></p>
+          <div class="quick-actions">
+            <button type="button" id="start-baseline-assessment">开始整包测评</button>
+            <button type="button" id="open-reading-view">阅读资料</button>
+            <button type="button" id="open-memory-view">查看记忆</button>
+          </div>
+        </div>
+        <div class="workspace-tabs">
+          <button type="button" class="workspace-tab active" data-page-nav="overview">目标总览</button>
+          <button type="button" class="workspace-tab" data-page-nav="workspace">能力工作台</button>
+          <button type="button" class="workspace-tab" data-page-nav="assessment">测评</button>
+          <button type="button" class="workspace-tab" data-page-nav="reading">阅读/补强</button>
+          <button type="button" class="workspace-tab" data-page-nav="memory">记忆/进展</button>
+        </div>
+      </section>
+
       <section class="grid">
-        <section class="panel" id="summary-panel">
+        <section class="panel" id="summary-panel" data-page-group="overview workspace">
           <div class="panel-header">
             <h2>2. 目标概览</h2>
-            <p>当前目标、能力切入点和匹配度都在这里。</p>
+            <p>当前目标、完整能力域、当前能力点切入和匹配度都在这里。</p>
           </div>
           <div id="summary-empty" class="empty-state">开始目标诊断后，这里会显示目标包概览和能力项切入点。</div>
           <div id="summary-content" class="hidden">
@@ -65,11 +95,29 @@
               </div>
             </div>
             <p id="source-framing"></p>
+            <div class="panel-header" style="margin-top: 14px;">
+              <h3>完整能力域地图</h3>
+              <p>点击能力域，可以联动查看该域下的能力项、记忆状态和补强资料。</p>
+            </div>
+            <div id="overview-domains" class="domain-list"></div>
+            <div id="selected-domain-context" class="callout hidden">
+              <span class="tag">当前能力域</span>
+              <p id="selected-domain-copy"></p>
+              <div class="quick-actions">
+                <button type="button" id="start-domain-assessment">开始该域测评</button>
+                <button type="button" id="read-domain-materials">先看该域资料</button>
+                <button type="button" id="view-domain-memory">查看该域记忆</button>
+              </div>
+            </div>
+            <div class="panel-header" style="margin-top: 14px;">
+              <h3 id="concept-list-title">当前能力点切入</h3>
+              <p id="concept-list-subtitle">这里展示当前目标包下可诊断的能力点。</p>
+            </div>
             <ul id="concept-list"></ul>
           </div>
         </section>
 
-        <section class="panel" id="probe-panel">
+        <section class="panel" id="probe-panel" data-page-group="assessment">
           <div class="panel-header">
             <h2>3. 目标诊断对话</h2>
             <p>问题优先围绕目标能力项和面经锚点，而不是泛聊天。</p>
@@ -81,6 +129,7 @@
               <p id="current-probe"></p>
             </div>
             <div id="latest-memory-events" class="memory-strip hidden"></div>
+            <div id="latest-feedback" class="feedback hidden"></div>
             <div class="panel-header">
               <h3>对话记录</h3>
               <p>系统会边问边记忆，并在对话中直接展示变化。</p>
@@ -94,7 +143,6 @@
               <div class="quick-actions">
                 <button type="button" data-answer-intent="teach">先讲一下</button>
                 <button type="button" data-answer-intent="advance">下一题</button>
-                <button type="button" data-answer-intent="summarize">先总结</button>
               </div>
               <label>
                 互动风格
@@ -113,13 +161,12 @@
               </label>
               <button type="submit">提交回答</button>
             </form>
-            <div id="latest-feedback" class="feedback hidden"></div>
           </div>
         </section>
       </section>
 
       <section class="grid">
-        <section class="panel">
+        <section class="panel" id="memory-panel" data-page-group="memory">
           <div class="panel-header">
             <h2>4. 记忆与能力图谱</h2>
             <p>系统会把能力项状态、证据和记忆事件放在明面上。</p>
@@ -133,11 +180,16 @@
           <div id="ability-domains" class="domain-list"></div>
         </section>
 
-        <section class="panel">
+        <section class="panel" id="materials-panel" data-page-group="reading">
           <div class="panel-header">
             <h2>5. 补强资料与回访</h2>
             <p>先给可执行补强，再把薄弱点接回下一轮自测。</p>
           </div>
+          <div class="panel-header">
+            <h3>关联资料</h3>
+            <p>这里展示当前工作对象对应的 JavaGuide 引用和补强入口。</p>
+          </div>
+          <div id="materials-sources" class="guide-source-list"></div>
           <div id="next-steps-empty" class="empty-state">诊断更新后，这里会出现目标导向的补强资料。</div>
           <ol id="next-steps" class="next-steps"></ol>
           <div class="panel-header" style="margin-top: 18px;">

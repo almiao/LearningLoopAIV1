@@ -12,9 +12,18 @@ import {
   buildAssessmentHandle
 } from "./capability-memory.js";
 import { detectControlIntent } from "./control-intents.js";
+import { buildContextPacket } from "./context-packet.js";
+import { applyWritebackSuggestion } from "./memory-writeback.js";
 import { createInitialProbe, chooseNextConcept } from "./probe-engine.js";
 import { buildNextSteps } from "./next-step-planner.js";
 import { normalizeInteractionPreference } from "./tutor-policy.js";
+import {
+  assertConsistentTurnEnvelope,
+  assertValidTurnEnvelope,
+  createEmptyRuntimeMap,
+  scoreToConfidenceLevel,
+  turnEnvelopeToTutorMove
+} from "./turn-envelope.js";
 
 function enqueueRevisit(session, { concept, reason, takeaway }) {
   if (!reason) {
@@ -112,22 +121,43 @@ function assertValidDecomposition(decomposition) {
   }
 }
 
+function moveDebugSummary(move) {
+  if (!move) {
+    return "null";
+  }
+
+  return JSON.stringify({
+    moveType: move.moveType,
+    signal: move.signal,
+    judge: move.judge,
+    hasVisibleReply: Boolean(move.visibleReply),
+    hasNextQuestion: Boolean(move.nextQuestion),
+    hasTeachingChunk: Boolean(move.teachingChunk)
+  });
+}
+
+function invalidMoveError(move, reason) {
+  return new Error(
+    `Tutor intelligence returned an invalid tutor move (${reason}). Move summary: ${moveDebugSummary(move)}`
+  );
+}
+
 function assertValidMove(move) {
-  const allowed = new Set(["probe", "affirm", "deepen", "repair", "teach", "check", "summarize", "advance", "abstain"]);
+  const allowed = new Set(["probe", "affirm", "deepen", "repair", "teach", "check", "advance", "abstain"]);
   if (!move || !allowed.has(move.moveType)) {
-    throw new Error("Tutor intelligence returned an invalid tutor move.");
+    throw invalidMoveError(move, "invalid moveType");
   }
 
   if (!["positive", "negative", "noise"].includes(move.signal)) {
-    throw new Error("Tutor intelligence returned an invalid tutor move.");
+    throw invalidMoveError(move, "invalid signal");
   }
 
   if (!move.judge?.state || typeof move.judge.confidence !== "number") {
-    throw new Error("Tutor intelligence returned an invalid tutor move.");
+    throw invalidMoveError(move, "invalid judge");
   }
 
   if (!move.visibleReply) {
-    throw new Error("Tutor intelligence returned an invalid tutor move.");
+    throw invalidMoveError(move, "missing visibleReply");
   }
 }
 
@@ -152,17 +182,46 @@ function createQuestionMeta(concept) {
   };
 }
 
+function getWorkspaceScope(session) {
+  return session.workspaceScope || { type: "pack", id: session.targetBaseline?.id || session.source.kind };
+}
+
+function isConceptInScope(session, concept) {
+  const scope = getWorkspaceScope(session);
+  if (session.mode !== "target") {
+    return true;
+  }
+  if (scope.type === "pack") {
+    return true;
+  }
+  if (scope.type === "domain") {
+    return (concept.abilityDomainId || concept.domainId) === scope.id;
+  }
+  if (scope.type === "concept") {
+    return concept.id === scope.id;
+  }
+
+  return true;
+}
+
 function chooseNextUnit(session) {
   const next = session.concepts.find((concept) => {
     const conceptSession = session.conceptStates[concept.id];
-    return !conceptSession.completed;
+    return !conceptSession.completed && isConceptInScope(session, concept);
   });
 
   if (next) {
     return { concept: next, revisit: false };
   }
 
-  const revisit = session.revisitQueue.find((item) => !item.done);
+  const revisit = session.revisitQueue.find((item) => {
+    if (item.done) {
+      return false;
+    }
+
+    const concept = session.concepts.find((entry) => entry.id === item.conceptId);
+    return Boolean(concept && isConceptInScope(session, concept));
+  });
   if (revisit) {
     const concept = session.concepts.find((item) => item.id === revisit.conceptId);
     if (concept) {
@@ -170,6 +229,10 @@ function chooseNextUnit(session) {
       session.conceptStates[concept.id].completed = false;
       return { concept, revisit: true, revisitReason: revisit.reason };
     }
+  }
+
+  if (session.mode === "target" && getWorkspaceScope(session).type !== "pack") {
+    return { concept: null, revisit: false, scopeExhausted: true };
   }
 
   return { concept: chooseNextConcept(session), revisit: false };
@@ -181,6 +244,105 @@ function resolvePromptForConcept({ concept, revisit = false }) {
   }
 
   return createInitialProbe(concept);
+}
+
+function findConceptForDomain(session, domainId) {
+  const candidates = session.concepts.filter(
+    (concept) => (concept.abilityDomainId || concept.domainId) === domainId
+  );
+  if (!candidates.length) {
+    return null;
+  }
+
+  const incomplete = candidates.find((concept) => !session.conceptStates[concept.id].completed);
+  return incomplete || candidates[0];
+}
+
+function findConceptById(session, conceptId) {
+  return session.concepts.find((concept) => concept.id === conceptId) || null;
+}
+
+function formatGuideTitles(concept, limit = 2) {
+  return (concept.javaGuideSources || [])
+    .slice(0, limit)
+    .map((source) => source.title)
+    .filter(Boolean);
+}
+
+function buildTeachExplanation(concept, repeatedTeach = false, learningCard = null) {
+  if (learningCard?.visibleReply) {
+    const trimmed = String(learningCard.visibleReply).trim();
+    if (repeatedTeach) {
+      return trimmed.startsWith("我换个角度") ? trimmed : `我换个角度再讲一次。 ${trimmed}`;
+    }
+
+    return trimmed.startsWith("好，") || trimmed.startsWith("好。") || trimmed.startsWith("好 ")
+      ? trimmed
+      : `好，我先不让你继续猜了。 ${trimmed}`;
+  }
+
+  const guideTitles = formatGuideTitles(concept);
+  const sourceHint = guideTitles.length
+    ? `建议先读 ${guideTitles.map((title) => `《${title}》`).join("、")}。`
+    : "";
+  const remediationHint = concept.remediationHint ? `优先抓住：${concept.remediationHint}` : "";
+  const preface = repeatedTeach
+    ? "我换个角度再讲一次。"
+    : "好，我先不让你继续猜了。你先带走这一层，再按学习模式过一遍。";
+
+  return [preface, concept.summary, remediationHint, sourceHint].filter(Boolean).join(" ");
+}
+
+function buildTeachChunk(concept, learningCard = null) {
+  if (learningCard?.teachingChunk) {
+    return learningCard.teachingChunk;
+  }
+
+  const guideTitles = formatGuideTitles(concept);
+  const materials = (concept.remediationMaterials || [])
+    .slice(0, 2)
+    .map((material) => material.title);
+
+  return [
+    `${concept.summary}`,
+    concept.remediationHint ? `你可以先抓住这样一个理解角度：${concept.remediationHint}` : "",
+    guideTitles.length ? `如果想继续顺着看，优先读 ${guideTitles.map((title) => `《${title}》`).join("、")}。` : "",
+    materials.length ? `补强卡片可以先看：${materials.join("、")}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function hasLearnerTurns(session) {
+  return session.turns.some((turn) => turn.role === "learner");
+}
+
+function setFocusedConcept(session, concept, actionLabel) {
+  session.currentConceptId = concept.id;
+  session.currentProbe = resolvePromptForConcept({ concept });
+  session.currentQuestionMeta = createQuestionMeta(concept);
+
+  const questionTurn = createQuestionTurn({
+    concept,
+    content: session.currentProbe,
+    action: "probe"
+  });
+
+  if (!hasLearnerTurns(session)) {
+    session.turns = [questionTurn];
+    return;
+  }
+
+  session.turns.push({
+    role: "system",
+    kind: "workspace",
+    action: actionLabel,
+    conceptId: concept.id,
+    conceptTitle: concept.title,
+    content: `${actionLabel}:${concept.title}`,
+    timestamp: Date.now()
+  });
+  session.turns.push(questionTurn);
 }
 
 function createQuestionTurn({ concept, content, action = "probe", revisitReason = "" }) {
@@ -248,12 +410,15 @@ function createSessionState({
       controlCount: 0,
       skipCount: 0,
       teachRequestCount: 0,
-      summarizeCount: 0,
       consecutiveControlCount: 0,
       lastControlIntent: ""
     },
     revisitQueue: [],
     memoryMode: mode === "target" ? "profile-scoped" : "session-scoped",
+    workspaceScope:
+      mode === "target"
+        ? { type: "pack", id: targetBaseline?.id || source.kind }
+        : { type: "source", id: source.kind },
     targetBaseline,
     memoryProfile: resolvedMemoryProfile,
     memoryProfileId: resolvedMemoryProfile.id,
@@ -261,6 +426,7 @@ function createSessionState({
     targetMatch: null,
     memoryEvents: initialMemoryEvents,
     latestMemoryEvents: initialMemoryEvents,
+    runtimeMaps: Object.fromEntries(orderedConcepts.map((concept) => [concept.id, createEmptyRuntimeMap(concept.id)])),
     turns: [initialQuestion]
   };
 
@@ -309,9 +475,50 @@ function buildLatestFeedback({ concept, tutorMove }) {
     strength: tutorMove.confirmedUnderstanding,
     takeaway: tutorMove.takeaway,
     teachingChunk: tutorMove.teachingChunk,
+    teachingParagraphs: tutorMove.teachingParagraphs || [],
     revisitReason: tutorMove.revisitReason,
     judge: tutorMove.judge,
-    remediationMaterial: concept.remediationMaterials?.[0] || null
+    runtimeMap: tutorMove.runtimeMap || null,
+    nextMove: tutorMove.nextMove || null,
+    writebackSuggestion: tutorMove.writebackSuggestion || null,
+    remediationMaterial: concept.remediationMaterials?.[0] || null,
+    learningSources: concept.javaGuideSources || []
+  };
+}
+
+function createFallbackRuntimeMap(concept, tutorMove) {
+  return {
+    ...createEmptyRuntimeMap(concept.id),
+    turn_signal: tutorMove.signal,
+    anchor_assessment: {
+      state: tutorMove.judge.state,
+      confidence_level: tutorMove.judge.confidenceLevel || scoreToConfidenceLevel(tutorMove.judge.confidence),
+      reasons: tutorMove.judge.reasons || []
+    },
+    open_questions: tutorMove.nextQuestion ? [tutorMove.nextQuestion] : [],
+    verification_targets: tutorMove.nextQuestion
+      ? [
+          {
+            id: `${concept.id}-legacy-verify`,
+            question: tutorMove.nextQuestion,
+            why: tutorMove.remainingGap || tutorMove.takeaway || concept.summary
+          }
+        ]
+      : [],
+    info_gain_level: tutorMove.requiresResponse ? "medium" : "low"
+  };
+}
+
+function createFallbackWritebackSuggestion(concept, tutorMove) {
+  return {
+    should_write: tutorMove.signal !== "noise",
+    mode: tutorMove.signal === "negative" ? "append_conflict" : "update",
+    reason: tutorMove.signal === "positive" ? "legacy_positive_signal" : "legacy_partial_signal",
+    anchor_patch: {
+      state: tutorMove.judge.state,
+      confidence_level: tutorMove.judge.confidenceLevel || scoreToConfidenceLevel(tutorMove.judge.confidence),
+      derived_principle: tutorMove.takeaway || concept.summary
+    }
   };
 }
 
@@ -330,40 +537,81 @@ export async function answerSession(
   session.lastAnsweredPrompt = session.currentProbe;
   const controlIntent = detectControlIntent(answer);
   if (controlIntent) {
-    return applyControlIntent(session, { concept, controlIntent, answer, burdenSignal });
+    return applyControlIntent(session, { concept, controlIntent, answer, burdenSignal, intelligence });
   }
 
   session.engagement.answerCount += 1;
   session.engagement.consecutiveControlCount = 0;
   session.engagement.lastControlIntent = "";
 
-  const tutorMove = intelligence.generateTutorMove
-    ? await intelligence.generateTutorMove({
+  const contextPacket = buildContextPacket({
+    session,
+    concept,
+    answer,
+    burdenSignal,
+    priorEvidence
+  });
+  let tutorMove = null;
+  let decisionEnvelope = null;
+
+  if (intelligence.generateTurnEnvelope) {
+    try {
+      decisionEnvelope = await intelligence.generateTurnEnvelope({
         session,
         concept,
         answer,
         burdenSignal,
-        priorEvidence
-      })
-    : await intelligence.reviewTurn({
-        session,
-        concept,
-        answer,
-        burdenSignal,
-        priorEvidence
-      }).then((review) => ({
-        moveType: "repair",
-        signal: review.signal,
-        judge: review.judge,
-        visibleReply: review.feedback.explanation,
-        evidenceReference: review.feedback.evidenceReference,
-        teachingChunk: review.feedback.teachingChunk || "",
-        nextQuestion: review.nextQuestion,
-        confirmedUnderstanding: review.feedback.positiveConfirmation || "",
-        remainingGap: review.feedback.gap || "",
-        completeCurrentUnit: false,
-        requiresResponse: true
-      }));
+        priorEvidence,
+        contextPacket
+      });
+      assertValidTurnEnvelope(decisionEnvelope, concept.id);
+      assertConsistentTurnEnvelope(decisionEnvelope, contextPacket);
+      tutorMove = turnEnvelopeToTutorMove(decisionEnvelope, concept);
+    } catch (error) {
+      console.warn(
+        `[tutor-envelope-fallback] ${concept.id}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      decisionEnvelope = null;
+    }
+  }
+
+  if (!tutorMove) {
+    tutorMove = intelligence.generateTutorMove
+      ? await intelligence.generateTutorMove({
+          session,
+          concept,
+          answer,
+          burdenSignal,
+          priorEvidence
+        })
+      : await intelligence.reviewTurn({
+          session,
+          concept,
+          answer,
+          burdenSignal,
+          priorEvidence
+        }).then((review) => ({
+          moveType: "repair",
+          signal: review.signal,
+          judge: review.judge,
+          visibleReply: review.feedback.explanation,
+          evidenceReference: review.feedback.evidenceReference,
+          teachingChunk: review.feedback.teachingChunk || "",
+          nextQuestion: review.nextQuestion,
+          confirmedUnderstanding: review.feedback.positiveConfirmation || "",
+          remainingGap: review.feedback.gap || "",
+          completeCurrentUnit: false,
+          requiresResponse: true
+        }));
+  }
+
+  tutorMove.runtimeMap = tutorMove.runtimeMap || decisionEnvelope?.runtime_map || createFallbackRuntimeMap(concept, tutorMove);
+  tutorMove.nextMove = tutorMove.nextMove || decisionEnvelope?.next_move || null;
+  tutorMove.writebackSuggestion =
+    tutorMove.writebackSuggestion ||
+    decisionEnvelope?.writeback_suggestion ||
+    createFallbackWritebackSuggestion(concept, tutorMove);
 
   assertValidMove(tutorMove);
 
@@ -380,11 +628,20 @@ export async function answerSession(
   const answerTimestamp = session.turns.at(-1).timestamp;
 
   appendEvidence(session.ledger, concept.id, {
+    id: contextPacket.draft_evidence.id,
+    prompt: contextPacket.draft_evidence.prompt,
     answer,
     signal: tutorMove.signal,
     explanation: tutorMove.visibleReply,
+    whyJudgedThisWay: tutorMove.judge.reasons?.join("；") || tutorMove.remainingGap || "",
+    sourceRefs: contextPacket.draft_evidence.sourceRefs,
+    confidenceLevel:
+      tutorMove.judge.confidenceLevel || tutorMove.runtimeMap?.anchor_assessment?.confidence_level || "low",
+    evidenceReference: tutorMove.evidenceReference,
     sourceAligned: true
   });
+
+  session.runtimeMaps[concept.id] = tutorMove.runtimeMap;
 
   session.conceptStates[concept.id].attempts += 1;
   session.conceptStates[concept.id].judge = tutorMove.judge;
@@ -417,16 +674,32 @@ export async function answerSession(
   let latestMemoryEvents = [];
   if (session.mode === "target") {
     const assessmentHandle = buildAssessmentHandle(session, concept);
-    updateMemoryProfile(session.memoryProfile, {
+    const writebackResult = applyWritebackSuggestion(session.memoryProfile, {
       concept,
-      judge: tutorMove.judge,
-      signal: tutorMove.signal,
-      answer,
+      suggestion: tutorMove.writebackSuggestion,
+      evidencePoint: {
+        ...contextPacket.draft_evidence,
+        answer,
+        assessmentHandle,
+        whyJudgedThisWay: tutorMove.judge.reasons?.join("；") || tutorMove.remainingGap || "",
+        evidenceReference: tutorMove.evidenceReference
+      },
       explanation: tutorMove.visibleReply,
-      assessmentHandle,
-      evidenceReference: tutorMove.evidenceReference,
+      runtimeMap: tutorMove.runtimeMap,
       timestamp: answerTimestamp
     });
+    if (!writebackResult.applied && !decisionEnvelope) {
+      updateMemoryProfile(session.memoryProfile, {
+        concept,
+        judge: tutorMove.judge,
+        signal: tutorMove.signal,
+        answer,
+        explanation: tutorMove.visibleReply,
+        assessmentHandle,
+        evidenceReference: tutorMove.evidenceReference,
+        timestamp: answerTimestamp
+      });
+    }
     latestMemoryEvents = buildVisibleMemoryEvents({
       concept,
       previousJudge,
@@ -437,6 +710,18 @@ export async function answerSession(
       evidenceReference: tutorMove.evidenceReference,
       timestamp: answerTimestamp
     });
+    if (writebackResult.applied) {
+      latestMemoryEvents.push({
+        type: "memory_writeback_applied",
+        abilityItemId: concept.id,
+        title: concept.title,
+        summary: `“${concept.title}”这轮高价值证据已写入长期记忆。`,
+        message: `“${concept.title}”这轮高价值证据已写入长期记忆。`,
+        assessmentHandle,
+        evidenceReference: tutorMove.evidenceReference,
+        timestamp: new Date(answerTimestamp).toISOString()
+      });
+    }
     session.memoryEvents.push(...latestMemoryEvents);
     session.memoryEvents = session.memoryEvents.slice(-10);
     session.latestMemoryEvents = latestMemoryEvents;
@@ -444,12 +729,14 @@ export async function answerSession(
 
   const nextUnit = chooseNextUnit(session);
   const nextConcept = nextUnit.concept;
-  const switchedConcept = nextConcept.id !== concept.id;
-  session.currentConceptId = nextConcept.id;
-  session.currentProbe = switchedConcept
-    ? resolvePromptForConcept({ concept: nextConcept, revisit: nextUnit.revisit })
-    : (tutorMove.requiresResponse ? tutorMove.nextQuestion : "");
-  session.currentQuestionMeta = session.currentProbe ? createQuestionMeta(nextConcept) : null;
+  const switchedConcept = Boolean(nextConcept) && nextConcept.id !== concept.id;
+  session.currentConceptId = nextConcept?.id || session.currentConceptId;
+  session.currentProbe = nextConcept
+    ? switchedConcept
+      ? resolvePromptForConcept({ concept: nextConcept, revisit: nextUnit.revisit })
+      : (tutorMove.requiresResponse ? tutorMove.nextQuestion : "")
+    : "";
+  session.currentQuestionMeta = session.currentProbe && nextConcept ? createQuestionMeta(nextConcept) : null;
 
   session.turns.push({
     role: "tutor",
@@ -464,11 +751,13 @@ export async function answerSession(
     strength: tutorMove.confirmedUnderstanding,
     takeaway: tutorMove.takeaway,
     teachingChunk: tutorMove.teachingChunk,
+    teachingParagraphs: tutorMove.teachingParagraphs || [],
+    learningSources: concept.javaGuideSources || [],
     revisitReason: tutorMove.revisitReason,
     timestamp: Date.now()
   });
 
-  if (session.currentProbe) {
+  if (session.currentProbe && nextConcept) {
     session.turns.push(
       createQuestionTurn({
         concept: nextConcept,
@@ -490,9 +779,55 @@ export async function answerSession(
   };
 }
 
-function applyControlIntent(session, { concept, controlIntent, answer, burdenSignal }) {
+export function focusSessionOnDomain(session, domainId) {
+  const concept = findConceptForDomain(session, domainId);
+  if (!concept) {
+    throw new Error("Unknown domain.");
+  }
+
+  session.workspaceScope = { type: "domain", id: domainId };
+
+  if (session.currentConceptId === concept.id) {
+    return {
+      ...session,
+      ...buildSessionViews(session)
+    };
+  }
+
+  setFocusedConcept(session, concept, "focus-domain");
+
+  return {
+    ...session,
+    ...buildSessionViews(session)
+  };
+}
+
+export function focusSessionOnConcept(session, conceptId) {
+  const concept = findConceptById(session, conceptId);
+  if (!concept) {
+    throw new Error("Unknown concept.");
+  }
+
+  session.workspaceScope = { type: "concept", id: conceptId };
+
+  if (session.currentConceptId === concept.id) {
+    return {
+      ...session,
+      ...buildSessionViews(session)
+    };
+  }
+
+  setFocusedConcept(session, concept, "focus-concept");
+
+  return {
+    ...session,
+    ...buildSessionViews(session)
+  };
+}
+
+async function applyControlIntent(session, { concept, controlIntent, answer, burdenSignal, intelligence }) {
   const now = Date.now();
-  const priorTeachRequests = session.engagement.teachRequestCount;
+  const priorTeachRequests = session.conceptStates[concept.id].teachCount;
 
   session.engagement.controlCount += 1;
   session.engagement.consecutiveControlCount += 1;
@@ -501,8 +836,6 @@ function applyControlIntent(session, { concept, controlIntent, answer, burdenSig
     session.engagement.skipCount += 1;
   } else if (controlIntent === "teach") {
     session.engagement.teachRequestCount += 1;
-  } else if (controlIntent === "summarize") {
-    session.engagement.summarizeCount += 1;
   }
 
   session.turns.push({
@@ -520,34 +853,25 @@ function applyControlIntent(session, { concept, controlIntent, answer, burdenSig
   let explanation = "";
   let coachingStep = "";
   let teachingChunk = "";
+  let learningCard = null;
 
   if (controlIntent === "teach") {
     const repeatedTeach = priorTeachRequests >= 1;
-    explanation = repeatedTeach
-      ? `这个点我先不给你继续展开了，你先记住一句最关键的话：${concept.summary}`
-      : `好，我先不让你继续猜了。你先带走这一层就够：${concept.summary}`;
-    teachingChunk = concept.summary || concept.excerpt;
-    coachingStep = repeatedTeach ? "" : concept.checkQuestion || "";
+    const contextPacket = buildContextPacket({
+      session,
+      concept,
+      answer,
+      burdenSignal,
+      priorEvidence: session.ledger[concept.id].entries
+    });
+    learningCard = intelligence?.explainConcept
+      ? await intelligence.explainConcept({ session, concept, burdenSignal, contextPacket })
+      : null;
+    explanation = buildTeachExplanation(concept, repeatedTeach, learningCard);
+    teachingChunk = buildTeachChunk(concept, learningCard);
+    coachingStep = learningCard?.checkQuestion || concept.checkQuestion || concept.retryQuestion || "";
     session.conceptStates[concept.id].teachCount += 1;
-    session.conceptStates[concept.id].lastAction = repeatedTeach ? "summarize" : "teach";
-    enqueueRevisit(session, {
-      concept,
-      reason: repeatedTeach ? "teach-repeated-so-deferred" : "teach-requested",
-      takeaway: concept.summary
-    });
-    if (repeatedTeach) {
-      session.conceptStates[concept.id].completed = true;
-    }
-  } else if (controlIntent === "summarize") {
-    explanation = `我先把这个点收一下：${concept.summary}`;
-    teachingChunk = concept.summary || concept.excerpt;
-    session.conceptStates[concept.id].completed = true;
-    session.conceptStates[concept.id].lastAction = "summarize";
-    enqueueRevisit(session, {
-      concept,
-      reason: "summarized-for-later",
-      takeaway: concept.summary
-    });
+    session.conceptStates[concept.id].lastAction = "teach";
   } else {
     explanation = "好，这个点先不继续卡住你了，我们直接进下一题。";
     session.conceptStates[concept.id].completed = true;
@@ -561,12 +885,17 @@ function applyControlIntent(session, { concept, controlIntent, answer, burdenSig
 
   if (controlIntent !== "teach" || !coachingStep) {
     const nextUnit = chooseNextUnit(session);
-    session.currentConceptId = nextUnit.concept.id;
-    session.currentProbe = resolvePromptForConcept({
-      concept: nextUnit.concept,
-      revisit: nextUnit.revisit
-    });
-    session.currentQuestionMeta = createQuestionMeta(nextUnit.concept);
+    if (nextUnit.concept) {
+      session.currentConceptId = nextUnit.concept.id;
+      session.currentProbe = resolvePromptForConcept({
+        concept: nextUnit.concept,
+        revisit: nextUnit.revisit
+      });
+      session.currentQuestionMeta = createQuestionMeta(nextUnit.concept);
+    } else {
+      session.currentProbe = "";
+      session.currentQuestionMeta = null;
+    }
   } else {
     session.currentProbe = coachingStep;
     session.currentQuestionMeta = createQuestionMeta(concept);
@@ -580,6 +909,8 @@ function applyControlIntent(session, { concept, controlIntent, answer, burdenSig
     conceptTitle: concept.title,
     content: explanation,
     teachingChunk,
+    teachingParagraphs: learningCard?.teachingParagraphs || [],
+    learningSources: concept.javaGuideSources || [],
     takeaway: concept.summary,
     coachingStep,
     timestamp: Date.now()
@@ -587,13 +918,15 @@ function applyControlIntent(session, { concept, controlIntent, answer, burdenSig
 
   if (session.currentProbe) {
     const currentConcept = session.concepts.find((item) => item.id === session.currentConceptId);
-    session.turns.push(
-      createQuestionTurn({
-        concept: currentConcept,
-        content: session.currentProbe,
-        action: controlIntent === "teach" && coachingStep ? "check" : "probe"
-      })
-    );
+    if (currentConcept) {
+      session.turns.push(
+        createQuestionTurn({
+          concept: currentConcept,
+          content: session.currentProbe,
+          action: controlIntent === "teach" && coachingStep ? "check" : "probe"
+        })
+      );
+    }
   }
 
   const views = buildSessionViews(session);
@@ -614,8 +947,10 @@ function applyControlIntent(session, { concept, controlIntent, answer, burdenSig
       strength: "",
       takeaway: concept.summary,
       teachingChunk,
+      teachingParagraphs: learningCard?.teachingParagraphs || [],
       judge: session.conceptStates[concept.id].judge,
-      remediationMaterial: concept.remediationMaterials?.[0] || null
+      remediationMaterial: concept.remediationMaterials?.[0] || null,
+      learningSources: concept.javaGuideSources || []
     },
     latestMemoryEvents: []
   };

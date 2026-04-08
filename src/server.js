@@ -10,7 +10,7 @@ import {
 } from "./baseline/baseline-packs.js";
 import { parseDocumentInput } from "./ingestion/document-parser.js";
 import { fetchSubmittedPage } from "./ingestion/url-fetcher.js";
-import { createSession, answerSession } from "./tutor/session-orchestrator.js";
+import { createSession, answerSession, focusSessionOnDomain, focusSessionOnConcept } from "./tutor/session-orchestrator.js";
 import { createMemoryProfileStore } from "./tutor/memory-profile-store.js";
 import { recordSessionCase } from "./tutor/case-recorder.js";
 import { createTutorIntelligence } from "./tutor/tutor-intelligence.js";
@@ -79,6 +79,8 @@ function projectSession(session) {
     burdenSignal: session.burdenSignal,
     interactionPreference: session.interactionPreference,
     memoryMode: session.memoryMode,
+    workspaceScope: session.workspaceScope,
+    currentRuntimeMap: session.runtimeMaps?.[session.currentConceptId] || null,
     targetBaseline: session.targetBaseline,
     memoryProfileId: session.memoryProfileId,
     targetMatch: session.targetMatch,
@@ -179,6 +181,30 @@ export function createAppService({ fetchImpl = globalThis.fetch, intelligence } 
       };
     },
 
+    async focusDomain(body) {
+      const session = sessions.get(body.sessionId);
+      if (!session) {
+        throw new Error("Unknown session.");
+      }
+
+      const updated = focusSessionOnDomain(session, body.domainId);
+      sessions.set(updated.id, updated);
+      await recordSessionCase(updated);
+      return projectSession(updated);
+    },
+
+    async focusConcept(body) {
+      const session = sessions.get(body.sessionId);
+      if (!session) {
+        throw new Error("Unknown session.");
+      }
+
+      const updated = focusSessionOnConcept(session, body.conceptId);
+      sessions.set(updated.id, updated);
+      await recordSessionCase(updated);
+      return projectSession(updated);
+    },
+
     getSession(sessionId) {
       const session = sessions.get(sessionId);
       if (!session) {
@@ -228,6 +254,20 @@ export function createAppServer(options = {}) {
         return;
       }
 
+      if (request.method === "POST" && url.pathname === "/api/session/focus-domain") {
+        const body = await readJsonBody(request);
+        const payload = await service.focusDomain(body);
+        sendJson(response, 200, payload);
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/session/focus-concept") {
+        const body = await readJsonBody(request);
+        const payload = await service.focusConcept(body);
+        sendJson(response, 200, payload);
+        return;
+      }
+
       if (request.method === "GET" && url.pathname.startsWith("/api/session/")) {
         const sessionId = url.pathname.split("/").at(-1);
         sendJson(response, 200, service.getSession(sessionId));
@@ -241,6 +281,10 @@ export function createAppServer(options = {}) {
 
       sendJson(response, 405, { error: "Method not allowed." });
     } catch (error) {
+      console.error(
+        `[${new Date().toISOString()}] ${request.method} ${request.url} failed`,
+        error instanceof Error ? error.stack || error.message : error
+      );
       sendJson(response, 400, {
         error: error instanceof Error ? error.message : "Unknown error"
       });

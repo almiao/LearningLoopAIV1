@@ -28,6 +28,7 @@ function createDefaultJudge() {
   return {
     state: "不可判",
     confidence: 0.16,
+    confidenceLevel: "low",
     reasons: ["当前还没有足够证据，先保持保守判断"]
   };
 }
@@ -57,6 +58,17 @@ function createEvent({
 
 function getPreviousMemory(memoryProfile, conceptId) {
   return memoryProfile?.abilityItems?.[conceptId] || null;
+}
+
+function levelToConfidence(level) {
+  switch (level) {
+    case "high":
+      return 0.86;
+    case "medium":
+      return 0.58;
+    default:
+      return 0.26;
+  }
 }
 
 function getEvidenceCount(ledger, conceptId) {
@@ -105,7 +117,11 @@ export function createConceptStatesFromMemory(concepts, memoryProfile = createMe
           judge: remembered
             ? {
                 state: remembered.state,
-                confidence: remembered.confidence,
+                confidence:
+                  typeof remembered.confidence === "number"
+                    ? remembered.confidence
+                    : levelToConfidence(remembered.confidenceLevel),
+                confidenceLevel: remembered.confidenceLevel || "low",
                 reasons: remembered.reasons?.length ? remembered.reasons : [`沿用上次对“${concept.title}”的记忆`]
               }
             : createDefaultJudge()
@@ -247,6 +263,9 @@ export function updateMemoryProfile(memoryProfile, {
   explanation,
   assessmentHandle,
   evidenceReference,
+  derivedPrinciple = "",
+  projectedTargets = [],
+  writebackReason = "",
   timestamp = Date.now()
 }) {
   if (!memoryProfile) {
@@ -260,8 +279,18 @@ export function updateMemoryProfile(memoryProfile, {
     explanation,
     evidenceReference,
     assessmentHandle,
+    writebackReason,
     at: new Date(timestamp).toISOString()
   };
+
+  const recentStrongEvidence =
+    signal === "positive" || judge.state === "solid"
+      ? [...(previous?.recentStrongEvidence || []).slice(-2), snapshot]
+      : previous?.recentStrongEvidence || [];
+  const recentConflictingEvidence =
+    previous && previous.state && previous.state !== judge.state
+      ? [...(previous?.recentConflictingEvidence || []).slice(-2), snapshot]
+      : previous?.recentConflictingEvidence || [];
 
   memoryProfile.abilityItems[concept.id] = {
     abilityItemId: concept.id,
@@ -270,14 +299,19 @@ export function updateMemoryProfile(memoryProfile, {
     abilityDomainTitle: concept.abilityDomainTitle || concept.domainTitle || "通用能力",
     state: judge.state,
     confidence: judge.confidence,
+    confidenceLevel: judge.confidenceLevel || "low",
     reasons: judge.reasons,
+    derivedPrinciple: derivedPrinciple || previous?.derivedPrinciple || concept.summary,
     evidenceCount: (previous?.evidenceCount || 0) + 1,
     evidence: [...(previous?.evidence || []).slice(-4), snapshot],
+    recentStrongEvidence,
+    recentConflictingEvidence,
     lastUpdatedAt: snapshot.at,
     lastAssessmentHandle: assessmentHandle,
     remediationMaterials: concept.remediationMaterials || [],
     questionFamily: concept.questionFamily || "",
-    provenanceLabel: concept.provenanceLabel || ""
+    provenanceLabel: concept.provenanceLabel || "",
+    projectedTargets: [...new Set([...(previous?.projectedTargets || []), ...projectedTargets])].slice(0, 6)
   };
 }
 
@@ -353,6 +387,8 @@ export function buildRemediationPlan(concepts, conceptStates) {
     .map(({ concept, state }, index) => ({
       order: index + 1,
       abilityItemId: concept.id,
+      abilityDomainId: concept.abilityDomainId || concept.domainId || "",
+      domainId: concept.abilityDomainId || concept.domainId || "",
       title: concept.title,
       state,
       recommendation:

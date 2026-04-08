@@ -14,9 +14,5 @@ export function detectControlIntent(answer) {
     return "teach";
   }
 
-  if (["总结一下", "先总结", "summarize"].map((item) => item.toLowerCase()).includes(normalized)) {
-    return "summarize";
-  }
-
   return null;
 }
