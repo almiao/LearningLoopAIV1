@@ -5,3 +5,5 @@
 .env
 .env.local
 .env.*
+/frontend/node_modules/
+/frontend/.next/
