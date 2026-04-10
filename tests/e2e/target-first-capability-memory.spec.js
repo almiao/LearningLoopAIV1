@@ -14,7 +14,9 @@ test("target-first capability-memory flow supports flagship session and conserva
   });
 
   assert.equal(flagship.targetBaseline.title, "大厂 Java 后端面试包");
-  assert.match(flagship.currentProbe, /字节|美团|阿里|滴滴|系统生成/);
+  assert.doesNotMatch(flagship.currentProbe, /这是某位候选人|系统生成诊断题/);
+  assert.equal(flagship.currentQuestionMeta?.type, "provenance-backed");
+  assert.match(flagship.currentQuestionMeta?.label || "", /面经原题/);
 
   const updated = await service.answer({
     sessionId: flagship.sessionId,

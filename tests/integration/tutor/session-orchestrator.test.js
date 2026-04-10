@@ -289,3 +289,105 @@ test("deferred units can be revisited after the primary pass completes", async (
 
   assert.match(session.currentProbe, /回到刚才先放下的这个点/);
 });
+
+test("candidate follow-up is hidden when orchestration switches to a new concept", async () => {
+  const source = parseDocumentInput({
+    title: "Mini Source",
+    content: `${javaCollectionsDocument}\n\n${javaCollectionsDocument}`
+  });
+
+  const customIntelligence = {
+    async decomposeSource() {
+      return {
+        summary: {
+          sourceTitle: "Mini Source",
+          keyThemes: ["A", "B", "C"],
+          framing: "mini"
+        },
+        concepts: [
+          {
+            id: "a",
+            title: "A",
+            summary: "A summary",
+            excerpt: "A excerpt",
+            diagnosticQuestion: "Question A?",
+            retryQuestion: "Retry A?",
+            stretchQuestion: "Stretch A?",
+            checkQuestion: "Check A?",
+            keywords: [],
+            sourceAnchors: ["A excerpt"],
+            misconception: "",
+            importance: "core",
+            coverage: "medium"
+          },
+          {
+            id: "b",
+            title: "B",
+            summary: "B summary",
+            excerpt: "B excerpt",
+            diagnosticQuestion: "Question B?",
+            retryQuestion: "Retry B?",
+            stretchQuestion: "Stretch B?",
+            checkQuestion: "Check B?",
+            keywords: [],
+            sourceAnchors: ["B excerpt"],
+            misconception: "",
+            importance: "secondary",
+            coverage: "medium"
+          },
+          {
+            id: "c",
+            title: "C",
+            summary: "C summary",
+            excerpt: "C excerpt",
+            diagnosticQuestion: "Question C?",
+            retryQuestion: "Retry C?",
+            stretchQuestion: "Stretch C?",
+            checkQuestion: "Check C?",
+            keywords: [],
+            sourceAnchors: ["C excerpt"],
+            misconception: "",
+            importance: "secondary",
+            coverage: "medium"
+          }
+        ]
+      };
+    },
+    async generateTutorMove() {
+      return {
+        moveType: "deepen",
+        signal: "positive",
+        judge: {
+          state: "solid",
+          confidence: 0.85,
+          reasons: ["enough"]
+        },
+        visibleReply: "这个点的主干你已经说到了。",
+        evidenceReference: "A excerpt",
+        teachingChunk: "",
+        nextQuestion: "如果继续留在这一题，我会追问这个细节？",
+        takeaway: "A summary",
+        confirmedUnderstanding: "你已经抓到 A 的主干。",
+        remainingGap: "",
+        revisitReason: "",
+        completeCurrentUnit: false,
+        requiresResponse: true
+      };
+    }
+  };
+
+  const session = await createSession({ source, intelligence: customIntelligence });
+  const updated = await answerSession(session, {
+    answer: "Answer A",
+    burdenSignal: "normal",
+    intelligence: customIntelligence
+  });
+
+  assert.equal(updated.currentConceptId, "b");
+  assert.equal(updated.currentProbe, "Question B?");
+  assert.equal(updated.latestFeedback.action, "deepen");
+  assert.equal(updated.latestFeedback.candidateCoachingStep, "如果继续留在这一题，我会追问这个细节？");
+  assert.equal(updated.latestFeedback.coachingStep, "");
+  assert.equal(updated.latestFeedback.turnResolution.mode, "switch");
+  assert.equal(updated.latestFeedback.nextMove, null);
+});

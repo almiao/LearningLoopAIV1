@@ -60,6 +60,117 @@ export function normalizeInfoGainLevel(level, fallback = "medium") {
   return allowedInfoGainLevels.has(level) ? level : fallback;
 }
 
+function normalizeHypothesis(entry, index) {
+  return {
+    id: typeof entry?.id === "string" && entry.id.trim() ? entry.id : `hypothesis-${index + 1}`,
+    status: ["supported", "unsupported", "contradicted", "unknown"].includes(entry?.status)
+      ? entry.status
+      : "unknown",
+    confidence_level: normalizeConfidenceLevel(entry?.confidence_level, "low"),
+    evidence_refs: Array.isArray(entry?.evidence_refs) ? entry.evidence_refs.filter(Boolean).slice(0, 4) : [],
+    note: typeof entry?.note === "string" ? entry.note : ""
+  };
+}
+
+function normalizeMisunderstanding(entry, index) {
+  return {
+    label:
+      typeof entry?.label === "string" && entry.label.trim()
+        ? entry.label
+        : `misunderstanding-${index + 1}`,
+    confidence_level: normalizeConfidenceLevel(entry?.confidence_level, "low"),
+    evidence_refs: Array.isArray(entry?.evidence_refs) ? entry.evidence_refs.filter(Boolean).slice(0, 4) : []
+  };
+}
+
+export function mergeRuntimeMaps(previousMap = null, nextMap = null, expectedAnchorId = "") {
+  if (!previousMap) {
+    return nextMap;
+  }
+  if (!nextMap) {
+    return previousMap;
+  }
+
+  const anchorId = nextMap.anchor_id || previousMap.anchor_id || expectedAnchorId;
+  const hypothesisMap = new Map();
+  for (const [index, entry] of (previousMap.hypotheses || []).entries()) {
+    const normalized = normalizeHypothesis(entry, index);
+    hypothesisMap.set(normalized.id, normalized);
+  }
+  for (const [index, entry] of (nextMap.hypotheses || []).entries()) {
+    const normalized = normalizeHypothesis(entry, index);
+    hypothesisMap.set(normalized.id, normalized);
+  }
+
+  const misunderstandingMap = new Map();
+  for (const [index, entry] of [...(previousMap.misunderstandings || []), ...(nextMap.misunderstandings || [])].entries()) {
+    const normalized = normalizeMisunderstanding(entry, index);
+    misunderstandingMap.set(normalized.label, normalized);
+  }
+
+  const verificationTargets = [];
+  const verificationKeys = new Set();
+  for (const entry of [...(previousMap.verification_targets || []), ...(nextMap.verification_targets || [])]) {
+    const key = `${entry?.id || ""}:${entry?.question || ""}`;
+    if (!key.trim() || verificationKeys.has(key)) {
+      continue;
+    }
+    verificationKeys.add(key);
+    verificationTargets.push(entry);
+  }
+
+  return {
+    anchor_id: anchorId,
+    turn_signal: nextMap.turn_signal || previousMap.turn_signal || "noise",
+    anchor_assessment: nextMap.anchor_assessment || previousMap.anchor_assessment,
+    hypotheses: [...hypothesisMap.values()].slice(0, 6),
+    misunderstandings: [...misunderstandingMap.values()].slice(0, 4),
+    open_questions: [...new Set([...(previousMap.open_questions || []), ...(nextMap.open_questions || [])])].slice(0, 4),
+    verification_targets: verificationTargets.slice(0, 4),
+    info_gain_level: normalizeInfoGainLevel(nextMap.info_gain_level || previousMap.info_gain_level, "medium")
+  };
+}
+
+export function buildControlVerdict({
+  envelope,
+  contextPacket,
+  scopeType = "pack"
+}) {
+  const nextMove = envelope.next_move || {};
+  const reply = envelope.reply || {};
+  const runtimeMap = envelope.runtime_map || {};
+  const stopConditions = contextPacket.stop_conditions || {};
+  const budget = contextPacket.budget || {};
+
+  let shouldStop = false;
+  let reason = "continue";
+  if (["advance", "stop", "revisit"].includes(nextMove.ui_mode) || reply.requires_response === false) {
+    shouldStop = true;
+    reason = "next_move_requests_stop";
+  } else if (runtimeMap.info_gain_level === "negligible") {
+    reason = "low_information_gain";
+  } else if (stopConditions.probe_budget_reached) {
+    reason = "probe_budget_reached";
+  } else if (stopConditions.friction_high) {
+    reason = "high_friction";
+  }
+
+  if (scopeType === "concept" && nextMove.ui_mode === "advance") {
+    reason = "concept_scope_guard";
+  }
+
+  return {
+    should_stop: shouldStop,
+    reason,
+    confidence_level: runtimeMap.anchor_assessment?.confidence_level || "low",
+    scope_type: scopeType,
+    budget_snapshot: {
+      remaining_probe_turns: budget.remaining_probe_turns ?? null,
+      remaining_teach_turns: budget.remaining_teach_turns ?? null
+    }
+  };
+}
+
 function validateRuntimeMap(runtimeMap, expectedAnchorId) {
   assert(runtimeMap && typeof runtimeMap === "object", "Turn envelope runtime_map is required.");
   assert(runtimeMap.anchor_id === expectedAnchorId, "Turn envelope runtime_map anchor_id mismatch.");

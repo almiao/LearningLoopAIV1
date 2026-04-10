@@ -2,8 +2,11 @@ import { escapeHtml } from "./render-utils.js";
 import { buildWorkspaceHash, parseWorkspaceHash } from "./workspace-route.js";
 
 const memoryProfileStorageKey = "learning-loop-memory-profile-id";
+const userIdStorageKey = "learning-loop-user-id";
 
 const state = {
+  user: null,
+  profile: null,
   session: null,
   baselines: [],
   selectedDomainId: "",
@@ -13,7 +16,20 @@ const state = {
 };
 
 const elements = {
+  authForm: document.querySelector("#auth-form"),
+  authGuest: document.querySelector("#auth-guest"),
+  authUser: document.querySelector("#auth-user"),
+  authHandle: document.querySelector("#auth-handle"),
+  authPin: document.querySelector("#auth-pin"),
+  profileHandle: document.querySelector("#profile-handle"),
+  profileCopy: document.querySelector("#profile-copy"),
+  profileSummary: document.querySelector("#profile-summary"),
+  profileTargets: document.querySelector("#profile-targets"),
+  profileTargetsEmpty: document.querySelector("#profile-targets-empty"),
+  refreshProfile: document.querySelector("#refresh-profile"),
+  signOut: document.querySelector("#sign-out"),
   targetForm: document.querySelector("#target-form"),
+  targetFormNote: document.querySelector("#target-form-note"),
   targetBaseline: document.querySelector("#target-baseline"),
   entryMode: document.querySelector("#entry-mode"),
   answerForm: document.querySelector("#answer-form"),
@@ -42,6 +58,8 @@ const elements = {
   turnHistory: document.querySelector("#turn-history"),
   latestFeedback: document.querySelector("#latest-feedback"),
   latestMemoryEvents: document.querySelector("#latest-memory-events"),
+  runtimeMapPanel: document.querySelector("#runtime-map-panel"),
+  runtimeMapContent: document.querySelector("#runtime-map-content"),
   masteryEmpty: document.querySelector("#mastery-empty"),
   masteryMap: document.querySelector("#mastery-map"),
   abilityDomains: document.querySelector("#ability-domains"),
@@ -75,6 +93,26 @@ function setMemoryProfileId(memoryProfileId) {
   }
 }
 
+function getUserId() {
+  return window.localStorage.getItem(userIdStorageKey) || "";
+}
+
+function setUserId(userId) {
+  if (userId) {
+    window.localStorage.setItem(userIdStorageKey, userId);
+  }
+}
+
+function clearUserState() {
+  window.localStorage.removeItem(userIdStorageKey);
+  window.localStorage.removeItem(memoryProfileStorageKey);
+  state.user = null;
+  state.profile = null;
+  state.session = null;
+  state.selectedDomainId = "";
+  state.selectedConceptId = "";
+}
+
 function renderMultilineText(value) {
   return String(value || "")
     .split(/\n{2,}/)
@@ -82,6 +120,78 @@ function renderMultilineText(value) {
     .filter(Boolean)
     .map((block) => `<p>${escapeHtml(block).replace(/\n/g, "<br />")}</p>`)
     .join("");
+}
+
+function renderInlineList(items = []) {
+  return items
+    .filter(Boolean)
+    .map((item) => `<span class="inline-chip">${escapeHtml(item)}</span>`)
+    .join("");
+}
+
+function renderQuestionSource(questionMeta = null) {
+  if (!questionMeta || questionMeta.type !== "provenance-backed" || !questionMeta.label) {
+    return "";
+  }
+
+  const companyPrefix = questionMeta.company ? `${questionMeta.company} · ` : "";
+  return `<span class="question-source-link" title="${escapeHtml(questionMeta.label)}">面经来源：${escapeHtml(companyPrefix + questionMeta.label)}</span>`;
+}
+
+function renderQuestionText(content, questionMeta = null) {
+  const source = renderQuestionSource(questionMeta);
+  if (!source) {
+    return escapeHtml(content || "");
+  }
+
+  return `${escapeHtml(content || "")} ${source}`;
+}
+
+function summarizeTurnResolution(turnResolution = null) {
+  if (!turnResolution) {
+    return "";
+  }
+  if (turnResolution.mode === "stay") {
+    return "继续围绕当前点推进";
+  }
+  if (turnResolution.mode === "switch") {
+    return `切到下一个点：${turnResolution.finalConceptTitle || "下一题"}`;
+  }
+  if (turnResolution.mode === "stop") {
+    return "这一轮先收口";
+  }
+  return "";
+}
+
+function formatInfoGainLabel(level = "") {
+  if (level === "high") {
+    return "信息增量高";
+  }
+  if (level === "medium") {
+    return "信息增量中";
+  }
+  if (level === "low") {
+    return "信息增量低";
+  }
+  if (level === "negligible") {
+    return "信息增量接近耗尽";
+  }
+
+  return "";
+}
+
+function summarizeWritebackMode(mode = "") {
+  if (mode === "update") {
+    return "更新长期记忆";
+  }
+  if (mode === "append_conflict") {
+    return "追加冲突证据";
+  }
+  if (mode === "noop") {
+    return "暂不写回";
+  }
+
+  return "";
 }
 
 function applyRouteToState(route) {
@@ -122,6 +232,117 @@ function renderBaselines(baselines) {
         `<option value="${baseline.id}">${baseline.title}${baseline.flagship ? "（Flagship）" : ""}</option>`
     )
     .join("");
+}
+
+function updateTargetAccessState() {
+  const loggedIn = Boolean(state.user?.id);
+  const submitButton = elements.targetForm?.querySelector('button[type="submit"]');
+  if (submitButton) {
+    submitButton.disabled = !loggedIn;
+  }
+  if (elements.targetFormNote) {
+    elements.targetFormNote.textContent = loggedIn
+      ? "当前目标会自动写入你的学习档案，并沿用同一份长期记忆。"
+      : "请先登录，目标、记忆和测评进展才会绑定到你的档案。";
+  }
+}
+
+function renderProfileSummary(summary = {}) {
+  const cards = [
+    { label: "目标数", value: summary.totalTargets ?? 0 },
+    { label: "累计会话", value: summary.sessionsStarted ?? 0 },
+    { label: "已评估能力项", value: summary.assessedAbilityItems ?? 0 },
+    { label: "Solid", value: summary.solidItems ?? 0 },
+    { label: "Partial", value: summary.partialItems ?? 0 },
+    { label: "Weak", value: summary.weakItems ?? 0 }
+  ];
+
+  elements.profileSummary.innerHTML = cards
+    .map(
+      (card) => `<article class="profile-summary-card">
+        <div class="mini-label">${escapeHtml(card.label)}</div>
+        <strong>${escapeHtml(String(card.value))}</strong>
+      </article>`
+    )
+    .join("");
+}
+
+function renderProfileTargets(targets = []) {
+  if (!targets.length) {
+    elements.profileTargetsEmpty.classList.remove("hidden");
+    elements.profileTargets.innerHTML = "";
+    return;
+  }
+
+  elements.profileTargetsEmpty.classList.add("hidden");
+  elements.profileTargets.innerHTML = targets
+    .map(
+      (target) => `<article class="profile-target-card">
+        <div class="match-strip">
+          <div>
+            <div class="mini-label">目标</div>
+            <h3>${escapeHtml(target.title)}</h3>
+            <p class="muted-copy">${escapeHtml(target.targetRole || "")}</p>
+          </div>
+          <div class="match-card compact-match-card">
+            <div class="mini-label">完成度</div>
+            <div class="match-row">
+              <strong>${escapeHtml(String(target.completionPercentage || 0))}%</strong>
+              <span class="state-chip">${escapeHtml(target.completionLabel || "进行中")}</span>
+            </div>
+            <p class="muted-copy">已评估 ${escapeHtml(String(target.assessedItemCount || 0))} / ${escapeHtml(String(target.totalItemCount || 0))} 个能力项</p>
+            <p class="muted-copy">已启动 ${escapeHtml(String(target.sessionsStarted || 0))} 次</p>
+          </div>
+        </div>
+        <div class="profile-domain-list">
+          ${(target.domains || [])
+            .map(
+              (domain) => `<section class="profile-domain-card">
+                <div class="match-row">
+                  <strong>${escapeHtml(domain.title)}</strong>
+                  <span class="state-chip">${escapeHtml(String(domain.progressPercentage || 0))}%</span>
+                </div>
+                <small class="muted-copy">已评估 ${escapeHtml(String(domain.assessedItemCount || 0))} / ${escapeHtml(String(domain.totalItemCount || 0))}</small>
+                <ul class="profile-item-list">
+                  ${(domain.items || [])
+                    .map(
+                      (item) => `<li>
+                        <strong>${escapeHtml(item.title)}</strong>
+                        <span class="state-chip">${escapeHtml(item.state || "不可判")}</span>
+                        <small>${escapeHtml(String(item.progressPercentage || 0))}% · ${escapeHtml(String(item.evidenceCount || 0))} 条证据</small>
+                      </li>`
+                    )
+                    .join("")}
+                </ul>
+              </section>`
+            )
+            .join("")}
+        </div>
+      </article>`
+    )
+    .join("");
+}
+
+function renderAuthState() {
+  const loggedIn = Boolean(state.user?.id);
+  elements.authGuest.classList.toggle("hidden", loggedIn);
+  elements.authUser.classList.toggle("hidden", !loggedIn);
+  updateTargetAccessState();
+
+  if (!loggedIn) {
+    elements.profileHandle.textContent = "";
+    elements.profileCopy.textContent = "";
+    elements.profileSummary.innerHTML = "";
+    elements.profileTargets.innerHTML = "";
+    elements.profileTargetsEmpty.classList.remove("hidden");
+    elements.workspaceShell.classList.add("hidden");
+    return;
+  }
+
+  elements.profileHandle.textContent = state.user.handle;
+  elements.profileCopy.textContent = `学习档案已绑定，目标、记忆和测评结果都会沿用同一份长期记录。`;
+  renderProfileSummary(state.profile?.summary || {});
+  renderProfileTargets(state.profile?.targets || []);
 }
 
 function renderTargetMatch(targetMatch) {
@@ -339,6 +560,103 @@ function renderMemoryEvents(events) {
     .join("");
 }
 
+function renderRuntimeMap(session, latestFeedback = null) {
+  const runtimeMap = latestFeedback?.runtimeMap || session.currentRuntimeMap;
+  const nextMove = latestFeedback?.nextMove || null;
+  const writebackSuggestion = latestFeedback?.writebackSuggestion || null;
+  const currentMemoryAnchor = session.currentMemoryAnchor || null;
+
+  if (!runtimeMap) {
+    elements.runtimeMapPanel.classList.add("hidden");
+    elements.runtimeMapContent.innerHTML = "";
+    return;
+  }
+
+  const hypothesisChips = renderInlineList(
+    (runtimeMap.hypotheses || [])
+      .filter((item) => item.status === "supported" || item.status === "contradicted")
+      .map((item) => item.note || item.label || item.id)
+  );
+  const misunderstandingChips = renderInlineList(
+    (runtimeMap.misunderstandings || []).map((item) => item.label || item.note || "")
+  );
+  const openQuestions = (runtimeMap.open_questions || [])
+    .map((question) => `<li>${escapeHtml(question)}</li>`)
+    .join("");
+
+  elements.runtimeMapPanel.classList.remove("hidden");
+  elements.runtimeMapContent.innerHTML = `
+    <div class="feedback-meta">
+      <span class="state-chip">${escapeHtml(runtimeMap.anchor_assessment?.state || "不可判")}</span>
+      <span class="muted-copy">置信等级：${escapeHtml(runtimeMap.anchor_assessment?.confidence_level || "low")}</span>
+      ${
+        runtimeMap.info_gain_level
+          ? `<span class="muted-copy">${escapeHtml(formatInfoGainLabel(runtimeMap.info_gain_level))}</span>`
+          : ""
+      }
+    </div>
+    ${
+      runtimeMap.anchor_assessment?.reasons?.length
+        ? runtimeMap.anchor_assessment.reasons.map((reason) => `<div>${escapeHtml(reason)}</div>`).join("")
+        : ""
+    }
+    ${hypothesisChips ? `<div class="insight-row"><strong>已确认</strong>${hypothesisChips}</div>` : ""}
+    ${misunderstandingChips ? `<div class="insight-row"><strong>当前误区</strong>${misunderstandingChips}</div>` : ""}
+    ${
+      openQuestions
+        ? `<details class="analysis-details"><summary>还要继续验证什么</summary><ul>${openQuestions}</ul></details>`
+        : ""
+    }
+    ${
+      nextMove
+        ? `<div class="callout subtle-callout">
+            <span class="tag">下一步动作</span>
+            <div><strong>${escapeHtml(nextMove.intent || "")}</strong></div>
+            <small class="muted-copy">${escapeHtml(nextMove.reason || "")}</small>
+          </div>`
+        : ""
+    }
+    ${
+      writebackSuggestion
+        ? `<div class="callout subtle-callout">
+            <span class="tag">长期记忆写回</span>
+            <div>${
+              writebackSuggestion.should_write
+                ? `这轮会尝试${escapeHtml(summarizeWritebackMode(writebackSuggestion.mode))}`
+                : "这轮先不写回长期记忆"
+            }</div>
+            ${
+              writebackSuggestion.anchorPatch?.derivedPrinciple || writebackSuggestion.anchor_patch?.derived_principle
+                ? `<small class="muted-copy">${escapeHtml(
+                    writebackSuggestion.anchorPatch?.derivedPrinciple ||
+                      writebackSuggestion.anchor_patch?.derived_principle
+                  )}</small>`
+                : ""
+            }
+          </div>`
+        : currentMemoryAnchor?.derivedPrinciple
+          ? `<div class="callout subtle-callout">
+              <span class="tag">当前长期记忆摘要</span>
+              <small class="muted-copy">${escapeHtml(currentMemoryAnchor.derivedPrinciple)}</small>
+            </div>`
+          : ""
+    }
+    ${
+      latestFeedback?.controlVerdict
+        ? `<div class="callout subtle-callout">
+            <span class="tag">控制层裁决</span>
+            <div>${
+              latestFeedback.controlVerdict.should_stop
+                ? "这一轮已经满足收口条件。"
+                : "这一轮仍允许继续推进。"
+            }</div>
+            <small class="muted-copy">原因：${escapeHtml(latestFeedback.controlVerdict.reason || "continue")}</small>
+          </div>`
+        : ""
+    }
+  `;
+}
+
 function renderSession(session, latestFeedback = null) {
   state.session = session;
   if (state.selectedConceptId && !(session.concepts || []).some((concept) => concept.id === state.selectedConceptId)) {
@@ -360,7 +678,7 @@ function renderSession(session, latestFeedback = null) {
 
   elements.sourceTitle.textContent = session.targetBaseline?.title || session.source.title;
   elements.sourceFraming.textContent = session.summary.framing;
-  elements.currentProbe.textContent = session.currentProbe;
+  elements.currentProbe.innerHTML = renderQuestionText(session.currentProbe, session.currentQuestionMeta);
   renderTargetMatch(session.targetMatch);
   renderOverviewDomains(session.summary.overviewDomains || []);
   renderSelectedDomainContext(session);
@@ -368,6 +686,7 @@ function renderSession(session, latestFeedback = null) {
   renderConceptList(session);
   renderTurnHistory(session.turns || []);
   renderMemoryEvents(session.latestMemoryEvents || session.memoryEvents || []);
+  renderRuntimeMap(session, latestFeedback);
   renderMasteryMap(session.masteryMap || [], state.selectedDomainId);
   renderAbilityDomains(session.abilityDomains || [], state.selectedDomainId);
   renderNextSteps(session.nextSteps || [], state.selectedDomainId, session.concepts || []);
@@ -390,18 +709,46 @@ function renderSession(session, latestFeedback = null) {
       latestFeedback.takeaway ? `带走一句话：${latestFeedback.takeaway}` : ""
     ].filter(Boolean);
     elements.latestFeedback.innerHTML = `
-      <strong>本次判断更新 · ${escapeHtml(latestFeedback.conceptTitle)}</strong>
+      <strong>本轮判断与记忆更新 · ${escapeHtml(latestFeedback.conceptTitle)}</strong>
       <div class="feedback-meta">
         <span class="state-chip">${escapeHtml(latestFeedback.judge.state)}</span>
+        ${
+          latestFeedback.judge.confidenceLevel
+            ? `<span class="muted-copy">置信等级：${escapeHtml(latestFeedback.judge.confidenceLevel)}</span>`
+            : ""
+        }
         ${latestFeedback.evidenceReference ? `<span class="muted-copy">依据：${escapeHtml(latestFeedback.evidenceReference)}</span>` : ""}
       </div>
       ${summaryBits.length ? summaryBits.map((item) => `<div>${escapeHtml(item)}</div>`).join("") : ""}
+      ${
+        latestFeedback.nextMove?.intent
+          ? `<div><strong>系统下一步：</strong>${escapeHtml(latestFeedback.nextMove.intent)}</div>`
+          : ""
+      }
+      ${
+        latestFeedback.writebackSuggestion
+          ? `<div class="muted-copy">记忆处理：${
+              latestFeedback.writebackSuggestion.should_write
+                ? escapeHtml(summarizeWritebackMode(latestFeedback.writebackSuggestion.mode))
+                : "暂不写回长期记忆"
+            }</div>`
+          : ""
+      }
+      ${
+        latestFeedback.memoryAnchor?.derivedPrinciple
+          ? `<div class="muted-copy">当前长期记忆：${escapeHtml(latestFeedback.memoryAnchor.derivedPrinciple)}</div>`
+          : ""
+      }
+      ${latestFeedback.turnResolution ? `<div class="muted-copy">流程决策：${escapeHtml(summarizeTurnResolution(latestFeedback.turnResolution))}</div>` : ""}
       ${
         latestFeedback.coachingStep
           ? `<div><strong>下一步：</strong>${escapeHtml(latestFeedback.coachingStep)}</div>`
           : ""
       }
     `;
+  } else {
+    elements.latestFeedback.classList.add("hidden");
+    elements.latestFeedback.innerHTML = "";
   }
 }
 
@@ -416,9 +763,37 @@ function renderTurnHistory(turns) {
             `<a class="guide-link" href="${encodeURI(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.title)}</a>`
         )
         .join("");
+      const turnInsights = [];
+      if (turn.runtimeMap?.anchor_assessment?.reasons?.length) {
+        turnInsights.push(
+          `<div><strong>判断：</strong>${escapeHtml(turn.runtimeMap.anchor_assessment.reasons.join("；"))}</div>`
+        );
+      }
+      if (turn.nextMove?.intent) {
+        turnInsights.push(`<div><strong>下一步动作：</strong>${escapeHtml(turn.nextMove.intent)}</div>`);
+      }
+      if (turn.writebackSuggestion) {
+        turnInsights.push(
+          `<div><strong>记忆写回：</strong>${
+            turn.writebackSuggestion.should_write
+              ? escapeHtml(summarizeWritebackMode(turn.writebackSuggestion.mode))
+              : "暂不写回长期记忆"
+          }</div>`
+        );
+      }
+      if (turn.controlVerdict?.reason) {
+        turnInsights.push(
+          `<div><strong>控制层裁决：</strong>${escapeHtml(turn.controlVerdict.reason)}</div>`
+        );
+      }
+      if (turn.turnResolution?.mode) {
+        turnInsights.push(
+          `<div><strong>最终流程：</strong>${escapeHtml(summarizeTurnResolution(turn.turnResolution))}</div>`
+        );
+      }
       return `<article class="turn-card ${turn.role}">
         <div class="turn-meta">${escapeHtml(meta)}</div>
-        <div>${escapeHtml(turn.content)}</div>
+        <div>${renderQuestionText(turn.content, turn.questionMeta)}</div>
         ${
           (turn.teachingParagraphs?.length || turn.teachingChunk)
             ? `<div class="turn-detail"><strong>学习讲解：</strong>${
@@ -430,6 +805,11 @@ function renderTurnHistory(turns) {
         }
         ${turn.coachingStep ? `<div class="turn-detail"><strong>下一步：</strong>${escapeHtml(turn.coachingStep)}</div>` : ""}
         ${turn.evidenceReference ? `<div class="turn-detail muted-copy">依据：${escapeHtml(turn.evidenceReference)}</div>` : ""}
+        ${
+          turnInsights.length
+            ? `<details class="analysis-details"><summary>这一轮系统判断</summary>${turnInsights.join("")}</details>`
+            : ""
+        }
         ${learningSources ? `<div class="guide-link-row"><span class="muted-copy">推荐资料：</span>${learningSources}</div>` : ""}
       </article>`;
     })
@@ -592,6 +972,30 @@ async function fetchJson(url) {
   return data;
 }
 
+async function refreshProfile() {
+  if (!state.user?.id) {
+    return;
+  }
+
+  const profile = await fetchJson(`/api/profile/${state.user.id}`);
+  state.user = profile.user;
+  state.profile = profile;
+  setMemoryProfileId(profile.user.memoryProfileId);
+  renderAuthState();
+}
+
+async function login(handle, pin) {
+  const payload = await postJson("/api/auth/login", {
+    handle,
+    pin
+  });
+  state.user = payload.profile.user;
+  state.profile = payload.profile;
+  setUserId(payload.profile.user.id);
+  setMemoryProfileId(payload.profile.user.memoryProfileId);
+  renderAuthState();
+}
+
 async function submitAnswerWithIntent(intent) {
   if (!state.session) {
     return;
@@ -638,6 +1042,31 @@ elements.quickActionButtons.forEach((button) => {
       window.alert(error.message);
     }
   });
+});
+
+elements.authForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const formData = new FormData(elements.authForm);
+  try {
+    await login(formData.get("handle"), formData.get("pin"));
+    elements.authForm.reset();
+  } catch (error) {
+    window.alert(error.message);
+  }
+});
+
+elements.refreshProfile?.addEventListener("click", async () => {
+  try {
+    await refreshProfile();
+  } catch (error) {
+    window.alert(error.message);
+  }
+});
+
+elements.signOut?.addEventListener("click", () => {
+  clearUserState();
+  renderAuthState();
+  renderPageShell();
 });
 
 elements.startBaselineAssessment?.addEventListener("click", () => {
@@ -752,6 +1181,10 @@ window.addEventListener("hashchange", async () => {
 
 elements.targetForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!state.user?.id) {
+    window.alert("请先登录，再开始目标诊断。");
+    return;
+  }
   const formData = new FormData(elements.targetForm);
   state.entryMode = String(formData.get("entryMode") || "test-first");
   state.selectedDomainId = "";
@@ -760,9 +1193,11 @@ elements.targetForm.addEventListener("submit", async (event) => {
     const session = await postJson("/api/session/start-target", {
       targetBaselineId: formData.get("targetBaselineId"),
       interactionPreference: formData.get("interactionPreference"),
-      memoryProfileId: getMemoryProfileId()
+      memoryProfileId: getMemoryProfileId(),
+      userId: state.user.id
     });
     setMemoryProfileId(session.memoryProfileId);
+    await refreshProfile();
     state.currentPage = "overview";
     renderSession(session);
   } catch (error) {
@@ -786,6 +1221,7 @@ elements.answerForm.addEventListener("submit", async (event) => {
     });
     elements.answerForm.reset();
     renderSession(session, session.latestFeedback);
+    await refreshProfile();
     const answerPreference = elements.answerForm.querySelector('[name="interactionPreference"]');
     if (answerPreference) {
       answerPreference.value = session.interactionPreference || "balanced";
@@ -800,6 +1236,20 @@ async function bootstrap() {
     applyRouteToState(parseWorkspaceHash(window.location.hash));
     const data = await fetchJson("/api/baselines");
     renderBaselines(data.baselines || []);
+    updateTargetAccessState();
+
+    const storedUserId = getUserId();
+    if (storedUserId) {
+      try {
+        const profile = await fetchJson(`/api/profile/${storedUserId}`);
+        state.user = profile.user;
+        state.profile = profile;
+        setMemoryProfileId(profile.user.memoryProfileId);
+      } catch {
+        clearUserState();
+      }
+    }
+    renderAuthState();
 
     const route = parseWorkspaceHash(window.location.hash);
     if (route.sessionId) {

@@ -6,29 +6,20 @@ import { createSession } from "../../../src/tutor/session-orchestrator.js";
 import { parseProviderJsonText } from "../../../src/tutor/tutor-intelligence.js";
 import { javaCollectionsDocument } from "../../fixtures/materials.js";
 
-test("app service fails closed when AI tutor provider is unavailable", async () => {
-  const originalKey = process.env.OPENAI_API_KEY;
-  delete process.env.OPENAI_API_KEY;
-
+test("app service now defaults to heuristic intelligence on the legacy node path", async () => {
   const service = createAppService({
     fetchImpl: async () => {
       throw new Error("fetch should not run");
     }
   });
 
-  await assert.rejects(
-    () =>
-      service.analyzeSource({
-        type: "document",
-        title: "Java Collections",
-        content: javaCollectionsDocument
-      }),
-    /OPENAI_API_KEY is required/i
-  );
+  const session = await service.analyzeSource({
+    type: "document",
+    title: "Java Collections",
+    content: javaCollectionsDocument
+  });
 
-  if (originalKey) {
-    process.env.OPENAI_API_KEY = originalKey;
-  }
+  assert.ok(session.currentProbe.length > 0);
 });
 
 test("session creation rejects invalid tutor intelligence output", async () => {

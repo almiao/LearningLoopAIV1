@@ -60,6 +60,7 @@ export function applyWritebackSuggestion(memoryProfile, {
   evidencePoint,
   explanation,
   runtimeMap,
+  projectedTargets = [],
   timestamp = Date.now()
 }) {
   if (!memoryProfile || !concept || !suggestion) {
@@ -103,13 +104,19 @@ export function applyWritebackSuggestion(memoryProfile, {
       concept.summary,
     evidenceCount: (previous?.evidenceCount || 0) + 1,
     evidence: [...(previous?.evidence || []).slice(-3), snapshot],
+    recentStrongEvidence:
+      runtimeMap?.turn_signal === "positive" || nextState === "solid"
+        ? [...(previous?.recentStrongEvidence || []).slice(-2), snapshot]
+        : previous?.recentStrongEvidence || [],
+    recentConflictingEvidence: [...(previous?.recentConflictingEvidence || []).slice(-2)],
     conflictingEvidence: [...(previous?.conflictingEvidence || [])],
     lastUpdatedAt: snapshot.at,
     lastAssessmentHandle: evidencePoint.assessmentHandle || "",
     remediationMaterials: concept.remediationMaterials || [],
     questionFamily: concept.questionFamily || "",
     provenanceLabel: concept.provenanceLabel || "",
-    sourceFamilies: clonePlain(concept.javaGuideSources || [])
+    sourceFamilies: clonePlain(concept.javaGuideSources || []),
+    projectedTargets: [...new Set([...(previous?.projectedTargets || []), ...projectedTargets])].slice(0, 6)
   };
 
   if (
@@ -117,6 +124,10 @@ export function applyWritebackSuggestion(memoryProfile, {
     rank(nextState) < rank(previous.state || "weak") &&
     (suggestion.mode === "append_conflict" || runtimeMap?.turn_signal === "negative")
   ) {
+    baseRecord.recentConflictingEvidence = [
+      ...(previous?.recentConflictingEvidence || []).slice(-2),
+      snapshot
+    ];
     baseRecord.conflictingEvidence = [
       ...(previous?.conflictingEvidence || []).slice(-2),
       snapshot
@@ -132,4 +143,3 @@ export function applyWritebackSuggestion(memoryProfile, {
     confidenceLevel: nextConfidenceLevel
   };
 }
-

@@ -2,3 +2,6 @@
 
 .omx/
 .codex/
+.env
+.env.local
+.env.*

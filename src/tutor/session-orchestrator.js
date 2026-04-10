@@ -12,7 +12,7 @@ import {
   buildAssessmentHandle
 } from "./capability-memory.js";
 import { detectControlIntent } from "./control-intents.js";
-import { buildContextPacket } from "./context-packet.js";
+import { buildAnchorIdentity, buildContextPacket } from "./context-packet.js";
 import { applyWritebackSuggestion } from "./memory-writeback.js";
 import { createInitialProbe, chooseNextConcept } from "./probe-engine.js";
 import { buildNextSteps } from "./next-step-planner.js";
@@ -20,7 +20,9 @@ import { normalizeInteractionPreference } from "./tutor-policy.js";
 import {
   assertConsistentTurnEnvelope,
   assertValidTurnEnvelope,
+  buildControlVerdict,
   createEmptyRuntimeMap,
+  mergeRuntimeMaps,
   scoreToConfidenceLevel,
   turnEnvelopeToTutorMove
 } from "./turn-envelope.js";
@@ -65,6 +67,83 @@ function createConceptStates(concepts) {
       }
     ])
   );
+}
+
+function withProtocolizedConcepts(concepts) {
+  return concepts.map((concept) => ({
+    ...concept,
+    anchorIdentity: concept.anchorIdentity || buildAnchorIdentity(concept)
+  }));
+}
+
+function queuePendingWriteback(session, candidate) {
+  session.pendingWritebacks = session.pendingWritebacks || [];
+  session.pendingWritebacks.push(candidate);
+}
+
+function groomPendingWritebacks(session, { conceptId = "" } = {}) {
+  if (!session.pendingWritebacks?.length || !session.memoryProfile) {
+    return [];
+  }
+
+  const grouped = new Map();
+  for (const candidate of session.pendingWritebacks) {
+    if (conceptId && candidate.concept.id !== conceptId) {
+      continue;
+    }
+    const key = candidate.concept.id;
+    if (!grouped.has(key)) {
+      grouped.set(key, []);
+    }
+    grouped.get(key).push(candidate);
+  }
+
+  const promotedEvents = [];
+  const consumedIds = new Set();
+  for (const candidates of grouped.values()) {
+    const latest = candidates.at(-1);
+    const hasStrongSignal = candidates.some((candidate) =>
+      ["positive", "negative"].includes(candidate.runtimeMap?.turn_signal || "")
+    );
+    if (candidates.length < 2 && !hasStrongSignal) {
+      continue;
+    }
+
+    const result = applyWritebackSuggestion(session.memoryProfile, {
+      ...latest,
+      suggestion: {
+        ...latest.suggestion,
+        should_write: true,
+        mode:
+          latest.suggestion.mode === "noop"
+            ? "update"
+            : latest.suggestion.mode,
+        reason: "session_grooming_promotion"
+      }
+    });
+
+    if (result.applied) {
+      for (const candidate of candidates) {
+        consumedIds.add(candidate.id);
+      }
+      promotedEvents.push({
+        type: "memory_grooming_applied",
+        abilityItemId: latest.concept.id,
+        title: latest.concept.title,
+        summary: `“${latest.concept.title}”的候选证据在本轮整理后升格进长期记忆。`,
+        message: `“${latest.concept.title}”的候选证据在本轮整理后升格进长期记忆。`,
+        assessmentHandle: latest.evidencePoint.assessmentHandle || "",
+        evidenceReference: latest.evidencePoint.evidenceReference || "",
+        timestamp: new Date(latest.timestamp || Date.now()).toISOString()
+      });
+    }
+  }
+
+  if (consumedIds.size) {
+    session.pendingWritebacks = session.pendingWritebacks.filter((candidate) => !consumedIds.has(candidate.id));
+  }
+
+  return promotedEvents;
 }
 
 function buildMasteryMap(session) {
@@ -372,7 +451,8 @@ function createSessionState({
   memoryProfile = null
 }) {
   const resolvedMemoryProfile = memoryProfile || createMemoryProfile();
-  const orderedConcepts = mode === "target" ? prioritizeConcepts(concepts, resolvedMemoryProfile) : concepts;
+  const protocolizedConcepts = withProtocolizedConcepts(concepts);
+  const orderedConcepts = mode === "target" ? prioritizeConcepts(protocolizedConcepts, resolvedMemoryProfile) : protocolizedConcepts;
   const conceptStates = mode === "target" ? createConceptStatesFromMemory(orderedConcepts, resolvedMemoryProfile) : createConceptStates(orderedConcepts);
   const initialConcept = orderedConcepts[0];
   const currentProbe = resolvePromptForConcept({ concept: initialConcept });
@@ -427,6 +507,8 @@ function createSessionState({
     memoryEvents: initialMemoryEvents,
     latestMemoryEvents: initialMemoryEvents,
     runtimeMaps: Object.fromEntries(orderedConcepts.map((concept) => [concept.id, createEmptyRuntimeMap(concept.id)])),
+    pendingWritebacks: [],
+    latestControlVerdict: null,
     turns: [initialQuestion]
   };
 
@@ -462,7 +544,7 @@ export async function createSession({
   });
 }
 
-function buildLatestFeedback({ concept, tutorMove }) {
+function buildLatestFeedback({ concept, tutorMove, controlVerdict = null, memoryAnchor = null }) {
   return {
     conceptId: concept.id,
     conceptTitle: concept.title,
@@ -472,6 +554,7 @@ function buildLatestFeedback({ concept, tutorMove }) {
     gap: tutorMove.remainingGap,
     evidenceReference: tutorMove.evidenceReference,
     coachingStep: tutorMove.nextQuestion,
+    candidateCoachingStep: tutorMove.nextQuestion,
     strength: tutorMove.confirmedUnderstanding,
     takeaway: tutorMove.takeaway,
     teachingChunk: tutorMove.teachingChunk,
@@ -480,9 +563,53 @@ function buildLatestFeedback({ concept, tutorMove }) {
     judge: tutorMove.judge,
     runtimeMap: tutorMove.runtimeMap || null,
     nextMove: tutorMove.nextMove || null,
+    modelNextMove: tutorMove.nextMove || null,
     writebackSuggestion: tutorMove.writebackSuggestion || null,
+    controlVerdict,
+    turnResolution: null,
+    memoryAnchor,
     remediationMaterial: concept.remediationMaterials?.[0] || null,
     learningSources: concept.javaGuideSources || []
+  };
+}
+
+function buildTurnResolution({
+  concept,
+  nextConcept = null,
+  switchedConcept = false,
+  finalPrompt = "",
+  finalQuestionMeta = null,
+  controlVerdict = null
+}) {
+  if (switchedConcept && nextConcept) {
+    return {
+      mode: "switch",
+      reason: "concept_completed",
+      finalPrompt,
+      finalConceptId: nextConcept.id,
+      finalConceptTitle: nextConcept.title,
+      finalQuestionMeta
+    };
+  }
+
+  if (finalPrompt) {
+    return {
+      mode: "stay",
+      reason: controlVerdict?.reason || "continue_on_current_concept",
+      finalPrompt,
+      finalConceptId: concept.id,
+      finalConceptTitle: concept.title,
+      finalQuestionMeta
+    };
+  }
+
+  return {
+    mode: "stop",
+    reason: controlVerdict?.reason || "no_followup_prompt",
+    finalPrompt: "",
+    finalConceptId: concept.id,
+    finalConceptTitle: concept.title,
+    finalQuestionMeta: null
   };
 }
 
@@ -607,11 +734,27 @@ export async function answerSession(
   }
 
   tutorMove.runtimeMap = tutorMove.runtimeMap || decisionEnvelope?.runtime_map || createFallbackRuntimeMap(concept, tutorMove);
+  tutorMove.runtimeMap = mergeRuntimeMaps(
+    session.runtimeMaps?.[concept.id] || null,
+    tutorMove.runtimeMap,
+    concept.id
+  );
   tutorMove.nextMove = tutorMove.nextMove || decisionEnvelope?.next_move || null;
   tutorMove.writebackSuggestion =
     tutorMove.writebackSuggestion ||
     decisionEnvelope?.writeback_suggestion ||
     createFallbackWritebackSuggestion(concept, tutorMove);
+  const controlVerdict = buildControlVerdict({
+    envelope: {
+      runtime_map: tutorMove.runtimeMap,
+      next_move: tutorMove.nextMove || { ui_mode: tutorMove.moveType },
+      reply: {
+        requires_response: tutorMove.requiresResponse
+      }
+    },
+    contextPacket,
+    scopeType: getWorkspaceScope(session).type
+  });
 
   assertValidMove(tutorMove);
 
@@ -660,6 +803,9 @@ export async function answerSession(
     });
   }
 
+  let latestMemoryEvents = [];
+  let latestMemoryAnchor = null;
+
   const shouldCompleteConcept =
     tutorMove.completeCurrentUnit ||
     tutorMove.judge.state === "solid" ||
@@ -671,7 +817,6 @@ export async function answerSession(
     session.conceptStates[concept.id].completed = true;
   }
 
-  let latestMemoryEvents = [];
   if (session.mode === "target") {
     const assessmentHandle = buildAssessmentHandle(session, concept);
     const writebackResult = applyWritebackSuggestion(session.memoryProfile, {
@@ -686,8 +831,26 @@ export async function answerSession(
       },
       explanation: tutorMove.visibleReply,
       runtimeMap: tutorMove.runtimeMap,
+      projectedTargets: session.targetBaseline?.id ? [session.targetBaseline.id] : [],
       timestamp: answerTimestamp
     });
+    if (!writebackResult.applied && tutorMove.writebackSuggestion?.should_write) {
+      queuePendingWriteback(session, {
+        id: `${concept.id}:${assessmentHandle}`,
+        concept,
+        suggestion: tutorMove.writebackSuggestion,
+        evidencePoint: {
+          ...contextPacket.draft_evidence,
+          answer,
+          assessmentHandle,
+          whyJudgedThisWay: tutorMove.judge.reasons?.join("；") || tutorMove.remainingGap || "",
+          evidenceReference: tutorMove.evidenceReference
+        },
+        explanation: tutorMove.visibleReply,
+        runtimeMap: tutorMove.runtimeMap,
+        timestamp: answerTimestamp
+      });
+    }
     if (!writebackResult.applied && !decisionEnvelope) {
       updateMemoryProfile(session.memoryProfile, {
         concept,
@@ -697,6 +860,12 @@ export async function answerSession(
         explanation: tutorMove.visibleReply,
         assessmentHandle,
         evidenceReference: tutorMove.evidenceReference,
+        derivedPrinciple:
+          tutorMove.writebackSuggestion?.anchor_patch?.derived_principle ||
+          tutorMove.writebackSuggestion?.anchorPatch?.derivedPrinciple ||
+          tutorMove.takeaway,
+        projectedTargets: session.targetBaseline?.id ? [session.targetBaseline.id] : [],
+        writebackReason: tutorMove.writebackSuggestion?.reason || "legacy_fallback_writeback",
         timestamp: answerTimestamp
       });
     }
@@ -722,14 +891,35 @@ export async function answerSession(
         timestamp: new Date(answerTimestamp).toISOString()
       });
     }
+    latestMemoryAnchor = session.memoryProfile?.abilityItems?.[concept.id] || null;
     session.memoryEvents.push(...latestMemoryEvents);
     session.memoryEvents = session.memoryEvents.slice(-10);
     session.latestMemoryEvents = latestMemoryEvents;
   }
 
+  if (session.mode === "target" && shouldCompleteConcept) {
+    const groomingEvents = groomPendingWritebacks(session, { conceptId: concept.id });
+    if (groomingEvents.length) {
+      latestMemoryEvents.push(...groomingEvents);
+      latestMemoryAnchor = session.memoryProfile?.abilityItems?.[concept.id] || latestMemoryAnchor;
+      session.memoryEvents.push(...groomingEvents);
+      session.memoryEvents = session.memoryEvents.slice(-10);
+      session.latestMemoryEvents = latestMemoryEvents;
+    }
+  }
+
   const nextUnit = chooseNextUnit(session);
   const nextConcept = nextUnit.concept;
   const switchedConcept = Boolean(nextConcept) && nextConcept.id !== concept.id;
+  if (session.mode === "target" && (!nextConcept || nextUnit.scopeExhausted)) {
+    const remainingGroomingEvents = groomPendingWritebacks(session);
+    if (remainingGroomingEvents.length) {
+      latestMemoryEvents.push(...remainingGroomingEvents);
+      session.memoryEvents.push(...remainingGroomingEvents);
+      session.memoryEvents = session.memoryEvents.slice(-10);
+      session.latestMemoryEvents = latestMemoryEvents;
+    }
+  }
   session.currentConceptId = nextConcept?.id || session.currentConceptId;
   session.currentProbe = nextConcept
     ? switchedConcept
@@ -737,6 +927,16 @@ export async function answerSession(
       : (tutorMove.requiresResponse ? tutorMove.nextQuestion : "")
     : "";
   session.currentQuestionMeta = session.currentProbe && nextConcept ? createQuestionMeta(nextConcept) : null;
+  const turnResolution = buildTurnResolution({
+    concept,
+    nextConcept,
+    switchedConcept,
+    finalPrompt: session.currentProbe,
+    finalQuestionMeta: session.currentQuestionMeta,
+    controlVerdict
+  });
+  const visibleCoachingStep = turnResolution.mode === "stay" ? tutorMove.nextQuestion : "";
+  const visibleNextMove = turnResolution.mode === "stay" ? (tutorMove.nextMove || null) : null;
 
   session.turns.push({
     role: "tutor",
@@ -747,12 +947,19 @@ export async function answerSession(
     content: tutorMove.visibleReply,
     gap: tutorMove.remainingGap,
     evidenceReference: tutorMove.evidenceReference,
-    coachingStep: tutorMove.nextQuestion,
+    coachingStep: visibleCoachingStep,
+    candidateCoachingStep: tutorMove.nextQuestion,
     strength: tutorMove.confirmedUnderstanding,
     takeaway: tutorMove.takeaway,
     teachingChunk: tutorMove.teachingChunk,
     teachingParagraphs: tutorMove.teachingParagraphs || [],
     learningSources: concept.javaGuideSources || [],
+    runtimeMap: tutorMove.runtimeMap || null,
+    nextMove: visibleNextMove,
+    modelNextMove: tutorMove.nextMove || null,
+    writebackSuggestion: tutorMove.writebackSuggestion || null,
+    controlVerdict,
+    turnResolution,
     revisitReason: tutorMove.revisitReason,
     timestamp: Date.now()
   });
@@ -770,11 +977,22 @@ export async function answerSession(
 
   const views = buildSessionViews(session);
   session.latestMemoryEvents = [];
+  session.latestControlVerdict = controlVerdict;
 
   return {
     ...session,
     ...views,
-    latestFeedback: buildLatestFeedback({ concept, tutorMove }),
+    latestFeedback: {
+      ...buildLatestFeedback({
+        concept,
+        tutorMove,
+        controlVerdict,
+        memoryAnchor: latestMemoryAnchor
+      }),
+      coachingStep: visibleCoachingStep,
+      nextMove: visibleNextMove,
+      turnResolution
+    },
     latestMemoryEvents
   };
 }
@@ -854,6 +1072,7 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
   let coachingStep = "";
   let teachingChunk = "";
   let learningCard = null;
+  let latestMemoryEvents = [];
 
   if (controlIntent === "teach") {
     const repeatedTeach = priorTeachRequests >= 1;
@@ -881,6 +1100,14 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
       reason: "skipped-by-user",
       takeaway: concept.summary
     });
+    if (session.mode === "target") {
+      latestMemoryEvents = groomPendingWritebacks(session, { conceptId: concept.id });
+      if (latestMemoryEvents.length) {
+        session.memoryEvents.push(...latestMemoryEvents);
+        session.memoryEvents = session.memoryEvents.slice(-10);
+        session.latestMemoryEvents = latestMemoryEvents;
+      }
+    }
   }
 
   if (controlIntent !== "teach" || !coachingStep) {
@@ -900,6 +1127,17 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
     session.currentProbe = coachingStep;
     session.currentQuestionMeta = createQuestionMeta(concept);
   }
+  const controlTurnResolution = buildTurnResolution({
+    concept,
+    nextConcept: session.concepts.find((item) => item.id === session.currentConceptId) || null,
+    switchedConcept: session.currentConceptId !== concept.id,
+    finalPrompt: session.currentProbe,
+    finalQuestionMeta: session.currentQuestionMeta,
+    controlVerdict: {
+      reason: controlIntent === "teach" ? "continue_on_current_concept" : "next_move_requests_stop"
+    }
+  });
+  const visibleCoachingStep = controlTurnResolution.mode === "stay" ? coachingStep : "";
 
   session.turns.push({
     role: "tutor",
@@ -912,7 +1150,9 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
     teachingParagraphs: learningCard?.teachingParagraphs || [],
     learningSources: concept.javaGuideSources || [],
     takeaway: concept.summary,
-    coachingStep,
+    coachingStep: visibleCoachingStep,
+    candidateCoachingStep: coachingStep,
+    turnResolution: controlTurnResolution,
     timestamp: Date.now()
   });
 
@@ -930,7 +1170,7 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
   }
 
   const views = buildSessionViews(session);
-  session.latestMemoryEvents = [];
+  session.latestMemoryEvents = latestMemoryEvents;
 
   return {
     ...session,
@@ -943,15 +1183,17 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
       explanation,
       gap: "",
       evidenceReference: concept.excerpt,
-      coachingStep,
+      coachingStep: visibleCoachingStep,
+      candidateCoachingStep: coachingStep,
       strength: "",
       takeaway: concept.summary,
       teachingChunk,
       teachingParagraphs: learningCard?.teachingParagraphs || [],
       judge: session.conceptStates[concept.id].judge,
+      turnResolution: controlTurnResolution,
       remediationMaterial: concept.remediationMaterials?.[0] || null,
       learningSources: concept.javaGuideSources || []
     },
-    latestMemoryEvents: []
+    latestMemoryEvents
   };
 }

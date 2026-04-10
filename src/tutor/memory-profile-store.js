@@ -61,6 +61,12 @@ function validateProfileShape(profile, expectedId = "") {
     if (item.projectedTargets && !Array.isArray(item.projectedTargets)) {
       throw new Error("Memory profile projectedTargets is invalid.");
     }
+    if (item.recentStrongEvidence && !Array.isArray(item.recentStrongEvidence)) {
+      throw new Error("Memory profile recentStrongEvidence is invalid.");
+    }
+    if (item.recentConflictingEvidence && !Array.isArray(item.recentConflictingEvidence)) {
+      throw new Error("Memory profile recentConflictingEvidence is invalid.");
+    }
   }
 }
 

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   assertConsistentTurnEnvelope,
   assertValidTurnEnvelope,
+  buildControlVerdict,
+  mergeRuntimeMaps,
   turnEnvelopeToTutorMove
 } from "../../../src/tutor/turn-envelope.js";
 
@@ -99,3 +101,83 @@ test("inconsistent negligible-gain probe envelopes are rejected", () => {
   );
 });
 
+test("mergeRuntimeMaps preserves prior supported hypotheses unless newly refuted", () => {
+  const merged = mergeRuntimeMaps(
+    {
+      anchor_id: "mvcc",
+      turn_signal: "negative",
+      anchor_assessment: {
+        state: "partial",
+        confidence_level: "medium",
+        reasons: ["已有判断"]
+      },
+      hypotheses: [
+        {
+          id: "knows_snapshot",
+          status: "supported",
+          confidence_level: "medium",
+          evidence_refs: ["ev-1"],
+          note: "知道 MVCC 解决快照读。"
+        }
+      ],
+      misunderstandings: [],
+      open_questions: ["为什么当前读还要锁"],
+      verification_targets: [],
+      info_gain_level: "medium"
+    },
+    {
+      anchor_id: "mvcc",
+      turn_signal: "positive",
+      anchor_assessment: {
+        state: "partial",
+        confidence_level: "high",
+        reasons: ["新证据更强"]
+      },
+      hypotheses: [
+        {
+          id: "knows_lock_boundary",
+          status: "supported",
+          confidence_level: "medium",
+          evidence_refs: ["ev-2"],
+          note: "知道当前读边界还要锁。"
+        }
+      ],
+      misunderstandings: [],
+      open_questions: [],
+      verification_targets: [],
+      info_gain_level: "low"
+    },
+    "mvcc"
+  );
+
+  assert.equal(merged.hypotheses.length, 2);
+  assert.ok(merged.hypotheses.some((item) => item.id === "knows_snapshot"));
+  assert.ok(merged.hypotheses.some((item) => item.id === "knows_lock_boundary"));
+});
+
+test("buildControlVerdict emits explicit control-layer stop reasoning", () => {
+  const verdict = buildControlVerdict({
+    envelope: createEnvelope({
+      next_move: {
+        ui_mode: "advance"
+      },
+      reply: {
+        requires_response: false
+      }
+    }),
+    contextPacket: {
+      stop_conditions: {
+        should_discourage_more_probe: false
+      },
+      budget: {
+        remaining_probe_turns: 0,
+        remaining_teach_turns: 1
+      }
+    },
+    scopeType: "domain"
+  });
+
+  assert.equal(verdict.should_stop, true);
+  assert.equal(verdict.reason, "next_move_requests_stop");
+  assert.equal(verdict.scope_type, "domain");
+});

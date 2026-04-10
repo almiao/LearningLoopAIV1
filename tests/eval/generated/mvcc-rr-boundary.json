@@ -1,0 +1,387 @@
+{
+  "scenario": {
+    "id": "mvcc-rr-boundary",
+    "title": "MVCC 与 Repeatable Read 边界",
+    "interactionPreference": "balanced",
+    "reviewFocus": [
+      "快照读 vs 当前读边界是否讲清楚",
+      "会不会把 next-key lock 讲成多余补丁",
+      "追问是否具体，不要泛化成模板问题"
+    ],
+    "expectedSignals": [
+      "至少一次明确承认 learner 已经抓到快照读这个核心",
+      "后续追问继续压当前读边界，而不是跳回泛泛而谈的事务概念"
+    ]
+  },
+  "initialSession": {
+    "sourceTitle": "MySQL Repeatable Read 与 MVCC",
+    "currentConceptId": "事务与索引推理-1",
+    "currentProbe": "围绕“事务与索引推理”回答一个具体点：材料里它是怎么工作的？",
+    "concepts": [
+      {
+        "id": "事务与索引推理-1",
+        "title": "事务与索引推理",
+        "summary": "MySQL InnoDB 在 Repeatable Read 下依靠 MVCC 为普通 SELECT 提供一致性快照。事务读取数据时，不一定直接读取最新版本，而是根据 Read View 和 undo log 版本链判断哪个历史版本可见。",
+        "retryQuestion": "先只回答一个具体点：事务与索引推理 在材料里的关键机制是什么？",
+        "checkQuestion": "现在用你自己的话复述一下：“事务与索引推理”在材料里的关键机制是什么？",
+        "stretchQuestion": "继续深入：如果面试官追问“事务与索引推理”的边界条件，你会怎么补充？"
+      },
+      {
+        "id": "事务与索引推理-2",
+        "title": "事务与索引推理",
+        "summary": "MVCC 解决的是快照读的一致性问题，重点是让事务在同一事务内多次普通查询时看到稳定结果，从而避免不可重复读。",
+        "retryQuestion": "先只回答一个具体点：事务与索引推理 在材料里的关键机制是什么？",
+        "checkQuestion": "现在用你自己的话复述一下：“事务与索引推理”在材料里的关键机制是什么？",
+        "stretchQuestion": "继续深入：如果面试官追问“事务与索引推理”的边界条件，你会怎么补充？"
+      },
+      {
+        "id": "材料切入点-3-3",
+        "title": "材料切入点 3",
+        "summary": "但当前读并不走同一条路径。像 SELECT ... FOR UPDATE、UPDATE、DELETE 这类操作，需要读取并保护当前版本，还要处理范围查询里的插入并发。",
+        "retryQuestion": "先只回答一个具体点：材料切入点 3 在材料里的关键机制是什么？",
+        "checkQuestion": "现在用你自己的话复述一下：“材料切入点 3”在材料里的关键机制是什么？",
+        "stretchQuestion": "继续深入：如果面试官追问“材料切入点 3”的边界条件，你会怎么补充？"
+      },
+      {
+        "id": "并发协调机制-4",
+        "title": "并发协调机制",
+        "summary": "因此在 Repeatable Read 下，当前读仍然需要借助记录锁、间隙锁和 next-key lock 来约束并发插入，否则范围判断和后续更新就可能遭遇幻读。",
+        "retryQuestion": "先只回答一个具体点：并发协调机制 在材料里的关键机制是什么？",
+        "checkQuestion": "现在用你自己的话复述一下：“并发协调机制”在材料里的关键机制是什么？",
+        "stretchQuestion": "继续深入：如果面试官追问“并发协调机制”的边界条件，你会怎么补充？"
+      }
+    ],
+    "masteryMap": [
+      {
+        "conceptId": "事务与索引推理-1",
+        "abilityItemId": "事务与索引推理-1",
+        "domainTitle": "",
+        "title": "事务与索引推理",
+        "state": "weak",
+        "reasons": [],
+        "provenanceLabel": "",
+        "remediationAssets": [],
+        "evidence": [],
+        "evidenceCount": 0,
+        "confidence": 0,
+        "domainId": null
+      },
+      {
+        "conceptId": "事务与索引推理-2",
+        "abilityItemId": "事务与索引推理-2",
+        "domainTitle": "",
+        "title": "事务与索引推理",
+        "state": "weak",
+        "reasons": [],
+        "provenanceLabel": "",
+        "remediationAssets": [],
+        "evidence": [],
+        "evidenceCount": 0,
+        "confidence": 0,
+        "domainId": null
+      },
+      {
+        "conceptId": "材料切入点-3-3",
+        "abilityItemId": "材料切入点-3-3",
+        "domainTitle": "",
+        "title": "材料切入点 3",
+        "state": "weak",
+        "reasons": [],
+        "provenanceLabel": "",
+        "remediationAssets": [],
+        "evidence": [],
+        "evidenceCount": 0,
+        "confidence": 0,
+        "domainId": null
+      },
+      {
+        "conceptId": "并发协调机制-4",
+        "abilityItemId": "并发协调机制-4",
+        "domainTitle": "",
+        "title": "并发协调机制",
+        "state": "weak",
+        "reasons": [],
+        "provenanceLabel": "",
+        "remediationAssets": [],
+        "evidence": [],
+        "evidenceCount": 0,
+        "confidence": 0,
+        "domainId": null
+      }
+    ],
+    "nextSteps": [
+      {
+        "order": 1,
+        "title": "事务与索引推理",
+        "recommendation": "先补齐 事务与索引推理 的定义、关键机制和失败场景，再进入下一轮追问。"
+      },
+      {
+        "order": 2,
+        "title": "事务与索引推理",
+        "recommendation": "先补齐 事务与索引推理 的定义、关键机制和失败场景，再进入下一轮追问。"
+      },
+      {
+        "order": 3,
+        "title": "材料切入点 3",
+        "recommendation": "先补齐 材料切入点 3 的定义、关键机制和失败场景，再进入下一轮追问。"
+      },
+      {
+        "order": 4,
+        "title": "并发协调机制",
+        "recommendation": "先补齐 并发协调机制 的定义、关键机制和失败场景，再进入下一轮追问。"
+      }
+    ],
+    "revisitQueue": [
+      {
+        "conceptId": "事务与索引推理-1",
+        "conceptTitle": "事务与索引推理",
+        "reason": "如果现在还不稳，后面可以再结合具体场景回头检查。",
+        "takeaway": "MySQL InnoDB 在 Repeatable Read 下依靠 MVCC 为普通 SELECT 提供一致性快照。事务读取数据时，不一定直接读取最新版本，而是根据 Read View 和 undo log 版本链判断哪个历史版本可见。",
+        "queuedAt": "2026-04-08T18:05:42.391Z",
+        "done": false
+      }
+    ],
+    "interactionPreference": "balanced"
+  },
+  "finalSession": {
+    "sourceTitle": "MySQL Repeatable Read 与 MVCC",
+    "currentConceptId": "事务与索引推理-2",
+    "currentProbe": "围绕“事务与索引推理”回答一个具体点：材料里它是怎么工作的？",
+    "concepts": [
+      {
+        "id": "事务与索引推理-1",
+        "title": "事务与索引推理",
+        "summary": "MySQL InnoDB 在 Repeatable Read 下依靠 MVCC 为普通 SELECT 提供一致性快照。事务读取数据时，不一定直接读取最新版本，而是根据 Read View 和 undo log 版本链判断哪个历史版本可见。",
+        "retryQuestion": "先只回答一个具体点：事务与索引推理 在材料里的关键机制是什么？",
+        "checkQuestion": "现在用你自己的话复述一下：“事务与索引推理”在材料里的关键机制是什么？",
+        "stretchQuestion": "继续深入：如果面试官追问“事务与索引推理”的边界条件，你会怎么补充？"
+      },
+      {
+        "id": "事务与索引推理-2",
+        "title": "事务与索引推理",
+        "summary": "MVCC 解决的是快照读的一致性问题，重点是让事务在同一事务内多次普通查询时看到稳定结果，从而避免不可重复读。",
+        "retryQuestion": "先只回答一个具体点：事务与索引推理 在材料里的关键机制是什么？",
+        "checkQuestion": "现在用你自己的话复述一下：“事务与索引推理”在材料里的关键机制是什么？",
+        "stretchQuestion": "继续深入：如果面试官追问“事务与索引推理”的边界条件，你会怎么补充？"
+      },
+      {
+        "id": "材料切入点-3-3",
+        "title": "材料切入点 3",
+        "summary": "但当前读并不走同一条路径。像 SELECT ... FOR UPDATE、UPDATE、DELETE 这类操作，需要读取并保护当前版本，还要处理范围查询里的插入并发。",
+        "retryQuestion": "先只回答一个具体点：材料切入点 3 在材料里的关键机制是什么？",
+        "checkQuestion": "现在用你自己的话复述一下：“材料切入点 3”在材料里的关键机制是什么？",
+        "stretchQuestion": "继续深入：如果面试官追问“材料切入点 3”的边界条件，你会怎么补充？"
+      },
+      {
+        "id": "并发协调机制-4",
+        "title": "并发协调机制",
+        "summary": "因此在 Repeatable Read 下，当前读仍然需要借助记录锁、间隙锁和 next-key lock 来约束并发插入，否则范围判断和后续更新就可能遭遇幻读。",
+        "retryQuestion": "先只回答一个具体点：并发协调机制 在材料里的关键机制是什么？",
+        "checkQuestion": "现在用你自己的话复述一下：“并发协调机制”在材料里的关键机制是什么？",
+        "stretchQuestion": "继续深入：如果面试官追问“并发协调机制”的边界条件，你会怎么补充？"
+      }
+    ],
+    "masteryMap": [
+      {
+        "conceptId": "事务与索引推理-1",
+        "abilityItemId": "事务与索引推理-1",
+        "domainTitle": "",
+        "title": "事务与索引推理",
+        "state": "partial",
+        "reasons": [
+          "证据只覆盖单维度"
+        ],
+        "provenanceLabel": "",
+        "remediationAssets": [],
+        "evidence": [
+          {
+            "signal": "negative",
+            "explanation": "你前面的方向有一点接近，但还差最关键的一层。 我先把这一层讲清楚：MySQL InnoDB 在 Repeatable Read 下依靠 MVCC 为普通 SELECT 提供一致性快照。事务读取数据时，不一定直接读取最新版本，而是根据 Read View 和 undo log 版本链判断哪个历史版本可见。",
+            "answer": "MVCC 解决的是事务并发读写时基于历史快照读取，不是每次都读最新值。"
+          },
+          {
+            "signal": "noise",
+            "explanation": "这一点你已经抓到主要方向了，我们先往下走，别在这里卡太久。",
+            "answer": "因为当前读不是快照读，范围判断时如果没有间隙锁或者 next-key lock，别的事务插入新行就会出现幻读。"
+          }
+        ],
+        "evidenceCount": 2,
+        "confidence": 0.28,
+        "domainId": null
+      },
+      {
+        "conceptId": "事务与索引推理-2",
+        "abilityItemId": "事务与索引推理-2",
+        "domainTitle": "",
+        "title": "事务与索引推理",
+        "state": "weak",
+        "reasons": [],
+        "provenanceLabel": "",
+        "remediationAssets": [],
+        "evidence": [],
+        "evidenceCount": 0,
+        "confidence": 0,
+        "domainId": null
+      },
+      {
+        "conceptId": "材料切入点-3-3",
+        "abilityItemId": "材料切入点-3-3",
+        "domainTitle": "",
+        "title": "材料切入点 3",
+        "state": "weak",
+        "reasons": [],
+        "provenanceLabel": "",
+        "remediationAssets": [],
+        "evidence": [],
+        "evidenceCount": 0,
+        "confidence": 0,
+        "domainId": null
+      },
+      {
+        "conceptId": "并发协调机制-4",
+        "abilityItemId": "并发协调机制-4",
+        "domainTitle": "",
+        "title": "并发协调机制",
+        "state": "weak",
+        "reasons": [],
+        "provenanceLabel": "",
+        "remediationAssets": [],
+        "evidence": [],
+        "evidenceCount": 0,
+        "confidence": 0,
+        "domainId": null
+      }
+    ],
+    "nextSteps": [
+      {
+        "order": 1,
+        "title": "事务与索引推理",
+        "recommendation": "先补齐 事务与索引推理 的定义、关键机制和失败场景，再进入下一轮追问。"
+      },
+      {
+        "order": 2,
+        "title": "材料切入点 3",
+        "recommendation": "先补齐 材料切入点 3 的定义、关键机制和失败场景，再进入下一轮追问。"
+      },
+      {
+        "order": 3,
+        "title": "并发协调机制",
+        "recommendation": "先补齐 并发协调机制 的定义、关键机制和失败场景，再进入下一轮追问。"
+      },
+      {
+        "order": 4,
+        "title": "事务与索引推理",
+        "recommendation": "围绕 事务与索引推理 追加一轮边界条件练习，并用材料中的证据补足解释。"
+      }
+    ],
+    "revisitQueue": [
+      {
+        "conceptId": "事务与索引推理-1",
+        "conceptTitle": "事务与索引推理",
+        "reason": "如果现在还不稳，后面可以再结合具体场景回头检查。",
+        "takeaway": "MySQL InnoDB 在 Repeatable Read 下依靠 MVCC 为普通 SELECT 提供一致性快照。事务读取数据时，不一定直接读取最新版本，而是根据 Read View 和 undo log 版本链判断哪个历史版本可见。",
+        "queuedAt": "2026-04-08T18:05:42.391Z",
+        "done": false
+      }
+    ],
+    "interactionPreference": "balanced"
+  },
+  "steps": [
+    {
+      "step": 1,
+      "controlIntent": "answer",
+      "conceptId": "事务与索引推理-1",
+      "conceptTitle": "事务与索引推理",
+      "promptAsked": "围绕“事务与索引推理”回答一个具体点：材料里它是怎么工作的？",
+      "learnerAnswer": "MVCC 解决的是事务并发读写时基于历史快照读取，不是每次都读最新值。",
+      "tutorAction": "teach",
+      "tutorReply": "你前面的方向有一点接近，但还差最关键的一层。 我先把这一层讲清楚：MySQL InnoDB 在 Repeatable Read 下依靠 MVCC 为普通 SELECT 提供一致性快照。事务读取数据时，不一定直接读取最新版本，而是根据 Read View 和 undo log 版本链判断哪个历史版本可见。",
+      "tutorStrength": "你已经碰到了相关概念。",
+      "tutorTakeaway": "MySQL InnoDB 在 Repeatable Read 下依靠 MVCC 为普通 SELECT 提供一致性快照。事务读取数据时，不一定直接读取最新版本，而是根据 Read View 和 undo log 版本链判断哪个历史版本可见。",
+      "tutorGap": "已经碰到了一部分关键词，但还没有把“事务与索引推理”讲成完整、可判断的机制链路。",
+      "nextPrompt": "现在用你自己的话复述一下：“事务与索引推理”在材料里的关键机制是什么？",
+      "revisitQueueSize": 1,
+      "masteryPreview": [
+        {
+          "conceptId": "事务与索引推理-1",
+          "state": "partial",
+          "confidence": 0.28
+        },
+        {
+          "conceptId": "事务与索引推理-2",
+          "state": "weak",
+          "confidence": 0
+        },
+        {
+          "conceptId": "材料切入点-3-3",
+          "state": "weak",
+          "confidence": 0
+        }
+      ]
+    },
+    {
+      "step": 2,
+      "controlIntent": "answer",
+      "conceptId": "事务与索引推理-1",
+      "conceptTitle": "事务与索引推理",
+      "promptAsked": "现在用你自己的话复述一下：“事务与索引推理”在材料里的关键机制是什么？",
+      "learnerAnswer": "因为当前读不是快照读，范围判断时如果没有间隙锁或者 next-key lock，别的事务插入新行就会出现幻读。",
+      "tutorAction": "advance",
+      "tutorReply": "这一点你已经抓到主要方向了，我们先往下走，别在这里卡太久。",
+      "tutorStrength": "",
+      "tutorTakeaway": "MySQL InnoDB 在 Repeatable Read 下依靠 MVCC 为普通 SELECT 提供一致性快照。事务读取数据时，不一定直接读取最新版本，而是根据 Read View 和 undo log 版本链判断哪个历史版本可见。",
+      "tutorGap": "回答还停留在泛化表述，没有真正落到“事务与索引推理”的具体机制。",
+      "nextPrompt": "围绕“事务与索引推理”回答一个具体点：材料里它是怎么工作的？",
+      "revisitQueueSize": 1,
+      "masteryPreview": [
+        {
+          "conceptId": "事务与索引推理-1",
+          "state": "partial",
+          "confidence": 0.28
+        },
+        {
+          "conceptId": "事务与索引推理-2",
+          "state": "weak",
+          "confidence": 0
+        },
+        {
+          "conceptId": "材料切入点-3-3",
+          "state": "weak",
+          "confidence": 0
+        }
+      ]
+    }
+  ],
+  "metrics": {
+    "totalSteps": 2,
+    "templatePhraseHits": 3,
+    "repeatedTeachLoops": 0,
+    "controlResolution": {
+      "totalControlTurns": 0,
+      "teachIntentHandled": 0,
+      "skipIntentHandled": 0,
+      "unknownHandledWithTeach": 0
+    }
+  },
+  "scorecard": {
+    "knowledgeClosure": 1,
+    "teachQuality": 2,
+    "conversationEfficiency": 2,
+    "confirmationQuality": 1,
+    "naturalness": 1,
+    "revisitReadiness": 1
+  },
+  "totalScore": 8,
+  "reviewFlags": [
+    {
+      "type": "templated-tone",
+      "severity": "medium",
+      "message": "模板化表达偏多，读起来更像策略输出，不像 tutor 自然回复。"
+    },
+    {
+      "type": "weak-closure",
+      "severity": "medium",
+      "message": "当前会话结尾缺少稳定 takeaway，用户拿走的结论感偏弱。"
+    }
+  ]
+}

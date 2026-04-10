@@ -1,0 +1,70 @@
+[
+  {
+    "scenarioId": "mvcc-rr-boundary",
+    "title": "MVCC 与 Repeatable Read 边界",
+    "totalScore": 8,
+    "reviewFlags": 2,
+    "metrics": {
+      "totalSteps": 2,
+      "templatePhraseHits": 3,
+      "repeatedTeachLoops": 0,
+      "controlResolution": {
+        "totalControlTurns": 0,
+        "teachIntentHandled": 0,
+        "skipIntentHandled": 0,
+        "unknownHandledWithTeach": 0
+      }
+    }
+  },
+  {
+    "scenarioId": "threadlocal-storage-closure",
+    "title": "ThreadLocal 存储位置与线程隔离",
+    "totalScore": 8,
+    "reviewFlags": 2,
+    "metrics": {
+      "totalSteps": 3,
+      "templatePhraseHits": 4,
+      "repeatedTeachLoops": 0,
+      "controlResolution": {
+        "totalControlTurns": 2,
+        "teachIntentHandled": 1,
+        "skipIntentHandled": 0,
+        "unknownHandledWithTeach": 0
+      }
+    }
+  },
+  {
+    "scenarioId": "volatile-dcl-closure",
+    "title": "双重校验锁为什么需要 volatile",
+    "totalScore": 8,
+    "reviewFlags": 2,
+    "metrics": {
+      "totalSteps": 3,
+      "templatePhraseHits": 4,
+      "repeatedTeachLoops": 0,
+      "controlResolution": {
+        "totalControlTurns": 2,
+        "teachIntentHandled": 1,
+        "skipIntentHandled": 0,
+        "unknownHandledWithTeach": 0
+      }
+    }
+  },
+  {
+    "scenarioId": "concurrenthashmap-skip-closure",
+    "title": "ConcurrentHashMap 版本演进与收口",
+    "totalScore": 10,
+    "reviewFlags": 1,
+    "metrics": {
+      "totalSteps": 2,
+      "templatePhraseHits": 1,
+      "repeatedTeachLoops": 0,
+      "controlResolution": {
+        "totalControlTurns": 1,
+        "teachIntentHandled": 0,
+        "skipIntentHandled": 1,
+        "unknownHandledWithTeach": 0
+      }
+    }
+  }
+]

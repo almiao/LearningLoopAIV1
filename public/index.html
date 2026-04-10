@@ -16,6 +16,48 @@
         </p>
       </section>
 
+      <section class="panel auth-panel">
+        <div class="panel-header">
+          <h2>0. 登录与学习档案</h2>
+          <p>先用一个轻量账号接住你的目标、记忆和测评进展。当前版本用「昵称 + PIN」即可登录或自动创建账号。</p>
+        </div>
+
+        <div id="auth-guest">
+          <form id="auth-form" class="source-form active">
+            <label>
+              昵称
+              <input id="auth-handle" name="handle" placeholder="例如 lee_backend" autocomplete="username" />
+            </label>
+            <label>
+              PIN
+              <input id="auth-pin" name="pin" type="password" inputmode="numeric" placeholder="4-12 位数字" autocomplete="current-password" />
+            </label>
+            <button type="submit">登录 / 创建账号</button>
+          </form>
+        </div>
+
+        <div id="auth-user" class="hidden">
+          <div class="match-strip">
+            <div>
+              <div class="mini-label">当前用户</div>
+              <h3 id="profile-handle"></h3>
+              <p id="profile-copy" class="muted-copy"></p>
+            </div>
+            <div class="quick-actions profile-actions">
+              <button type="button" id="refresh-profile">刷新档案</button>
+              <button type="button" id="sign-out">退出登录</button>
+            </div>
+          </div>
+          <div id="profile-summary" class="profile-summary-grid"></div>
+          <div class="panel-header" style="margin-top: 18px;">
+            <h3>目标档案</h3>
+            <p>这里会直接显示你建立过的所有目标，以及各目标下能力域/能力项的测评进度。</p>
+          </div>
+          <div id="profile-targets-empty" class="empty-state">登录后先建立一个目标，这里就会开始沉淀你的学习档案。</div>
+          <div id="profile-targets" class="profile-targets"></div>
+        </div>
+      </section>
+
       <section class="panel source-panel">
         <div class="panel-header">
           <h2>1. 选择目标</h2>
@@ -43,6 +85,7 @@
             </select>
           </label>
           <button type="submit">开始目标诊断</button>
+          <p id="target-form-note" class="muted-copy">登录后会自动把目标绑定到你的学习档案。</p>
         </form>
       </section>
 
@@ -170,6 +213,10 @@
           <div class="panel-header">
             <h2>4. 记忆与能力图谱</h2>
             <p>系统会把能力项状态、证据和记忆事件放在明面上。</p>
+          </div>
+          <div id="runtime-map-panel" class="callout hidden">
+            <span class="tag">当前运行时判断</span>
+            <div id="runtime-map-content"></div>
           </div>
           <div id="mastery-empty" class="empty-state">回答几轮后，这里会出现能力项状态与记忆记录。</div>
           <ul id="mastery-map" class="mastery-map"></ul>

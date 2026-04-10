@@ -1174,9 +1174,11 @@ function buildTurnEnvelopePrompt({ contextPacket, answer }) {
     "Preserve prior hypotheses unless new evidence explicitly refutes them.",
     "The runtime_map must stay anchored to the current anchor_id and cite evidence ids where possible.",
     "Do not ask repetitive probes when info_gain_level is negligible or stop_conditions discourage more probing.",
+    "Budget, friction_signals, and stop_conditions are orchestration factors. Consider them before proposing continued probing or verification.",
     "The reply must sound like a strong human tutor, not like a template or checklist.",
     "When teach is the right move, teaching_paragraphs must contain a complete explanation; do not use rigid headings such as 核心结论 or 理解抓手.",
-    "When a response is still needed, next_prompt must be a concrete question the learner can answer immediately.",
+    "When a response is still needed on the current anchor, next_prompt must be a concrete question the learner can answer immediately.",
+    "Treat next_prompt as a candidate follow-up only for staying on the current anchor. If the turn should hand off to a different anchor or stop, leave next_prompt empty.",
     "When long-term memory should not be updated, set writeback_suggestion.should_write to false and mode to noop.",
     "",
     "CONTEXT_PACKET_JSON:",
@@ -1542,21 +1544,8 @@ export function createDeepSeekTutorIntelligence({
 }
 
 export function createTutorIntelligence(options = {}) {
-  const enabled = String(process.env.LLAI_LLM_ENABLED || "true").toLowerCase();
-  if (["0", "false", "no", "off"].includes(enabled)) {
-    throw new Error("AI tutor mode is disabled.");
-  }
-
-  const provider = String(process.env.LLAI_LLM_PROVIDER || "OPENAI").toUpperCase();
-  if (provider === "DEEPSEEK") {
-    return createDeepSeekTutorIntelligence(options);
-  }
-
-  if (provider === "OPENAI") {
-    return createOpenAITutorIntelligence(options);
-  }
-
-  throw new Error(`Unsupported AI tutor provider: ${provider}`);
+  void options;
+  throw new Error("LLM tutor intelligence has moved to the Python ai-service. Use the split-service flow instead.");
 }
 
 export function createHeuristicTutorIntelligence() {

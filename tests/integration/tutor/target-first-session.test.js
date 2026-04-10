@@ -21,7 +21,11 @@ test("target-first session starts from flagship baseline and returns visible mem
   assert.equal(session.targetBaseline.title, "大厂 Java 后端面试包");
   assert.equal(session.memoryMode, "profile-scoped");
   assert.ok(session.currentProbe.length > 0);
+  assert.doesNotMatch(session.currentProbe, /这是某位候选人|系统生成诊断题/);
+  assert.equal(session.currentQuestionMeta?.type, "provenance-backed");
+  assert.match(session.currentQuestionMeta?.label || "", /面经原题/);
   assert.ok(session.concepts.length >= 5);
+  assert.ok(session.concepts.every((concept) => concept.anchorIdentity?.canonicalId || concept.anchorIdentity?.canonical_id));
   assert.ok(Array.isArray(session.summary.javaGuideSourceClusters));
   assert.ok(session.summary.javaGuideSourceClusters.length >= 3);
   assert.ok(session.targetMatch);
@@ -46,6 +50,9 @@ test("answering target-first session updates memory events, remediation, and lat
   });
 
   assert.ok(answered.latestFeedback);
+  assert.ok(answered.currentRuntimeMap);
+  assert.ok(answered.currentMemoryAnchor);
+  assert.ok(answered.latestControlVerdict);
   assert.ok(Array.isArray(answered.latestMemoryEvents));
   assert.ok(answered.latestMemoryEvents.length >= 1);
   assert.ok(answered.nextSteps.length >= 1);
