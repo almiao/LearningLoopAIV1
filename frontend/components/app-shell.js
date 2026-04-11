@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useDeferredValue, useEffect, useState } from "react";
 import { apiFetch, postJson } from "../lib/api";
-import { buildChatTimeline } from "../lib/chat-transcript";
+import { buildVisibleSessionView } from "../../src/view/visible-session-view";
 
 const userIdStorageKey = "learning-loop-user-id";
 
@@ -53,11 +53,12 @@ export function AppShell() {
   const [answer, setAnswer] = useState("");
   const [burdenSignal, setBurdenSignal] = useState("normal");
   const [error, setError] = useState("");
-  const deferredTurns = useDeferredValue(session?.turns || []);
-  const chatTimeline = buildChatTimeline(deferredTurns);
-  const visibleMemoryEvents = (session?.latestMemoryEvents?.length
-    ? session.latestMemoryEvents
-    : session?.memoryEvents || []).slice(-4);
+  const deferredSession = useDeferredValue(session);
+  const visibleView = buildVisibleSessionView(deferredSession || {});
+  const chatTimeline = visibleView.chatTimeline || [];
+  const visibleMemoryEvents = (visibleView.latestMemoryEvents?.length
+    ? visibleView.latestMemoryEvents
+    : deferredSession?.memoryEvents || []).slice(-4);
 
   useEffect(() => {
     (async () => {
@@ -123,7 +124,7 @@ export function AppShell() {
     }
   }
 
-  async function submitAnswer(intent = answer) {
+  async function submitAnswer({ answer: nextAnswer = answer, intent = "" } = {}) {
     if (!session?.sessionId) {
       return;
     }
@@ -131,7 +132,8 @@ export function AppShell() {
       setError("");
       const data = await postJson("/api/interview/answer", {
         sessionId: session.sessionId,
-        answer: intent,
+        answer: nextAnswer,
+        intent,
         burdenSignal,
         interactionPreference
       });
@@ -280,11 +282,22 @@ export function AppShell() {
                     </div>
                     <div className="chat-bubble">
                       {entry.topicShiftLabel ? <p className="muted chat-shift">{entry.topicShiftLabel}</p> : null}
-                      <p>{entry.body}</p>
+                      {(entry.bodyParts?.length ? entry.bodyParts : [entry.body]).filter(Boolean).map((block, blockIndex) => (
+                        <p key={`${entry.id}:body:${blockIndex}`}>{block}</p>
+                      ))}
+                      {entry.takeaway ? (
+                        <p className="muted"><strong>带走一句：</strong>{entry.takeaway}</p>
+                      ) : null}
                       {entry.followUpQuestion ? (
                         <div className="chat-followup">
                           <small className="muted">接下来 Tutor 会继续问</small>
                           <p>{entry.followUpQuestion}</p>
+                        </div>
+                      ) : null}
+                      {!entry.followUpQuestion && entry.candidateFollowUpQuestion ? (
+                        <div className="chat-followup">
+                          <small className="muted">如果继续留在这一题，Tutor 会追问</small>
+                          <p>{entry.candidateFollowUpQuestion}</p>
                         </div>
                       ) : null}
                       {entry.coachingStep ? <p className="muted">下一步：{entry.coachingStep}</p> : null}
@@ -315,8 +328,20 @@ export function AppShell() {
                 </div>
                 <div className="actions composer-actions">
                   <button type="submit">提交回答</button>
-                  <button type="button" className="secondary" onClick={() => submitAnswer("讲一下")}>讲一下</button>
-                  <button type="button" className="secondary" onClick={() => submitAnswer("下一题")}>下一题</button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => submitAnswer({ answer: "讲一下", intent: "teach" })}
+                  >
+                    讲一下
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => submitAnswer({ answer: "下一题", intent: "advance" })}
+                  >
+                    下一题
+                  </button>
                 </div>
               </div>
             </form>

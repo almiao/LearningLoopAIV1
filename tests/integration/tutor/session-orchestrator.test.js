@@ -151,6 +151,31 @@ test("control intents can advance or teach without being treated as learner cont
   assert.ok(advanced.revisitQueue.length >= 1);
 });
 
+test("explicit control intent takes precedence over free-text wording", async () => {
+  const source = parseDocumentInput({
+    title: "AQS 详解",
+    content: aqsMarkdownDocument
+  });
+
+  const session = await createSession({
+    source,
+    intelligence,
+    interactionPreference: "balanced"
+  });
+
+  const taught = await answerSession(session, {
+    answer: "这个点我还没讲清，但先保留原话。",
+    intent: "teach",
+    burdenSignal: "normal",
+    interactionPreference: "balanced",
+    intelligence
+  });
+
+  assert.equal(taught.latestFeedback.action, "teach");
+  assert.equal(taught.engagement.controlCount, 1);
+  assert.equal(taught.engagement.teachRequestCount, 1);
+});
+
 test("repeated teach requests stay on the same concept and continue teach-back", async () => {
   const source = parseDocumentInput({
     title: "AQS 详解",

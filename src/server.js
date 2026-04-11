@@ -224,6 +224,7 @@ export function createAppService({ fetchImpl = globalThis.fetch, intelligence } 
 
       const updated = await answerSession(session, {
         answer: body.answer,
+        intent: body.intent,
         burdenSignal: body.burdenSignal ?? "normal",
         interactionPreference: body.interactionPreference,
         intelligence: tutorIntelligence

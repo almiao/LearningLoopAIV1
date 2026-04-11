@@ -287,6 +287,46 @@ function normalizeTeachingParagraph(text) {
     .trim();
 }
 
+const stateAliases = new Map([
+  ["solid", "solid"],
+  ["完全掌握", "solid"],
+  ["掌握扎实", "solid"],
+  ["partial", "partial"],
+  ["部分掌握", "partial"],
+  ["部分理解", "partial"],
+  ["基本掌握", "partial"],
+  ["weak", "weak"],
+  ["弱", "weak"],
+  ["掌握较弱", "weak"],
+  ["理解较弱", "weak"],
+  ["不可判", "不可判"],
+  ["无法判断", "不可判"],
+  ["无法判定", "不可判"],
+  ["不确定", "不可判"],
+  ["unknown", "不可判"]
+]);
+
+const signalAliases = new Map([
+  ["positive", "positive"],
+  ["正向", "positive"],
+  ["积极", "positive"],
+  ["negative", "negative"],
+  ["负向", "negative"],
+  ["消极", "negative"],
+  ["noise", "noise"],
+  ["中性", "noise"],
+  ["不确定", "noise"],
+  ["uncertain", "noise"]
+]);
+
+function normalizeStateAlias(value, fallback = "不可判") {
+  return stateAliases.get(ensureString(value).trim()) || fallback;
+}
+
+function normalizeSignalAlias(value, fallback = "noise") {
+  return signalAliases.get(ensureString(value).trim().toLowerCase()) || fallback;
+}
+
 function normalizeTurnEnvelopePayload(payload, concept) {
   const runtimeMap = payload?.runtime_map || {};
   const anchorAssessment = runtimeMap.anchor_assessment || {};
@@ -299,13 +339,9 @@ function normalizeTurnEnvelopePayload(payload, concept) {
   return {
     runtime_map: {
       anchor_id: ensureString(runtimeMap.anchor_id, concept.id),
-      turn_signal: ["positive", "negative", "noise"].includes(runtimeMap.turn_signal)
-        ? runtimeMap.turn_signal
-        : "noise",
+      turn_signal: normalizeSignalAlias(runtimeMap.turn_signal, "noise"),
       anchor_assessment: {
-        state: ["solid", "partial", "weak", "不可判"].includes(anchorAssessment.state)
-          ? anchorAssessment.state
-          : "不可判",
+        state: normalizeStateAlias(anchorAssessment.state, "不可判"),
         confidence_level: normalizeConfidenceLevel(anchorAssessment.confidence_level, "low"),
         reasons: ensureArray(anchorAssessment.reasons).map((item) => ensureString(item)).filter(Boolean).slice(0, 4)
       },
@@ -342,9 +378,7 @@ function normalizeTurnEnvelopePayload(payload, concept) {
         : "update",
       reason: ensureString(payload?.writeback_suggestion?.reason, "new_turn_signal"),
       anchor_patch: {
-        state: ["solid", "partial", "weak", "不可判"].includes(payload?.writeback_suggestion?.anchor_patch?.state)
-          ? payload.writeback_suggestion.anchor_patch.state
-          : "partial",
+        state: normalizeStateAlias(payload?.writeback_suggestion?.anchor_patch?.state, "partial"),
         confidence_level: normalizeConfidenceLevel(
           payload?.writeback_suggestion?.anchor_patch?.confidence_level,
           "medium"
@@ -813,7 +847,7 @@ const explainConceptSchema = {
   name: "tutor_explain_concept",
   example: {
     visibleReply:
-      "好，这一轮我直接按学习模式带你过这个点。先不要急着背术语，我们先把它到底解决了什么、没解决什么讲清楚。",
+      "我们先把这个点拆开讲清楚。先不要急着背术语，先抓住它到底解决了什么、没解决什么。",
     teachingParagraphs: [
       "很多人会把 MVCC 讲成“数据库的并发问题解决方案”，这其实太大了。更准确地说，它主要服务的是快照读，让事务在并发环境下还能看到一个一致的历史视图。",
       "它依赖的不是某个单点魔法，而是 Read View 和 undo log 版本链一起工作：事务在读的时候，不是总看最新值，而是看当前这个事务应该看到的那个版本。",
@@ -1176,7 +1210,13 @@ function buildTurnEnvelopePrompt({ contextPacket, answer }) {
     "Do not ask repetitive probes when info_gain_level is negligible or stop_conditions discourage more probing.",
     "Budget, friction_signals, and stop_conditions are orchestration factors. Consider them before proposing continued probing or verification.",
     "The reply must sound like a strong human tutor, not like a template or checklist.",
+    "Interpret the learner utterance pragmatically: it may contain an answer, a request for explanation, a request to move on, or a mix of these.",
+    "When the learner utterance is mainly asking for explanation or summary rather than offering substantive evidence, prefer a closure-oriented helpful reply instead of a bare acknowledgement plus another question.",
+    "Prefer incremental tutoring over repetition. If recent turns on the same anchor already explained the core mechanism, do not restate the whole explanation unless the learner is still clearly lost; instead name the one missing link, add at most one new example, and move to a narrower follow-up.",
+    "Avoid repeatedly opening with stock transitions such as '进入学习模式' or similar phrases if recent turns already used them.",
+    "Use anchor_history to understand what has already been taught on the current anchor; if it contains recent tutor explanations, treat them as prior teaching context rather than repeating them verbatim.",
     "When teach is the right move, teaching_paragraphs must contain a complete explanation; do not use rigid headings such as 核心结论 or 理解抓手.",
+    "When you choose verify, the visible reply should still add concrete value before any follow-up question.",
     "When a response is still needed on the current anchor, next_prompt must be a concrete question the learner can answer immediately.",
     "Treat next_prompt as a candidate follow-up only for staying on the current anchor. If the turn should hand off to a different anchor or stop, leave next_prompt empty.",
     "When long-term memory should not be updated, set writeback_suggestion.should_write to false and mode to noop.",
@@ -1342,6 +1382,7 @@ export function createOpenAITutorIntelligence({
         "- visibleReply should sound like a tutor switching into study mode",
         "- teachingParagraphs must be a complete teaching explanation, not a note stub",
         "- teachingParagraphs should feel like a short live explanation from a strong tutor, not like a checklist",
+        "- if the learner has already seen a full explanation for this anchor in recent turns, compress to the missing link instead of repeating the whole lecture",
         "- cover the concept definition, mechanism, boundary/contrast, and the most common misunderstanding, but do it naturally rather than through forced section headers",
         "- use the JavaGuide snippets as supporting references only; do not let the output degrade into a list of article titles",
         "- never use rigid labels such as '核心结论' or '理解抓手' or '建议阅读' as section headers",

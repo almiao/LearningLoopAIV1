@@ -68,7 +68,10 @@ async function proxyJson(method, pathname, payload) {
   if (!response.ok) {
     throw new Error(data.detail || data.error || "Downstream AI service request failed.");
   }
-  return data;
+  return {
+    data,
+    traceId: response.headers.get("x-trace-id") || ""
+  };
 }
 
 async function handleStartTarget(body) {
@@ -108,13 +111,16 @@ async function handleStartTarget(body) {
     interactionPreference: body.interactionPreference || "balanced",
   };
 
-  const result = await proxyJson("POST", "/api/interview/start-target", aiPayload);
+  const { data: result, traceId } = await proxyJson("POST", "/api/interview/start-target", aiPayload);
   delete result.memoryProfileSnapshot;
-  return result;
+  return {
+    ...result,
+    traceId
+  };
 }
 
 async function handleAnswer(body) {
-  const result = await proxyJson("POST", "/api/interview/answer", body);
+  const { data: result, traceId } = await proxyJson("POST", "/api/interview/answer", body);
   const memoryProfileSnapshot = result.memoryProfileSnapshot;
   if (memoryProfileSnapshot?.id) {
     await memoryProfileStore.save(memoryProfileSnapshot);
@@ -134,7 +140,10 @@ async function handleAnswer(body) {
     await userProfileStore.save(user);
   }
   delete result.memoryProfileSnapshot;
-  return result;
+  return {
+    ...result,
+    traceId
+  };
 }
 
 const server = http.createServer(async (request, response) => {
@@ -187,19 +196,21 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "POST" && url.pathname === "/api/interview/focus-domain") {
-      sendJson(response, 200, await proxyJson("POST", "/api/interview/focus-domain", await readJsonBody(request)));
+      const { data, traceId } = await proxyJson("POST", "/api/interview/focus-domain", await readJsonBody(request));
+      sendJson(response, 200, { ...data, traceId });
       return;
     }
 
     if (request.method === "POST" && url.pathname === "/api/interview/focus-concept") {
-      sendJson(response, 200, await proxyJson("POST", "/api/interview/focus-concept", await readJsonBody(request)));
+      const { data, traceId } = await proxyJson("POST", "/api/interview/focus-concept", await readJsonBody(request));
+      sendJson(response, 200, { ...data, traceId });
       return;
     }
 
     if (request.method === "GET" && url.pathname.startsWith("/api/interview/")) {
-      const result = await proxyJson("GET", url.pathname);
+      const { data: result, traceId } = await proxyJson("GET", url.pathname);
       delete result.memoryProfileSnapshot;
-      sendJson(response, 200, result);
+      sendJson(response, 200, { ...result, traceId });
       return;
     }
 

@@ -225,3 +225,118 @@ test("python ai-service matches explain-first and switch-suppression semantics o
   assert.equal(skipAi.latestFeedback.nextMove, null);
   assert.ok((skipAi.currentProbe || "").length > 0 || skipAi.turns.length > weakAi.turns.length);
 });
+
+test("python ai-service honors explicit structured intent for control actions", async (t) => {
+  const aiPort = 18102;
+  const aiBaseUrl = `http://127.0.0.1:${aiPort}`;
+  const ai = startProcess(
+    "python3",
+    ["-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
+    { cwd: "/Users/lee/IdeaProjects/LearningLoopAIV1" }
+  );
+
+  t.after(() => {
+    ai.kill("SIGTERM");
+  });
+
+  await waitForJson(`${aiBaseUrl}/api/health`);
+
+  const baselinePack = getBaselinePackById("bigtech-java-backend");
+  const decomposition = createBaselinePackDecomposition(baselinePack);
+  const source = createBaselinePackSource(baselinePack);
+  const memoryProfile = createMemoryProfile(`parity_profile_${Date.now()}_intent`);
+
+  const aiSession = await postJson(`${aiBaseUrl}/api/interview/start-target`, {
+    userId: "parity-user-3",
+    source,
+    decomposition,
+    targetBaseline: {
+      id: baselinePack.id,
+      title: baselinePack.title,
+      targetRole: baselinePack.targetRole,
+      flagship: baselinePack.flagship
+    },
+    memoryProfile,
+    interactionPreference: "balanced"
+  });
+
+  const teachIntent = await postJson(`${aiBaseUrl}/api/interview/answer`, {
+    sessionId: aiSession.sessionId,
+    answer: "保留用户原话，不再靠按钮文案精确匹配。",
+    intent: "teach",
+    burdenSignal: "normal",
+    interactionPreference: "balanced"
+  });
+
+  assert.equal(teachIntent.latestFeedback.action, "teach");
+  assert.equal(teachIntent.engagement.controlCount, 1);
+  assert.equal(teachIntent.engagement.teachRequestCount, 1);
+});
+
+test("python ai-service does not auto-revisit skipped concepts after a scoped domain is exhausted", async (t) => {
+  const aiPort = 18103;
+  const aiBaseUrl = `http://127.0.0.1:${aiPort}`;
+  const ai = startProcess(
+    "python3",
+    ["-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
+    { cwd: "/Users/lee/IdeaProjects/LearningLoopAIV1" }
+  );
+
+  t.after(() => {
+    ai.kill("SIGTERM");
+  });
+
+  await waitForJson(`${aiBaseUrl}/api/health`);
+
+  const baselinePack = getBaselinePackById("bigtech-java-backend");
+  const decomposition = createBaselinePackDecomposition(baselinePack);
+  const source = createBaselinePackSource(baselinePack);
+  const memoryProfile = createMemoryProfile(`parity_profile_${Date.now()}_scope_stop`);
+
+  let aiSession = await postJson(`${aiBaseUrl}/api/interview/start-target`, {
+    userId: "parity-user-4",
+    source,
+    decomposition,
+    targetBaseline: {
+      id: baselinePack.id,
+      title: baselinePack.title,
+      targetRole: baselinePack.targetRole,
+      flagship: baselinePack.flagship
+    },
+    memoryProfile,
+    interactionPreference: "balanced"
+  });
+
+  aiSession = await postJson(`${aiBaseUrl}/api/interview/focus-domain`, {
+    sessionId: aiSession.sessionId,
+    domainId: "service-reliability"
+  });
+
+  aiSession = await postJson(`${aiBaseUrl}/api/interview/answer`, {
+    sessionId: aiSession.sessionId,
+    answer: "下一题",
+    intent: "advance",
+    burdenSignal: "normal",
+    interactionPreference: "balanced"
+  });
+
+  aiSession = await postJson(`${aiBaseUrl}/api/interview/answer`, {
+    sessionId: aiSession.sessionId,
+    answer: "下一题",
+    intent: "advance",
+    burdenSignal: "normal",
+    interactionPreference: "balanced"
+  });
+
+  assert.equal(aiSession.currentProbe, "");
+  assert.equal(aiSession.latestFeedback.turnResolution.mode, "stop");
+  assert.equal(
+    aiSession.turns.some(
+      (turn) =>
+        turn.role === "tutor" &&
+        turn.kind === "question" &&
+        /我们回到刚才先放下的这个点/.test(turn.content || "")
+    ),
+    false
+  );
+});

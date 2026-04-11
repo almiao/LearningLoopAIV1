@@ -52,3 +52,45 @@ test("domain-scoped advance stays inside the selected domain instead of jumping 
     )
   );
 });
+
+test("domain-scoped sessions stop when the scoped concepts are exhausted instead of auto-revisiting", async () => {
+  const service = createAppService({
+    intelligence: createHeuristicTutorIntelligence()
+  });
+
+  const session = await service.startTargetSession({
+    targetBaselineId: "bigtech-java-backend",
+    interactionPreference: "balanced"
+  });
+
+  const focused = await service.focusDomain({
+    sessionId: session.sessionId,
+    domainId: "service-reliability"
+  });
+
+  const afterFirstAdvance = await service.answer({
+    sessionId: focused.sessionId,
+    answer: "下一题",
+    burdenSignal: "normal",
+    interactionPreference: "balanced"
+  });
+
+  const afterSecondAdvance = await service.answer({
+    sessionId: afterFirstAdvance.sessionId,
+    answer: "下一题",
+    burdenSignal: "normal",
+    interactionPreference: "balanced"
+  });
+
+  assert.equal(afterSecondAdvance.currentProbe, "");
+  assert.equal(afterSecondAdvance.latestFeedback.turnResolution.mode, "stop");
+  assert.equal(
+    afterSecondAdvance.turns.some(
+      (turn) =>
+        turn.role === "tutor" &&
+        turn.kind === "question" &&
+        /我们回到刚才先放下的这个点/.test(turn.content || "")
+    ),
+    false
+  );
+});

@@ -1004,7 +1004,8 @@ async function submitAnswerWithIntent(intent) {
   const formData = new FormData(elements.answerForm);
   const payload = {
     sessionId: state.session.sessionId,
-    answer: intent,
+    answer: intent === "teach" ? "讲一下" : "下一题",
+    intent,
     burdenSignal: formData.get("burdenSignal"),
     interactionPreference: formData.get("interactionPreference") || state.session.interactionPreference
   };
@@ -1035,8 +1036,8 @@ elements.quickActionButtons.forEach((button) => {
     try {
       await submitAnswerWithIntent(
         button.dataset.answerIntent === "teach"
-          ? "讲一下"
-          : "下一题"
+          ? "teach"
+          : "advance"
       );
     } catch (error) {
       window.alert(error.message);

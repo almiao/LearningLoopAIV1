@@ -1,6 +1,18 @@
 import { normalizeWhitespace } from "../material/material-model.js";
 
-export function detectControlIntent(answer) {
+const allowedControlIntents = new Set(["advance", "teach"]);
+
+export function normalizeControlIntent(intent) {
+  const normalized = normalizeWhitespace(intent).toLowerCase();
+  return allowedControlIntents.has(normalized) ? normalized : null;
+}
+
+export function detectControlIntent(answer, explicitIntent = "") {
+  const normalizedIntent = normalizeControlIntent(explicitIntent);
+  if (normalizedIntent) {
+    return normalizedIntent;
+  }
+
   const normalized = normalizeWhitespace(answer).toLowerCase();
   if (!normalized) {
     return null;

@@ -57,6 +57,38 @@ def pick_recent_evidence(entries: List[Dict[str, Any]] | None = None, max_entrie
     return result
 
 
+def pick_recent_anchor_turns(turns: List[Dict[str, Any]] | None = None, concept_id: str = "", max_turns: int = 4, max_chars: int = 220) -> List[Dict[str, Any]]:
+    result: List[Dict[str, Any]] = []
+    for turn in (turns or []):
+        if turn.get("role") == "system":
+            continue
+        if turn.get("conceptId") != concept_id:
+            continue
+        result.append(
+            {
+                "role": turn.get("role", ""),
+                "kind": turn.get("kind", ""),
+                "action": turn.get("action", ""),
+                "content": trim_text(turn.get("content", ""), max_chars),
+                "takeaway": trim_text(turn.get("takeaway", ""), 140),
+            }
+        )
+    return result[-max_turns:]
+
+
+def build_anchor_state_snapshot(session: Dict[str, Any], concept_id: str) -> Dict[str, Any]:
+    concept_state = ((session.get("conceptStates") or {}).get(concept_id, {}) or {})
+    anchor_state = concept_state.get("anchorState") or {}
+    return {
+        "confirmed_understanding": trim_text(anchor_state.get("confirmedUnderstanding", ""), 180),
+        "current_gap": trim_text(anchor_state.get("currentGap", ""), 180),
+        "last_teaching_point": trim_text(anchor_state.get("lastTeachingPoint", ""), 180),
+        "last_followup_goal": trim_text(anchor_state.get("lastFollowupGoal", ""), 180),
+        "last_learner_intent": trim_text(anchor_state.get("lastLearnerIntent", ""), 80),
+        "last_tutor_action": trim_text(anchor_state.get("lastTutorAction", ""), 80),
+    }
+
+
 def build_source_references(concept: Dict[str, Any], max_sources: int = 4) -> List[Dict[str, Any]]:
     references: List[Dict[str, Any]] = []
     interview_question = concept.get("interviewQuestion") or {}
@@ -163,6 +195,8 @@ def build_context_packet(
     memory_anchor = ((session.get("memoryProfile") or {}).get("abilityItems") or {}).get(concept.get("id"))
     stable_scope = _describe_scope(session, concept)
     previous_runtime_map = ((session.get("runtimeMaps") or {}).get(concept.get("id"))) or None
+    anchor_turns = pick_recent_anchor_turns(session.get("turns") or [], concept.get("id", ""))
+    anchor_state = build_anchor_state_snapshot(session, concept.get("id", ""))
 
     has_reference_content = len(source_refs) > 0
     budgets = dict(DEFAULT_LAYER_BUDGETS)
@@ -193,6 +227,16 @@ def build_context_packet(
             "engagement": dict(session.get("engagement") or {}),
             "previousRuntimeMap": previous_runtime_map,
             "recentTurns": pick_recent_turns(session.get("turns") or []),
+            "anchorState": anchor_state,
+            "anchorHistory": {
+                "recentTurns": anchor_turns,
+                "teachCount": teach_turns_used,
+                "hasRecentTeaching": any(
+                    turn.get("role") == "tutor" and (turn.get("action") == "teach" or turn.get("kind") == "feedback")
+                    for turn in anchor_turns
+                ),
+                "recentTakeaways": [turn.get("takeaway", "") for turn in anchor_turns if turn.get("takeaway")][-2:],
+            },
             "recentEvidence": pick_recent_evidence(prior_evidence or []),
             "rawEvidencePoint": effective_raw_evidence_point,
         },
@@ -229,6 +273,16 @@ def build_context_packet(
         "memory_anchor_summary": memory_anchor,
         "recent_evidence": pick_recent_evidence(prior_evidence or []),
         "recent_turns": pick_recent_turns(session.get("turns") or []),
+        "anchor_state": anchor_state,
+        "anchor_history": {
+            "recent_turns": anchor_turns,
+            "teach_count": teach_turns_used,
+            "has_recent_teaching": any(
+                turn.get("role") == "tutor" and (turn.get("action") == "teach" or turn.get("kind") == "feedback")
+                for turn in anchor_turns
+            ),
+            "recent_takeaways": [turn.get("takeaway", "") for turn in anchor_turns if turn.get("takeaway")][-2:],
+        },
         "source_refs": source_refs[:2],
         "runtime_understanding_map": previous_runtime_map,
         "budget": {

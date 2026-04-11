@@ -283,7 +283,7 @@ function isConceptInScope(session, concept) {
   return true;
 }
 
-function chooseNextUnit(session) {
+function chooseNextUnit(session, { allowRevisit = true } = {}) {
   const next = session.concepts.find((concept) => {
     const conceptSession = session.conceptStates[concept.id];
     return !conceptSession.completed && isConceptInScope(session, concept);
@@ -293,25 +293,27 @@ function chooseNextUnit(session) {
     return { concept: next, revisit: false };
   }
 
-  const revisit = session.revisitQueue.find((item) => {
-    if (item.done) {
-      return false;
-    }
-
-    const concept = session.concepts.find((entry) => entry.id === item.conceptId);
-    return Boolean(concept && isConceptInScope(session, concept));
-  });
-  if (revisit) {
-    const concept = session.concepts.find((item) => item.id === revisit.conceptId);
-    if (concept) {
-      revisit.done = true;
-      session.conceptStates[concept.id].completed = false;
-      return { concept, revisit: true, revisitReason: revisit.reason };
-    }
-  }
-
   if (session.mode === "target" && getWorkspaceScope(session).type !== "pack") {
     return { concept: null, revisit: false, scopeExhausted: true };
+  }
+
+  if (allowRevisit) {
+    const revisit = session.revisitQueue.find((item) => {
+      if (item.done) {
+        return false;
+      }
+
+      const concept = session.concepts.find((entry) => entry.id === item.conceptId);
+      return Boolean(concept && isConceptInScope(session, concept));
+    });
+    if (revisit) {
+      const concept = session.concepts.find((item) => item.id === revisit.conceptId);
+      if (concept) {
+        revisit.done = true;
+        session.conceptStates[concept.id].completed = false;
+        return { concept, revisit: true, revisitReason: revisit.reason };
+      }
+    }
   }
 
   return { concept: chooseNextConcept(session), revisit: false };
@@ -355,9 +357,9 @@ function buildTeachExplanation(concept, repeatedTeach = false, learningCard = nu
       return trimmed.startsWith("我换个角度") ? trimmed : `我换个角度再讲一次。 ${trimmed}`;
     }
 
-    return trimmed.startsWith("好，") || trimmed.startsWith("好。") || trimmed.startsWith("好 ")
+    return trimmed.startsWith("好，") || trimmed.startsWith("好。") || trimmed.startsWith("好 ") || trimmed.startsWith("我们")
       ? trimmed
-      : `好，我先不让你继续猜了。 ${trimmed}`;
+      : `我们先把这个点拆开讲清楚。 ${trimmed}`;
   }
 
   const guideTitles = formatGuideTitles(concept);
@@ -367,7 +369,7 @@ function buildTeachExplanation(concept, repeatedTeach = false, learningCard = nu
   const remediationHint = concept.remediationHint ? `优先抓住：${concept.remediationHint}` : "";
   const preface = repeatedTeach
     ? "我换个角度再讲一次。"
-    : "好，我先不让你继续猜了。你先带走这一层，再按学习模式过一遍。";
+    : "我们先把这一层拆开讲清楚。";
 
   return [preface, concept.summary, remediationHint, sourceHint].filter(Boolean).join(" ");
 }
@@ -651,7 +653,7 @@ function createFallbackWritebackSuggestion(concept, tutorMove) {
 
 export async function answerSession(
   session,
-  { answer, burdenSignal = "normal", interactionPreference, intelligence }
+  { answer, intent = "", burdenSignal = "normal", interactionPreference, intelligence }
 ) {
   const concept = session.concepts.find((item) => item.id === session.currentConceptId);
   const priorEvidence = session.ledger[concept.id].entries;
@@ -662,7 +664,7 @@ export async function answerSession(
   }
 
   session.lastAnsweredPrompt = session.currentProbe;
-  const controlIntent = detectControlIntent(answer);
+  const controlIntent = detectControlIntent(answer, intent);
   if (controlIntent) {
     return applyControlIntent(session, { concept, controlIntent, answer, burdenSignal, intelligence });
   }
@@ -1111,7 +1113,7 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
   }
 
   if (controlIntent !== "teach" || !coachingStep) {
-    const nextUnit = chooseNextUnit(session);
+    const nextUnit = chooseNextUnit(session, { allowRevisit: false });
     if (nextUnit.concept) {
       session.currentConceptId = nextUnit.concept.id;
       session.currentProbe = resolvePromptForConcept({

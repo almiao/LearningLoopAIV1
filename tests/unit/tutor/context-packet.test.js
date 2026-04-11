@@ -112,9 +112,9 @@ test("buildContextPacket exposes stable, dynamic, and flat aliases for the AI tu
   assert.equal(packet.anchor.canonical_id, "mvcc");
   assert.equal(packet.memory_anchor_summary.state, "partial");
   assert.equal(packet.recent_turns.length, 2);
+  assert.equal(packet.anchor_history.recentTurns.length, 2);
   assert.equal(packet.recent_evidence.length, 1);
   assert.equal(packet.draft_evidence.anchorId, "mvcc");
   assert.ok(packet.source_refs.length >= 1);
   assert.equal(packet.stop_conditions.should_discourage_more_probe, false);
 });
-

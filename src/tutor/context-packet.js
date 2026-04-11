@@ -43,6 +43,19 @@ function pickRecentEvidence(entries = [], maxEntries = 4, maxChars = 180) {
   }));
 }
 
+function pickRecentAnchorTurns(turns = [], conceptId = "", maxTurns = 4, maxChars = 220) {
+  return turns
+    .filter((turn) => turn.role !== "system" && turn.conceptId === conceptId)
+    .slice(-maxTurns)
+    .map((turn) => ({
+      role: turn.role,
+      kind: turn.kind || "",
+      action: turn.action || "",
+      content: trimText(turn.content, maxChars),
+      takeaway: trimText(turn.takeaway, 140)
+    }));
+}
+
 function buildSourceReferences(concept, maxSources = 4) {
   const references = [];
 
@@ -150,6 +163,7 @@ export function buildContextPacket({
       answer,
       sourceRefs
     });
+  const anchorTurns = pickRecentAnchorTurns(session.turns, concept.id);
   const stable = {
     target: {
       id: session.targetBaseline?.id || session.source.kind,
@@ -171,6 +185,17 @@ export function buildContextPacket({
     },
     previousRuntimeMap: session.runtimeMaps?.[concept.id] || null,
     recentTurns: pickRecentTurns(session.turns),
+    anchorHistory: {
+      recentTurns: anchorTurns,
+      teachCount: session.conceptStates?.[concept.id]?.teachCount || 0,
+      hasRecentTeaching: anchorTurns.some(
+        (turn) => turn.role === "tutor" && (turn.action === "teach" || turn.kind === "feedback")
+      ),
+      recentTakeaways: anchorTurns
+        .map((turn) => turn.takeaway)
+        .filter(Boolean)
+        .slice(-2)
+    },
     recentEvidence: pickRecentEvidence(priorEvidence),
     rawEvidencePoint: effectiveRawEvidencePoint
   };
@@ -192,11 +217,96 @@ export function buildContextPacket({
     reference: hasReferenceContent ? defaultLayerBudgets.reference : 0
   };
 
+  const frictionSignals = {
+    burden_signal: burdenSignal,
+    answer_length: trimText(answer, 320).length,
+    answer_is_blank: !trimText(answer, 320),
+    teach_request_count: session.engagement?.teachRequestCount || 0,
+    skip_count: session.engagement?.skipCount || 0,
+    repeated_control_count: session.engagement?.consecutiveControlCount || 0,
+    fatigue_level:
+      burdenSignal === "high"
+        ? "high"
+        : (session.engagement?.consecutiveControlCount || 0) >= 2
+          ? "medium"
+          : "low"
+  };
+
+  const stopConditions = {
+    probe_budget_reached:
+      (session.conceptStates?.[concept.id]?.attempts || 0) >=
+      ((concept.importance || "secondary") === "core" ? 3 : 2),
+    teach_budget_reached: (session.conceptStates?.[concept.id]?.teachCount || 0) >= 2,
+    friction_high: burdenSignal === "high",
+    recent_info_gain_level: dynamic.previousRuntimeMap?.info_gain_level || "medium",
+    should_discourage_more_probe:
+      burdenSignal === "high" ||
+      ((session.conceptStates?.[concept.id]?.attempts || 0) >=
+        ((concept.importance || "secondary") === "core" ? 3 : 2)) ||
+      dynamic.previousRuntimeMap?.info_gain_level === "negligible"
+  };
+
+  const budget = {
+    max_probe_turns: (concept.importance || "secondary") === "core" ? 3 : 2,
+    probe_turns_used: session.conceptStates?.[concept.id]?.attempts || 0,
+    remaining_probe_turns: Math.max(
+      0,
+      ((concept.importance || "secondary") === "core" ? 3 : 2) -
+        (session.conceptStates?.[concept.id]?.attempts || 0)
+    ),
+    max_teach_turns: 2,
+    teach_turns_used: session.conceptStates?.[concept.id]?.teachCount || 0,
+    remaining_teach_turns: Math.max(0, 2 - (session.conceptStates?.[concept.id]?.teachCount || 0))
+  };
+
   return {
     stable,
     dynamic,
     reference,
     budgets: effectiveBudgets,
+    topic_context: {
+      concept_id: concept.id,
+      concept_title: concept.title,
+      current_probe: trimText(session.currentProbe, 220),
+      question_meta: session.currentQuestionMeta || null,
+      scope: {
+        type: stable.scope.type,
+        id: stable.scope.id,
+        title: concept.abilityDomainTitle || concept.domainTitle || concept.title
+      },
+      target: stable.target
+    },
+    interaction_context: {
+      explicit_intent: "",
+      burden_signal: burdenSignal,
+      interaction_preference: session.interactionPreference,
+      engagement: {
+        answer_count: session.engagement?.answerCount || 0,
+        teach_request_count: session.engagement?.teachRequestCount || 0,
+        skip_count: session.engagement?.skipCount || 0,
+        repeated_control_count: session.engagement?.consecutiveControlCount || 0
+      },
+      friction: frictionSignals,
+      should_slow_down: stopConditions.should_discourage_more_probe
+    },
+    teaching_context: {
+      working_diagnosis: dynamic.previousRuntimeMap || null,
+      anchor_history: dynamic.anchorHistory,
+      anchor_summary: {
+        confirmed_understanding: dynamic.anchorHistory.recentTakeaways.at(-1) || "",
+        current_gap: (dynamic.previousRuntimeMap?.open_questions || [])[0] || "",
+        last_teaching_point: dynamic.anchorHistory.recentTakeaways.at(-1) || "",
+        last_updated_at_turn: session.turns?.length || 0
+      },
+      recent_evidence: dynamic.recentEvidence,
+      memory_anchor_summary: stable.memoryAnchor || null
+    },
+    orchestration_context: {
+      budget,
+      stop_conditions: stopConditions,
+      latest_control_verdict: session.latestControlVerdict || null,
+      workspace_scope: session.workspaceScope || null
+    },
     target: stable.target,
     scope: {
       type: stable.scope.type,
@@ -218,47 +328,12 @@ export function buildContextPacket({
     memory_anchor_summary: stable.memoryAnchor || null,
     recent_evidence: dynamic.recentEvidence,
     recent_turns: dynamic.recentTurns,
+    anchor_history: dynamic.anchorHistory,
     source_refs: reference.sources.slice(0, 2),
     runtime_understanding_map: dynamic.previousRuntimeMap,
-    budget: {
-      max_probe_turns: (concept.importance || "secondary") === "core" ? 3 : 2,
-      probe_turns_used: session.conceptStates?.[concept.id]?.attempts || 0,
-      remaining_probe_turns: Math.max(
-        0,
-        ((concept.importance || "secondary") === "core" ? 3 : 2) -
-          (session.conceptStates?.[concept.id]?.attempts || 0)
-      ),
-      max_teach_turns: 2,
-      teach_turns_used: session.conceptStates?.[concept.id]?.teachCount || 0,
-      remaining_teach_turns: Math.max(0, 2 - (session.conceptStates?.[concept.id]?.teachCount || 0))
-    },
-    friction_signals: {
-      burden_signal: burdenSignal,
-      answer_length: trimText(answer, 320).length,
-      answer_is_blank: !trimText(answer, 320),
-      teach_request_count: session.engagement?.teachRequestCount || 0,
-      skip_count: session.engagement?.skipCount || 0,
-      repeated_control_count: session.engagement?.consecutiveControlCount || 0,
-      fatigue_level:
-        burdenSignal === "high"
-          ? "high"
-          : (session.engagement?.consecutiveControlCount || 0) >= 2
-            ? "medium"
-            : "low"
-    },
-    stop_conditions: {
-      probe_budget_reached:
-        (session.conceptStates?.[concept.id]?.attempts || 0) >=
-        ((concept.importance || "secondary") === "core" ? 3 : 2),
-      teach_budget_reached: (session.conceptStates?.[concept.id]?.teachCount || 0) >= 2,
-      friction_high: burdenSignal === "high",
-      recent_info_gain_level: dynamic.previousRuntimeMap?.info_gain_level || "medium",
-      should_discourage_more_probe:
-        burdenSignal === "high" ||
-        ((session.conceptStates?.[concept.id]?.attempts || 0) >=
-          ((concept.importance || "secondary") === "core" ? 3 : 2)) ||
-        dynamic.previousRuntimeMap?.info_gain_level === "negligible"
-    },
+    budget,
+    friction_signals: frictionSignals,
+    stop_conditions: stopConditions,
     draft_evidence: effectiveRawEvidencePoint
   };
 }
