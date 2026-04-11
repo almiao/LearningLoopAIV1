@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildChatTimeline } from "../../../frontend/lib/chat-transcript.js";
+import { buildChatTimeline } from "../../../src/view/chat-transcript.js";
 
 test("chat transcript keeps workspace switches visible instead of rendering them as user messages", () => {
   const timeline = buildChatTimeline([

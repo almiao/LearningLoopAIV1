@@ -6,13 +6,8 @@
   "scripts": {
     "start": "bash start-services.sh",
     "dev": "bash start-services.sh",
-    "legacy:start": "node src/server.js",
-    "legacy:dev": "node --watch src/server.js",
     "build": "node --check bff/src/server.js && python3 -m py_compile ai-service/app/main.py ai-service/app/core/config.py ai-service/app/core/tracing.py ai-service/app/observability/events.py ai-service/app/observability/logger.py ai-service/app/infra/llm/snapshot.py ai-service/app/infra/llm/client.py ai-service/app/domain/interview/parsers.py ai-service/app/domain/interview/validators.py ai-service/app/engine/control_intents.py ai-service/app/engine/tutor_policy.py ai-service/app/engine/context_packet.py ai-service/app/engine/java_guide_source_reader.py ai-service/app/engine/turn_envelope.py ai-service/app/engine/tutor_intelligence.py ai-service/app/engine/session_engine.py && npm run build --prefix frontend && bash -n start-dev.sh",
-    "legacy:build": "node scripts/build-check.mjs",
     "test": "node --test tests/e2e/split-services.spec.js tests/integration/ai-service/parity-flow.test.js tests/integration/ai-service/observability-flow.test.js tests/integration/ai-service/automated-eval-module.test.js tests/integration/user/profile-flow.test.js tests/unit/split-entrypoints.test.js",
-    "legacy:test": "node --test tests/e2e/source-to-session.spec.js tests/e2e/http-workspace-flow.spec.js tests/e2e/target-first-capability-memory.spec.js tests/e2e/session-dossier-generation.spec.js tests/integration/ingestion/source-normalization.test.js tests/integration/tutor/*.test.js tests/unit/ingestion/*.test.js tests/unit/material/*.test.js tests/unit/frontend/workspace-route.test.js tests/unit/tutor/*.test.js",
-    "legacy:eval:sessions": "node scripts/generate-session-dossiers.mjs",
     "eval:auto": "node scripts/run-automated-eval.mjs",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev:bff": "npm run dev --prefix bff",

@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createAppService } from "../../src/server.js";
+import { createAppService } from "../../src/app-service.js";
 import { createHeuristicTutorIntelligence } from "../../src/tutor/tutor-intelligence.js";
 
 const __filename = fileURLToPath(import.meta.url);

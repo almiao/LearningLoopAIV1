@@ -1,8 +1,13 @@
 import http from "node:http";
-import { createBaselinePackDecomposition, createBaselinePackSource, getBaselinePackById, listBaselinePacks } from "./lib/baseline/baseline-packs.js";
-import { createMemoryProfileStore } from "./lib/tutor/memory-profile-store.js";
-import { createUserProfileStore } from "./lib/user/user-profile-store.js";
-import { buildUserProfileView } from "./lib/user/profile-aggregator.js";
+import {
+  createBaselinePackDecomposition,
+  createBaselinePackSource,
+  getBaselinePackById,
+  listBaselinePacks
+} from "../../src/baseline/baseline-packs.js";
+import { createMemoryProfileStore } from "../../src/tutor/memory-profile-store.js";
+import { createUserProfileStore } from "../../src/user/user-profile-store.js";
+import { buildUserProfileView } from "../../src/user/profile-aggregator.js";
 
 const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
 const port = Number(process.env.PORT || 4000);

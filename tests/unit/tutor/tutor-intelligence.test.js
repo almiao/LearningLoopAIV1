@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseDocumentInput } from "../../../src/ingestion/document-parser.js";
-import { createAppService } from "../../../src/server.js";
+import { createAppService } from "../../../src/app-service.js";
 import { createSession } from "../../../src/tutor/session-orchestrator.js";
 import { parseProviderJsonText } from "../../../src/tutor/tutor-intelligence.js";
 import { javaCollectionsDocument } from "../../fixtures/materials.js";
 
-test("app service now defaults to heuristic intelligence on the legacy node path", async () => {
+test("app service defaults to heuristic intelligence on the local node path", async () => {
   const service = createAppService({
     fetchImpl: async () => {
       throw new Error("fetch should not run");

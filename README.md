@@ -77,9 +77,3 @@ Run the default split-focused tests:
 ```bash
 npm test
 ```
-
-Run legacy reference tests if needed:
-
-```bash
-npm run legacy:test
-```

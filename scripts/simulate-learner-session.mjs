@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseProviderJsonText } from "../src/tutor/tutor-intelligence.js";
-import { createAppService } from "../src/server.js";
+import { createAppService } from "../src/app-service.js";
 import { createHeuristicTutorIntelligence } from "../src/tutor/tutor-intelligence.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -21,10 +21,8 @@ const personaPath = args.persona
 const sourcePath = args.source
   ? path.resolve(process.cwd(), args.source)
   : path.resolve(__dirname, "../tests/fixtures/materials.js");
-const serverUrl = args.url || "http://localhost:3050";
 const maxTurns = Number(args.turns || 8);
 const outputDir = path.resolve(__dirname, "../.omx/simulations");
-const localMode = args.local === "heuristic";
 
 function getLearnerProviderConfig() {
   const provider = String(process.env.LLAI_SIM_LLM_PROVIDER || process.env.LLAI_LLM_PROVIDER || "DEEPSEEK").toUpperCase();
@@ -134,22 +132,6 @@ async function loadSourceDocument() {
   throw new Error("Please pass --source=<path-to-md-or-txt> for simulation.");
 }
 
-async function postJson(url, payload) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(payload)
-  });
-
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Request failed");
-  }
-  return data;
-}
-
 function createLocalRunner() {
   const service = createAppService({
     intelligence: createHeuristicTutorIntelligence()
@@ -168,16 +150,9 @@ function createLocalRunner() {
 const persona = await loadPersona();
 const source = await loadSourceDocument();
 const providerConfig = getLearnerProviderConfig();
-const runner = localMode ? createLocalRunner() : null;
+const runner = createLocalRunner();
 
-const session = localMode
-  ? await runner.analyze({
-      type: "document",
-      title: source.title,
-      content: source.content,
-      interactionPreference: "balanced"
-    })
-  : await postJson(`${serverUrl}/api/source/analyze`, {
+const session = await runner.analyze({
   type: "document",
   title: source.title,
   content: source.content,
@@ -201,19 +176,12 @@ for (let index = 0; index < maxTurns; index += 1) {
     })
   });
 
-  current = localMode
-    ? await runner.answer({
-        sessionId: current.sessionId,
-        answer: learnerMove.answer,
-        burdenSignal: "normal",
-        interactionPreference: "balanced"
-      })
-    : await postJson(`${serverUrl}/api/session/answer`, {
-        sessionId: current.sessionId,
-        answer: learnerMove.answer,
-        burdenSignal: "normal",
-        interactionPreference: "balanced"
-      });
+  current = await runner.answer({
+    sessionId: current.sessionId,
+    answer: learnerMove.answer,
+    burdenSignal: "normal",
+    interactionPreference: "balanced"
+  });
 
   transcript.push(...(current.turns || []).slice(transcript.length));
 }
@@ -229,7 +197,7 @@ await writeFile(
   `${JSON.stringify(
     {
       persona,
-      serverUrl: localMode ? "local-heuristic" : serverUrl,
+      serverUrl: "local-heuristic",
       sourceTitle: source.title,
       transcript,
       finalState: {

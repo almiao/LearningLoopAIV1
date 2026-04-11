@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createAppService } from "../src/server.js";
+import { createAppService } from "../src/app-service.js";
 import { createHeuristicTutorIntelligence } from "../src/tutor/tutor-intelligence.js";
 import { aqsMarkdownDocument } from "../tests/fixtures/materials.js";
 

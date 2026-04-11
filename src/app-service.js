@@ -1,7 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import http from "node:http";
 import {
   createBaselinePackDecomposition,
   createBaselinePackSource,
@@ -10,56 +6,17 @@ import {
 } from "./baseline/baseline-packs.js";
 import { parseDocumentInput } from "./ingestion/document-parser.js";
 import { fetchSubmittedPage } from "./ingestion/url-fetcher.js";
-import { createSession, answerSession, focusSessionOnDomain, focusSessionOnConcept } from "./tutor/session-orchestrator.js";
+import {
+  answerSession,
+  createSession,
+  focusSessionOnConcept,
+  focusSessionOnDomain
+} from "./tutor/session-orchestrator.js";
 import { createMemoryProfileStore } from "./tutor/memory-profile-store.js";
 import { recordSessionCase } from "./tutor/case-recorder.js";
 import { createHeuristicTutorIntelligence } from "./tutor/tutor-intelligence.js";
 import { createUserProfileStore } from "./user/user-profile-store.js";
 import { buildUserProfileView } from "./user/profile-aggregator.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const publicDir = path.join(__dirname, "..", "public");
-
-function sendJson(response, statusCode, payload) {
-  response.writeHead(statusCode, {
-    "content-type": "application/json; charset=utf-8"
-  });
-  response.end(JSON.stringify(payload));
-}
-
-function sendText(response, statusCode, payload, contentType = "text/plain; charset=utf-8") {
-  response.writeHead(statusCode, {
-    "content-type": contentType
-  });
-  response.end(payload);
-}
-
-function serveStatic(requestPath, response) {
-  const normalizedPath = requestPath === "/" ? "/index.html" : requestPath;
-  const filePath = path.join(publicDir, normalizedPath);
-  if (!filePath.startsWith(publicDir) || !fs.existsSync(filePath)) {
-    sendText(response, 404, "Not found");
-    return;
-  }
-
-  const contentType = filePath.endsWith(".html")
-    ? "text/html; charset=utf-8"
-    : filePath.endsWith(".css")
-      ? "text/css; charset=utf-8"
-      : "application/javascript; charset=utf-8";
-
-  sendText(response, 200, fs.readFileSync(filePath, "utf8"), contentType);
-}
-
-async function readJsonBody(request) {
-  const chunks = [];
-  for await (const chunk of request) {
-    chunks.push(chunk);
-  }
-  const rawBody = Buffer.concat(chunks).toString("utf8");
-  return rawBody ? JSON.parse(rawBody) : {};
-}
 
 function projectSession(session) {
   return {
@@ -289,106 +246,3 @@ export function createAppService({ fetchImpl = globalThis.fetch, intelligence } 
     }
   };
 }
-
-export function createAppServer(options = {}) {
-  const service = createAppService(options);
-
-  return http.createServer(async (request, response) => {
-    try {
-      const url = new URL(request.url, "http://localhost");
-
-      if (request.method === "GET" && url.pathname === "/api/health") {
-        sendJson(response, 200, { ok: true });
-        return;
-      }
-
-      if (request.method === "POST" && url.pathname === "/api/source/analyze") {
-        const body = await readJsonBody(request);
-        const payload = await service.analyzeSource(body);
-        sendJson(response, 200, payload);
-        return;
-      }
-
-      if (request.method === "POST" && url.pathname === "/api/auth/login") {
-        const body = await readJsonBody(request);
-        const payload = await service.login(body);
-        sendJson(response, 200, payload);
-        return;
-      }
-
-      if (request.method === "GET" && url.pathname === "/api/baselines") {
-        sendJson(response, 200, { baselines: service.listBaselines() });
-        return;
-      }
-
-      if (request.method === "GET" && url.pathname.startsWith("/api/profile/")) {
-        const userId = url.pathname.split("/").at(-1);
-        const payload = await service.getProfile(userId);
-        sendJson(response, 200, payload);
-        return;
-      }
-
-      if (request.method === "POST" && url.pathname === "/api/session/start-target") {
-        const body = await readJsonBody(request);
-        const payload = await service.startTargetSession(body);
-        sendJson(response, 200, payload);
-        return;
-      }
-
-      if (request.method === "POST" && url.pathname === "/api/session/answer") {
-        const body = await readJsonBody(request);
-        const payload = await service.answer(body);
-        sendJson(response, 200, payload);
-        return;
-      }
-
-      if (request.method === "POST" && url.pathname === "/api/session/focus-domain") {
-        const body = await readJsonBody(request);
-        const payload = await service.focusDomain(body);
-        sendJson(response, 200, payload);
-        return;
-      }
-
-      if (request.method === "POST" && url.pathname === "/api/session/focus-concept") {
-        const body = await readJsonBody(request);
-        const payload = await service.focusConcept(body);
-        sendJson(response, 200, payload);
-        return;
-      }
-
-      if (request.method === "GET" && url.pathname.startsWith("/api/session/")) {
-        const sessionId = url.pathname.split("/").at(-1);
-        sendJson(response, 200, service.getSession(sessionId));
-        return;
-      }
-
-      if (request.method === "GET") {
-        serveStatic(url.pathname, response);
-        return;
-      }
-
-      sendJson(response, 405, { error: "Method not allowed." });
-    } catch (error) {
-      console.error(
-        `[${new Date().toISOString()}] ${request.method} ${request.url} failed`,
-        error instanceof Error ? error.stack || error.message : error
-      );
-      sendJson(response, 400, {
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-}
-
-const server = createAppServer();
-const port = Number(process.env.PORT || 3000);
-const isDirectExecution =
-  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-
-if (process.env.NODE_ENV !== "test" && isDirectExecution) {
-  server.listen(port, () => {
-    console.log(`Learning Loop AI listening on http://localhost:${port}`);
-  });
-}
-
-export { server };
