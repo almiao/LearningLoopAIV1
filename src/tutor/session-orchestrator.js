@@ -209,9 +209,8 @@ function moveDebugSummary(move) {
     moveType: move.moveType,
     signal: move.signal,
     judge: move.judge,
-    hasVisibleReply: Boolean(move.visibleReply),
-    hasNextQuestion: Boolean(move.nextQuestion),
-    hasTeachingChunk: Boolean(move.teachingChunk)
+    hasReplyText: Boolean(move.replyText),
+    hasFollowUpQuestion: Boolean(move.followUpQuestion)
   });
 }
 
@@ -222,7 +221,7 @@ function invalidMoveError(move, reason) {
 }
 
 function assertValidMove(move) {
-  const allowed = new Set(["probe", "affirm", "deepen", "repair", "teach", "check", "advance", "abstain"]);
+  const allowed = new Set(["probe", "affirm", "deepen", "repair", "teach", "check", "advance"]);
   if (!move || !allowed.has(move.moveType)) {
     throw invalidMoveError(move, "invalid moveType");
   }
@@ -235,9 +234,30 @@ function assertValidMove(move) {
     throw invalidMoveError(move, "invalid judge");
   }
 
-  if (!move.visibleReply) {
-    throw invalidMoveError(move, "missing visibleReply");
+  if (!move.replyText) {
+    throw invalidMoveError(move, "missing replyText");
   }
+}
+
+function moveRequiresResponse(move) {
+  return ["probe", "teach", "verify"].includes(move?.nextMove?.ui_mode || "");
+}
+
+function getMoveFollowUpQuestion(move) {
+  return moveRequiresResponse(move) ? String(move?.followUpQuestion || "").trim() : "";
+}
+
+function moveTypeToUiMode(moveType = "") {
+  if (moveType === "teach") {
+    return "teach";
+  }
+  if (moveType === "advance") {
+    return "advance";
+  }
+  if (moveType === "deepen" || moveType === "affirm" || moveType === "check") {
+    return "verify";
+  }
+  return "probe";
 }
 
 function createQuestionMeta(concept) {
@@ -547,20 +567,22 @@ export async function createSession({
 }
 
 function buildLatestFeedback({ concept, tutorMove, controlVerdict = null, memoryAnchor = null }) {
+  const followUpQuestion = getMoveFollowUpQuestion(tutorMove);
   return {
     conceptId: concept.id,
     conceptTitle: concept.title,
     signal: tutorMove.signal,
     action: tutorMove.moveType,
-    explanation: tutorMove.visibleReply,
-    gap: tutorMove.remainingGap,
-    evidenceReference: tutorMove.evidenceReference,
-    coachingStep: tutorMove.nextQuestion,
-    candidateCoachingStep: tutorMove.nextQuestion,
-    strength: tutorMove.confirmedUnderstanding,
-    takeaway: tutorMove.takeaway,
-    teachingChunk: tutorMove.teachingChunk,
-    teachingParagraphs: tutorMove.teachingParagraphs || [],
+    explanation: tutorMove.replyText,
+    replyStream: tutorMove.replyText,
+    gap: tutorMove.nextMove?.reason || tutorMove.judge.reasons?.[0] || "",
+    evidenceReference: concept.excerpt,
+    coachingStep: followUpQuestion,
+    candidateCoachingStep: followUpQuestion,
+    strength: "",
+    takeaway: "",
+    teachingChunk: "",
+    teachingParagraphs: [],
     revisitReason: tutorMove.revisitReason,
     judge: tutorMove.judge,
     runtimeMap: tutorMove.runtimeMap || null,
@@ -616,6 +638,7 @@ function buildTurnResolution({
 }
 
 function createFallbackRuntimeMap(concept, tutorMove) {
+  const followUpQuestion = getMoveFollowUpQuestion(tutorMove);
   return {
     ...createEmptyRuntimeMap(concept.id),
     turn_signal: tutorMove.signal,
@@ -624,17 +647,17 @@ function createFallbackRuntimeMap(concept, tutorMove) {
       confidence_level: tutorMove.judge.confidenceLevel || scoreToConfidenceLevel(tutorMove.judge.confidence),
       reasons: tutorMove.judge.reasons || []
     },
-    open_questions: tutorMove.nextQuestion ? [tutorMove.nextQuestion] : [],
-    verification_targets: tutorMove.nextQuestion
+    open_questions: followUpQuestion ? [followUpQuestion] : [],
+    verification_targets: followUpQuestion
       ? [
           {
             id: `${concept.id}-legacy-verify`,
-            question: tutorMove.nextQuestion,
-            why: tutorMove.remainingGap || tutorMove.takeaway || concept.summary
+            question: followUpQuestion,
+            why: tutorMove.nextMove?.reason || concept.summary
           }
         ]
       : [],
-    info_gain_level: tutorMove.requiresResponse ? "medium" : "low"
+    info_gain_level: moveRequiresResponse(tutorMove) ? "medium" : "low"
   };
 }
 
@@ -646,7 +669,7 @@ function createFallbackWritebackSuggestion(concept, tutorMove) {
     anchor_patch: {
       state: tutorMove.judge.state,
       confidence_level: tutorMove.judge.confidenceLevel || scoreToConfidenceLevel(tutorMove.judge.confidence),
-      derived_principle: tutorMove.takeaway || concept.summary
+      derived_principle: tutorMove.nextMove?.reason || concept.summary
     }
   };
 }
@@ -682,8 +705,50 @@ export async function answerSession(
   });
   let tutorMove = null;
   let decisionEnvelope = null;
+  let replyStreamText = "";
 
-  if (intelligence.generateTurnEnvelope) {
+  if (intelligence.generateDecisionEnvelope || intelligence.generateReplyStream) {
+    try {
+      const [decisionResult, replyResult] = await Promise.all([
+        intelligence.generateDecisionEnvelope
+          ? intelligence.generateDecisionEnvelope({
+              session,
+              concept,
+              answer,
+              burdenSignal,
+              priorEvidence,
+              contextPacket
+            })
+          : null,
+        intelligence.generateReplyStream
+          ? intelligence.generateReplyStream({
+              session,
+              concept,
+              answer,
+              burdenSignal,
+              priorEvidence,
+              contextPacket
+            })
+          : ""
+      ]);
+      decisionEnvelope = decisionResult;
+      replyStreamText = String(replyResult || "").trim();
+      if (decisionEnvelope) {
+        assertValidTurnEnvelope(decisionEnvelope, concept.id);
+        assertConsistentTurnEnvelope(decisionEnvelope, contextPacket);
+        tutorMove = turnEnvelopeToTutorMove(decisionEnvelope, { replyText: replyStreamText });
+      }
+    } catch (error) {
+      console.warn(
+        `[tutor-envelope-fallback] ${concept.id}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      decisionEnvelope = null;
+      replyStreamText = "";
+    }
+  }
+
+  if (!tutorMove && intelligence.generateTurnEnvelope) {
     try {
       decisionEnvelope = await intelligence.generateTurnEnvelope({
         session,
@@ -695,45 +760,99 @@ export async function answerSession(
       });
       assertValidTurnEnvelope(decisionEnvelope, concept.id);
       assertConsistentTurnEnvelope(decisionEnvelope, contextPacket);
-      tutorMove = turnEnvelopeToTutorMove(decisionEnvelope, concept);
+      tutorMove = turnEnvelopeToTutorMove(decisionEnvelope, { replyText: replyStreamText });
     } catch (error) {
       console.warn(
-        `[tutor-envelope-fallback] ${concept.id}:`,
+        `[tutor-envelope-legacy-fallback] ${concept.id}:`,
         error instanceof Error ? error.message : String(error)
       );
       decisionEnvelope = null;
     }
   }
 
-  if (!tutorMove) {
-    tutorMove = intelligence.generateTutorMove
-      ? await intelligence.generateTutorMove({
-          session,
-          concept,
-          answer,
-          burdenSignal,
-          priorEvidence
-        })
-      : await intelligence.reviewTurn({
-          session,
-          concept,
-          answer,
-          burdenSignal,
-          priorEvidence
-        }).then((review) => ({
-          moveType: "repair",
-          signal: review.signal,
-          judge: review.judge,
-          visibleReply: review.feedback.explanation,
-          evidenceReference: review.feedback.evidenceReference,
-          teachingChunk: review.feedback.teachingChunk || "",
-          nextQuestion: review.nextQuestion,
-          confirmedUnderstanding: review.feedback.positiveConfirmation || "",
-          remainingGap: review.feedback.gap || "",
-          completeCurrentUnit: false,
-          requiresResponse: true
-        }));
+  if (!replyStreamText && intelligence.generateTutorMove) {
+    const legacyMove = await intelligence.generateTutorMove({
+      session,
+      concept,
+      answer,
+      burdenSignal,
+      priorEvidence
+    });
+    if (legacyMove) {
+      replyStreamText = String(legacyMove.replyText || legacyMove.visibleReply || "").trim();
+      if (!tutorMove) {
+        tutorMove = {
+          moveType: legacyMove.moveType || "repair",
+          signal: legacyMove.signal || "noise",
+          judge: legacyMove.judge,
+          replyText: replyStreamText,
+          followUpQuestion: legacyMove.nextQuestion || "",
+          shouldStop: legacyMove.requiresResponse === false,
+          revisitReason: legacyMove.revisitReason || "",
+          completeCurrentUnit: Boolean(legacyMove.completeCurrentUnit),
+          nextMove: legacyMove.nextMove
+            ? {
+                ui_mode:
+                  legacyMove.nextMove.ui_mode ||
+                  legacyMove.nextMove.uiMode ||
+                  moveTypeToUiMode(legacyMove.moveType),
+                intent: legacyMove.nextMove.intent || "继续围绕当前点推进。",
+                reason: legacyMove.nextMove.reason || concept.summary,
+                expected_gain:
+                  legacyMove.nextMove.expected_gain ||
+                  legacyMove.nextMove.expectedGain ||
+                  (legacyMove.requiresResponse === false ? "low" : "medium"),
+                follow_up_question:
+                  legacyMove.nextMove.follow_up_question ||
+                  legacyMove.nextMove.followUpQuestion ||
+                  legacyMove.nextQuestion ||
+                  ""
+              }
+            : {
+                ui_mode: moveTypeToUiMode(legacyMove.moveType),
+                intent: legacyMove.nextQuestion ? "继续围绕当前点推进。" : "这个点先收口。",
+                reason: concept.summary,
+                expected_gain: legacyMove.requiresResponse === false ? "low" : "medium",
+                follow_up_question: legacyMove.nextQuestion || ""
+              },
+          runtimeMap: legacyMove.runtimeMap || null,
+          writebackSuggestion: legacyMove.writebackSuggestion || null
+        };
+      }
+    }
   }
+
+  if (!tutorMove) {
+    const review = await intelligence.reviewTurn({
+      session,
+      concept,
+      answer,
+      burdenSignal,
+      priorEvidence
+    });
+    replyStreamText = replyStreamText || String(review.feedback.explanation || concept.summary).trim();
+    tutorMove = {
+      moveType: "repair",
+      signal: review.signal,
+      judge: review.judge,
+      replyText: replyStreamText,
+      followUpQuestion: review.nextQuestion || "",
+      shouldStop: false,
+      revisitReason: "",
+      completeCurrentUnit: false,
+      nextMove: {
+        ui_mode: "probe",
+        intent: "继续围绕当前点收窄问题。",
+        reason: review.feedback.gap || concept.summary,
+        expected_gain: "medium",
+        follow_up_question: review.nextQuestion || ""
+      },
+      runtimeMap: null,
+      writebackSuggestion: null
+    };
+  }
+
+  tutorMove.replyText = replyStreamText || tutorMove.replyText || concept.summary;
 
   tutorMove.runtimeMap = tutorMove.runtimeMap || decisionEnvelope?.runtime_map || createFallbackRuntimeMap(concept, tutorMove);
   tutorMove.runtimeMap = mergeRuntimeMaps(
@@ -749,10 +868,14 @@ export async function answerSession(
   const controlVerdict = buildControlVerdict({
     envelope: {
       runtime_map: tutorMove.runtimeMap,
-      next_move: tutorMove.nextMove || { ui_mode: tutorMove.moveType },
-      reply: {
-        requires_response: tutorMove.requiresResponse
-      }
+      next_move:
+        tutorMove.nextMove || {
+          ui_mode: moveTypeToUiMode(tutorMove.moveType),
+          intent: "继续围绕当前点推进。",
+          reason: concept.summary,
+          expected_gain: "medium",
+          follow_up_question: getMoveFollowUpQuestion(tutorMove)
+        }
     },
     contextPacket,
     scopeType: getWorkspaceScope(session).type
@@ -777,12 +900,12 @@ export async function answerSession(
     prompt: contextPacket.draft_evidence.prompt,
     answer,
     signal: tutorMove.signal,
-    explanation: tutorMove.visibleReply,
-    whyJudgedThisWay: tutorMove.judge.reasons?.join("；") || tutorMove.remainingGap || "",
+    explanation: tutorMove.replyText,
+    whyJudgedThisWay: tutorMove.judge.reasons?.join("；") || "",
     sourceRefs: contextPacket.draft_evidence.sourceRefs,
     confidenceLevel:
       tutorMove.judge.confidenceLevel || tutorMove.runtimeMap?.anchor_assessment?.confidence_level || "low",
-    evidenceReference: tutorMove.evidenceReference,
+    evidenceReference: concept.excerpt,
     sourceAligned: true
   });
 
@@ -801,7 +924,7 @@ export async function answerSession(
     enqueueRevisit(session, {
       concept,
       reason: tutorMove.revisitReason,
-      takeaway: tutorMove.takeaway
+      takeaway: ""
     });
   }
 
@@ -812,8 +935,7 @@ export async function answerSession(
     tutorMove.completeCurrentUnit ||
     tutorMove.judge.state === "solid" ||
     tutorMove.judge.state === "不可判" ||
-    tutorMove.moveType === "advance" ||
-    tutorMove.moveType === "abstain";
+    tutorMove.moveType === "advance";
 
   if (shouldCompleteConcept) {
     session.conceptStates[concept.id].completed = true;
@@ -828,10 +950,10 @@ export async function answerSession(
         ...contextPacket.draft_evidence,
         answer,
         assessmentHandle,
-        whyJudgedThisWay: tutorMove.judge.reasons?.join("；") || tutorMove.remainingGap || "",
-        evidenceReference: tutorMove.evidenceReference
+        whyJudgedThisWay: tutorMove.judge.reasons?.join("；") || "",
+        evidenceReference: concept.excerpt
       },
-      explanation: tutorMove.visibleReply,
+      explanation: tutorMove.replyText,
       runtimeMap: tutorMove.runtimeMap,
       projectedTargets: session.targetBaseline?.id ? [session.targetBaseline.id] : [],
       timestamp: answerTimestamp
@@ -845,10 +967,10 @@ export async function answerSession(
           ...contextPacket.draft_evidence,
           answer,
           assessmentHandle,
-          whyJudgedThisWay: tutorMove.judge.reasons?.join("；") || tutorMove.remainingGap || "",
-          evidenceReference: tutorMove.evidenceReference
+          whyJudgedThisWay: tutorMove.judge.reasons?.join("；") || "",
+          evidenceReference: concept.excerpt
         },
-        explanation: tutorMove.visibleReply,
+        explanation: tutorMove.replyText,
         runtimeMap: tutorMove.runtimeMap,
         timestamp: answerTimestamp
       });
@@ -859,13 +981,13 @@ export async function answerSession(
         judge: tutorMove.judge,
         signal: tutorMove.signal,
         answer,
-        explanation: tutorMove.visibleReply,
+        explanation: tutorMove.replyText,
         assessmentHandle,
-        evidenceReference: tutorMove.evidenceReference,
+        evidenceReference: concept.excerpt,
         derivedPrinciple:
           tutorMove.writebackSuggestion?.anchor_patch?.derived_principle ||
           tutorMove.writebackSuggestion?.anchorPatch?.derivedPrinciple ||
-          tutorMove.takeaway,
+          tutorMove.nextMove?.reason,
         projectedTargets: session.targetBaseline?.id ? [session.targetBaseline.id] : [],
         writebackReason: tutorMove.writebackSuggestion?.reason || "legacy_fallback_writeback",
         timestamp: answerTimestamp
@@ -878,7 +1000,7 @@ export async function answerSession(
       signal: tutorMove.signal,
       revisitReason: tutorMove.revisitReason,
       assessmentHandle,
-      evidenceReference: tutorMove.evidenceReference,
+      evidenceReference: concept.excerpt,
       timestamp: answerTimestamp
     });
     if (writebackResult.applied) {
@@ -889,7 +1011,7 @@ export async function answerSession(
         summary: `“${concept.title}”这轮高价值证据已写入长期记忆。`,
         message: `“${concept.title}”这轮高价值证据已写入长期记忆。`,
         assessmentHandle,
-        evidenceReference: tutorMove.evidenceReference,
+        evidenceReference: concept.excerpt,
         timestamp: new Date(answerTimestamp).toISOString()
       });
     }
@@ -926,7 +1048,7 @@ export async function answerSession(
   session.currentProbe = nextConcept
     ? switchedConcept
       ? resolvePromptForConcept({ concept: nextConcept, revisit: nextUnit.revisit })
-      : (tutorMove.requiresResponse ? tutorMove.nextQuestion : "")
+      : getMoveFollowUpQuestion(tutorMove)
     : "";
   session.currentQuestionMeta = session.currentProbe && nextConcept ? createQuestionMeta(nextConcept) : null;
   const turnResolution = buildTurnResolution({
@@ -937,7 +1059,7 @@ export async function answerSession(
     finalQuestionMeta: session.currentQuestionMeta,
     controlVerdict
   });
-  const visibleCoachingStep = turnResolution.mode === "stay" ? tutorMove.nextQuestion : "";
+  const visibleCoachingStep = turnResolution.mode === "stay" ? getMoveFollowUpQuestion(tutorMove) : "";
   const visibleNextMove = turnResolution.mode === "stay" ? (tutorMove.nextMove || null) : null;
 
   session.turns.push({
@@ -946,15 +1068,11 @@ export async function answerSession(
     action: tutorMove.moveType,
     conceptId: concept.id,
     conceptTitle: concept.title,
-    content: tutorMove.visibleReply,
-    gap: tutorMove.remainingGap,
-    evidenceReference: tutorMove.evidenceReference,
+    content: tutorMove.replyText,
+    contentFormat: "markdown",
+    evidenceReference: concept.excerpt,
     coachingStep: visibleCoachingStep,
-    candidateCoachingStep: tutorMove.nextQuestion,
-    strength: tutorMove.confirmedUnderstanding,
-    takeaway: tutorMove.takeaway,
-    teachingChunk: tutorMove.teachingChunk,
-    teachingParagraphs: tutorMove.teachingParagraphs || [],
+    candidateCoachingStep: getMoveFollowUpQuestion(tutorMove),
     learningSources: concept.javaGuideSources || [],
     runtimeMap: tutorMove.runtimeMap || null,
     nextMove: visibleNextMove,
@@ -992,6 +1110,7 @@ export async function answerSession(
         memoryAnchor: latestMemoryAnchor
       }),
       coachingStep: visibleCoachingStep,
+      candidateCoachingStep: getMoveFollowUpQuestion(tutorMove),
       nextMove: visibleNextMove,
       turnResolution
     },
@@ -1100,7 +1219,7 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
     enqueueRevisit(session, {
       concept,
       reason: "skipped-by-user",
-      takeaway: concept.summary
+      takeaway: ""
     });
     if (session.mode === "target") {
       latestMemoryEvents = groomPendingWritebacks(session, { conceptId: concept.id });
@@ -1151,7 +1270,7 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
     teachingChunk,
     teachingParagraphs: learningCard?.teachingParagraphs || [],
     learningSources: concept.javaGuideSources || [],
-    takeaway: concept.summary,
+    takeaway: "",
     coachingStep: visibleCoachingStep,
     candidateCoachingStep: coachingStep,
     turnResolution: controlTurnResolution,
@@ -1188,7 +1307,7 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
       coachingStep: visibleCoachingStep,
       candidateCoachingStep: coachingStep,
       strength: "",
-      takeaway: concept.summary,
+      takeaway: "",
       teachingChunk,
       teachingParagraphs: learningCard?.teachingParagraphs || [],
       judge: session.conceptStates[concept.id].judge,

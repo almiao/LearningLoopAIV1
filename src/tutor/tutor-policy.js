@@ -50,7 +50,7 @@ export function chooseNextAction({
   const teachCount = conceptState.teachCount || 0;
 
   if (review.judge.state === "不可判") {
-    return { action: "abstain", fatigue, headroom };
+    return { action: "advance", fatigue, headroom };
   }
 
   if (review.signal === "positive") {
@@ -96,7 +96,6 @@ export function buildPromptForAction({ action, concept, review, burdenSignal = "
     case "summarize":
       return "";
     case "advance":
-    case "abstain":
       return "";
     default:
       return burdenSignal === "high" ? concept.checkQuestion : review.nextQuestion || concept.retryQuestion;

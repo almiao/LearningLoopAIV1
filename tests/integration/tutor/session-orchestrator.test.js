@@ -107,7 +107,7 @@ test("explain-first preference switches weak answers into teach then check", asy
 
   assert.equal(updated.latestFeedback.action, "teach");
   assert.match(updated.latestFeedback.explanation, /先把这一层讲清楚|先不继续硬追问|先补一小段关键解释/);
-  assert.ok(updated.latestFeedback.teachingChunk.length > 0);
+  assert.equal(updated.latestFeedback.teachingChunk, "");
   assert.match(updated.currentProbe, /复述|自己的话/);
 });
 
@@ -284,7 +284,7 @@ test("deferred units can be revisited after the primary pass completes", async (
         evidenceReference: concept.excerpt,
         teachingChunk: "",
         nextQuestion: "",
-        takeaway: concept.summary,
+        takeaway: "",
         confirmedUnderstanding: "",
         remainingGap: "",
         revisitReason: "",

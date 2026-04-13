@@ -125,14 +125,13 @@ def merge_runtime_maps(previous_map: Dict[str, Any] | None = None, next_map: Dic
 
 def build_control_verdict(*, envelope: Dict[str, Any], context_packet: Dict[str, Any], scope_type: str = "pack") -> Dict[str, Any]:
     next_move = envelope.get("next_move") or {}
-    reply = envelope.get("reply") or {}
     runtime_map = envelope.get("runtime_map") or {}
     stop_conditions = context_packet.get("stop_conditions") or {}
     budget = context_packet.get("budget") or {}
 
     should_stop = False
     reason = "continue"
-    if next_move.get("ui_mode") in {"advance", "stop", "revisit"} or reply.get("requires_response") is False:
+    if next_move.get("ui_mode") in {"advance", "stop", "revisit"}:
         should_stop = True
         reason = "next_move_requests_stop"
     elif runtime_map.get("info_gain_level") == "negligible":
@@ -162,7 +161,6 @@ def assert_valid_turn_envelope(envelope: Dict[str, Any], expected_anchor_id: str
         raise ValueError("Turn envelope payload is required.")
     runtime_map = envelope.get("runtime_map") or {}
     next_move = envelope.get("next_move") or {}
-    reply = envelope.get("reply") or {}
     suggestion = envelope.get("writeback_suggestion") or {}
 
     if runtime_map.get("anchor_id") != expected_anchor_id:
@@ -185,19 +183,10 @@ def assert_valid_turn_envelope(envelope: Dict[str, Any], expected_anchor_id: str
         raise ValueError("Turn envelope next_move ui_mode is invalid.")
     if next_move.get("expected_gain") not in ALLOWED_INFO_GAIN_LEVELS:
         raise ValueError("Turn envelope next_move expected_gain is invalid.")
-
-    if not str(reply.get("visible_reply", "")).strip():
-        raise ValueError("Turn envelope reply.visible_reply is required.")
-    if not str(reply.get("evidence_reference", "")).strip():
-        raise ValueError("Turn envelope reply.evidence_reference is required.")
-    if not str(reply.get("takeaway", "")).strip():
-        raise ValueError("Turn envelope reply.takeaway is required.")
-    if not isinstance(reply.get("requires_response"), bool):
-        raise ValueError("Turn envelope reply.requires_response is invalid.")
-    if not isinstance(reply.get("complete_current_unit"), bool):
-        raise ValueError("Turn envelope reply.complete_current_unit is invalid.")
-    if reply.get("requires_response") and not str(reply.get("next_prompt", "")).strip():
-        raise ValueError("Turn envelope reply.next_prompt is required.")
+    if next_move.get("ui_mode") in {"probe", "teach", "verify"} and not str(next_move.get("follow_up_question", "")).strip():
+        raise ValueError("Turn envelope next_move.follow_up_question is required.")
+    if next_move.get("ui_mode") in {"advance", "stop", "revisit"} and str(next_move.get("follow_up_question", "")).strip():
+        raise ValueError("Turn envelope next_move.follow_up_question must be empty for terminal moves.")
 
     if not isinstance(suggestion.get("should_write"), bool):
         raise ValueError("Turn envelope writeback_suggestion.should_write is invalid.")
@@ -213,24 +202,18 @@ def assert_valid_turn_envelope(envelope: Dict[str, Any], expected_anchor_id: str
 def assert_consistent_turn_envelope(envelope: Dict[str, Any], context_packet: Dict[str, Any]) -> None:
     runtime_map = envelope.get("runtime_map") or {}
     next_move = envelope.get("next_move") or {}
-    reply = envelope.get("reply") or {}
 
     if runtime_map.get("info_gain_level") == "negligible" and next_move.get("ui_mode") == "probe":
         raise ValueError("Turn envelope is inconsistent: negligible info gain cannot continue probing.")
     if (context_packet.get("stop_conditions") or {}).get("should_discourage_more_probe") and next_move.get("ui_mode") == "probe":
         raise ValueError("Turn envelope is inconsistent: stop conditions discourage more probing.")
-    if next_move.get("ui_mode") in {"advance", "stop", "revisit"} and reply.get("requires_response"):
-        raise ValueError("Turn envelope is inconsistent: non-interactive moves cannot require a response.")
-    if next_move.get("ui_mode") in {"probe", "verify"} and reply.get("requires_response") is False:
-        raise ValueError("Turn envelope is inconsistent: probing moves must require a response.")
-    if next_move.get("ui_mode") == "teach" and not (reply.get("teaching_paragraphs") or []):
-        raise ValueError("Turn envelope is inconsistent: teach move requires teaching_paragraphs.")
+    if next_move.get("ui_mode") in {"probe", "teach", "verify"} and not str(next_move.get("follow_up_question", "")).strip():
+        raise ValueError("Turn envelope is inconsistent: interactive moves must include follow_up_question.")
 
 
-def turn_envelope_to_tutor_move(envelope: Dict[str, Any], concept: Dict[str, Any]) -> Dict[str, Any]:
+def turn_envelope_to_tutor_move(envelope: Dict[str, Any], concept: Dict[str, Any] | None = None, *, reply_text: str = "") -> Dict[str, Any]:
     runtime_map = envelope.get("runtime_map") or {}
     next_move = envelope.get("next_move") or {}
-    reply = envelope.get("reply") or {}
     ui_mode = next_move.get("ui_mode")
     turn_signal = runtime_map.get("turn_signal")
 
@@ -241,11 +224,10 @@ def turn_envelope_to_tutor_move(envelope: Dict[str, Any], concept: Dict[str, Any
     elif ui_mode in {"advance", "revisit"}:
         move_type = "advance"
     elif ui_mode == "stop":
-        move_type = "abstain"
+        move_type = "advance"
     else:
         move_type = "deepen" if turn_signal == "positive" else "repair"
 
-    teaching_paragraphs = reply.get("teaching_paragraphs") or []
     return {
         "moveType": move_type,
         "signal": runtime_map.get("turn_signal", "noise"),
@@ -255,17 +237,19 @@ def turn_envelope_to_tutor_move(envelope: Dict[str, Any], concept: Dict[str, Any
             "confidenceLevel": ((runtime_map.get("anchor_assessment") or {}).get("confidence_level")) or "low",
             "reasons": ((runtime_map.get("anchor_assessment") or {}).get("reasons")) or [],
         },
-        "visibleReply": reply.get("visible_reply") or concept.get("summary", ""),
-        "evidenceReference": reply.get("evidence_reference") or concept.get("excerpt") or concept.get("summary", ""),
-        "teachingChunk": "\n\n".join(teaching_paragraphs) if teaching_paragraphs else "",
-        "teachingParagraphs": teaching_paragraphs,
-        "nextQuestion": reply.get("next_prompt", "") or "",
-        "takeaway": reply.get("takeaway") or concept.get("summary", ""),
-        "confirmedUnderstanding": reply.get("confirmed_understanding", "") or "",
-        "remainingGap": reply.get("remaining_gap", "") or "",
-        "revisitReason": reply.get("revisit_reason", "") or "",
-        "completeCurrentUnit": bool(reply.get("complete_current_unit")),
-        "requiresResponse": bool(reply.get("requires_response")),
+        "replyText": str(reply_text or "").strip(),
+        "visibleReply": str(reply_text or "").strip(),
+        "evidenceReference": (concept or {}).get("excerpt", ""),
+        "teachingChunk": "",
+        "teachingParagraphs": [],
+        "followUpQuestion": next_move.get("follow_up_question", "") or "",
+        "nextQuestion": next_move.get("follow_up_question", "") or "",
+        "revisitReason": next_move.get("reason", "") if ui_mode == "revisit" else "",
+        "completeCurrentUnit": ui_mode in {"advance", "stop", "revisit"},
+        "requiresResponse": ui_mode in {"probe", "teach", "verify"},
+        "takeaway": "",
+        "confirmedUnderstanding": "",
+        "remainingGap": "",
         "nextMove": next_move,
         "runtimeMap": runtime_map,
         "writebackSuggestion": envelope.get("writeback_suggestion"),

@@ -5,7 +5,7 @@ import os
 import socket
 import ssl
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 from urllib import error, request
 
 from app.domain.interview.parsers import parse_provider_json_text
@@ -141,6 +141,41 @@ def call_openai_raw_text(*, api_key: str, model: str, prompt: str, schema: Dict[
     return _extract_openai_text(payload), payload
 
 
+def call_openai_text(*, api_key: str, model: str, prompt: str, timeout_ms: int = DEFAULT_PROVIDER_TIMEOUT_MS) -> str:
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is required for AI tutor mode.")
+    payload = _post_json(
+        OPENAI_RESPONSES_URL,
+        {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        {
+            "model": model,
+            "input": [
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": (
+                                "You are a strong human tutor. Return only the learner-facing markdown reply text. "
+                                "Do not return JSON, labels, analysis notes, or next-step planning."
+                            ),
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": prompt}],
+                },
+            ],
+        },
+        timeout_ms,
+    )
+    return ensure_string(_extract_openai_text(payload))
+
+
 def call_deepseek_json(
     *,
     api_key: str,
@@ -207,6 +242,108 @@ def call_deepseek_raw_text(
         timeout_ms,
     )
     return _extract_chat_message_content(payload, "DeepSeek"), payload
+
+
+def call_deepseek_text(
+    *,
+    api_key: str,
+    model: str,
+    prompt: str,
+    base_url: str = DEFAULT_DEEPSEEK_BASE_URL,
+    timeout_ms: int = DEFAULT_PROVIDER_TIMEOUT_MS,
+) -> str:
+    if not api_key:
+        raise RuntimeError("LLAI_DEEPSEEK_API_KEY is required for DeepSeek tutor mode.")
+    url = f"{base_url.rstrip('/')}{DEEPSEEK_CHAT_COMPLETIONS_URL}"
+    payload = _post_json(
+        url,
+        {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a strong human tutor. Return only the learner-facing markdown reply text. "
+                        "Do not return JSON, labels, analysis notes, or next-step planning."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+        },
+        timeout_ms,
+    )
+    return ensure_string(_extract_chat_message_content(payload, "DeepSeek"))
+
+
+def stream_deepseek_text_chunks(
+    *,
+    api_key: str,
+    model: str,
+    prompt: str,
+    base_url: str = DEFAULT_DEEPSEEK_BASE_URL,
+    timeout_ms: int = DEFAULT_PROVIDER_TIMEOUT_MS,
+) -> Iterator[str]:
+    if not api_key:
+        raise RuntimeError("LLAI_DEEPSEEK_API_KEY is required for DeepSeek tutor mode.")
+    url = f"{base_url.rstrip('/')}{DEEPSEEK_CHAT_COMPLETIONS_URL}"
+    req = request.Request(
+        url,
+        data=json.dumps(
+            {
+                "model": model,
+                "stream": True,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a strong human tutor. Return only the learner-facing markdown reply text. "
+                            "Do not return JSON, labels, analysis notes, or next-step planning."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    },
+                ],
+            }
+        ).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    ssl_context = create_ssl_context()
+    try:
+        with request.urlopen(req, timeout=timeout_ms / 1000, context=ssl_context) as response:
+            for raw_line in response:
+                line = raw_line.decode("utf-8", errors="ignore").strip()
+                if not line or not line.startswith("data: "):
+                    continue
+                data = line[6:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    payload = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                choices = ensure_array(payload.get("choices"))
+                delta = ((choices[0] if choices else {}).get("delta") or {})
+                content = delta.get("content")
+                if isinstance(content, str) and content:
+                    yield content
+    except error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Provider request failed: {exc.code} {body}") from exc
+    except (socket.timeout, TimeoutError) as exc:
+        raise RuntimeError(f"LLM request timed out (>{round(timeout_ms / 1000)}s).") from exc
 
 
 def _slugify(value: Any) -> str:
@@ -312,9 +449,7 @@ def normalize_turn_envelope_payload(payload: Dict[str, Any], concept: Dict[str, 
     runtime_map = (payload or {}).get("runtime_map") or {}
     anchor_assessment = runtime_map.get("anchor_assessment") or {}
     next_move = (payload or {}).get("next_move") or {}
-    reply = (payload or {}).get("reply") or {}
     suggestion = (payload or {}).get("writeback_suggestion") or {}
-    teaching_paragraphs = [normalize_teaching_paragraph(ensure_string(item)) for item in ensure_array(reply.get("teaching_paragraphs")) if ensure_string(item)]
     return {
         "runtime_map": {
             "anchor_id": ensure_string(runtime_map.get("anchor_id"), concept.get("id", "")),
@@ -335,18 +470,7 @@ def normalize_turn_envelope_payload(payload: Dict[str, Any], concept: Dict[str, 
             "reason": ensure_string(next_move.get("reason"), "当前还需要确认用户究竟卡在定义、机制还是边界上。"),
             "expected_gain": next_move.get("expected_gain") if next_move.get("expected_gain") in {"high", "medium", "low", "negligible"} else "medium",
             "ui_mode": next_move.get("ui_mode") if next_move.get("ui_mode") in {"probe", "teach", "verify", "advance", "revisit", "stop"} else "probe",
-        },
-        "reply": {
-            "visible_reply": ensure_string(reply.get("visible_reply"), concept.get("summary", "")),
-            "teaching_paragraphs": teaching_paragraphs,
-            "evidence_reference": ensure_string(reply.get("evidence_reference"), concept.get("excerpt") or concept.get("summary", "")),
-            "next_prompt": ensure_string(reply.get("next_prompt")),
-            "takeaway": ensure_string(reply.get("takeaway"), concept.get("summary", "")),
-            "confirmed_understanding": ensure_string(reply.get("confirmed_understanding")),
-            "remaining_gap": ensure_string(reply.get("remaining_gap")),
-            "revisit_reason": ensure_string(reply.get("revisit_reason")),
-            "requires_response": reply.get("requires_response") is not False,
-            "complete_current_unit": bool(reply.get("complete_current_unit")),
+            "follow_up_question": ensure_string(next_move.get("follow_up_question") or next_move.get("followUpQuestion")),
         },
         "writeback_suggestion": {
             "should_write": suggestion.get("should_write") is not False,
@@ -373,7 +497,7 @@ def normalize_explain_concept_payload(payload: Dict[str, Any], concept: Dict[str
         "teachingChunk": ensure_string(teaching_chunk, concept.get("summary", "")),
         "teachingParagraphs": paragraphs or [ensure_string(teaching_chunk, concept.get("summary", ""))],
         "checkQuestion": ensure_string((payload or {}).get("checkQuestion"), concept.get("checkQuestion") or concept.get("retryQuestion") or ""),
-        "takeaway": ensure_string((payload or {}).get("takeaway"), concept.get("summary", "")),
+        "takeaway": ensure_string((payload or {}).get("takeaway")),
     }
 
 
@@ -424,7 +548,6 @@ def normalize_turn_diagnosis_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "evidence_quality": evidence_quality if evidence_quality in TURN_EVIDENCE_QUALITY else "weak",
         "key_claim": ensure_string(diagnosis.get("key_claim")),
         "confirmed_understanding": ensure_string(diagnosis.get("confirmed_understanding")),
-        "current_gap": ensure_string(diagnosis.get("current_gap")),
         "has_misconception": bool(diagnosis.get("has_misconception")),
         "misconception_detail": ensure_string(diagnosis.get("misconception_detail")),
     }
@@ -457,6 +580,27 @@ def build_turn_diagnosis_prompt(*, concept: Dict[str, Any], context_packet: Dict
     )
 
 
+def build_reply_stream_prompt(*, context_packet: Dict[str, Any], answer: str) -> str:
+    return "\n".join(
+        [
+            "You are writing the learner-facing reply for one AI tutor turn.",
+            "Use Chinese markdown only. Do not return JSON.",
+            "Focus only on evaluating the learner's current answer and giving the most helpful explanation or correction for this moment.",
+            "Do not promise what the system will ask next.",
+            "Do not say you will switch topics, stop, or move on.",
+            "Do not include labels such as '下一步' or 'gap' or 'runtime'.",
+            "If useful, end with one stable takeaway sentence naturally inside the prose.",
+            "If the learner is mainly asking for explanation, give a direct explanation instead of interrogating.",
+            "Keep the reply self-contained and valuable even if the learner stops here.",
+            "",
+            "CONTEXT_PACKET_JSON:",
+            json.dumps(context_packet, ensure_ascii=False, indent=2),
+            "",
+            f"CURRENT_LEARNER_INPUT: {answer}",
+        ]
+    )
+
+
 def build_turn_envelope_prompt(
     *,
     context_packet: Dict[str, Any],
@@ -467,9 +611,9 @@ def build_turn_envelope_prompt(
 ) -> str:
     guide_snippets = load_java_guide_source_snippets((concept or {}).get("javaGuideSources") or []) if forced_action == "teach" and concept else []
     sections = [
-        "You are the main decision and reply engine for one AI tutor turn. Return json only.",
-        "Use Chinese in all visible learner-facing text.",
-        "First update runtime_map, then decide next_move, then write the reply, then propose writeback_suggestion.",
+        "You are the main decision engine for one AI tutor turn. Return json only.",
+        "Do not write the learner-facing reply here.",
+        "First update runtime_map, then decide next_move, then propose writeback_suggestion.",
         "Preserve prior hypotheses unless new evidence explicitly refutes them.",
         "The runtime_map must stay anchored to the current anchor_id and cite evidence ids where possible.",
         "",
@@ -485,9 +629,8 @@ def build_turn_envelope_prompt(
         "DECISION RULES:",
         "- Treat budget, friction_signals, and stop_conditions as orchestration factors before proposing more probing.",
         "- If recent teaching already covered the core mechanism, prefer naming the one missing link over repeating the full explanation.",
-        "- When you choose verify, the visible reply must still add concrete value before any follow-up question.",
-        "- When a response is still needed on the current concept, next_prompt must be a concrete question the learner can answer immediately.",
-        "- Treat next_prompt as a candidate follow-up only for staying on the current concept. If the turn should switch or stop, leave next_prompt empty.",
+        "- When a response is still needed on the current concept, follow_up_question must be a concrete question the learner can answer immediately.",
+        "- Treat follow_up_question as a candidate follow-up only for staying on the current concept. If the turn should switch or stop, leave follow_up_question empty.",
         "- Keep writeback_suggestion conservative. Use noop when this turn does not materially change the anchor state.",
         "",
         "CONTEXT_PACKET_JSON:",
@@ -523,7 +666,7 @@ def build_turn_envelope_prompt(
                 json.dumps(guide_snippets, ensure_ascii=False, indent=2),
                 "",
                 "When FORCED_ACTION is teach, do not probe before helping.",
-                "Give a complete but compact explanation in teaching_paragraphs, then end with one teach-back question.",
+                "Keep the follow_up_question focused on one teach-back question after the explanation stage.",
             ]
         )
 
@@ -584,7 +727,6 @@ TURN_DIAGNOSIS_SCHEMA = {
         "evidence_quality": "partial",
         "key_claim": "用户知道 MVCC 和历史版本有关。",
         "confirmed_understanding": "已经知道 MVCC 不是直接读最新值。",
-        "current_gap": "还没把快照读和当前读的边界讲清楚。",
         "has_misconception": False,
         "misconception_detail": "",
     },
@@ -596,7 +738,6 @@ TURN_DIAGNOSIS_SCHEMA = {
             "evidence_quality",
             "key_claim",
             "confirmed_understanding",
-            "current_gap",
             "has_misconception",
             "misconception_detail",
         ],
@@ -605,7 +746,6 @@ TURN_DIAGNOSIS_SCHEMA = {
             "evidence_quality": {"type": "string", "enum": sorted(TURN_EVIDENCE_QUALITY)},
             "key_claim": {"type": "string"},
             "confirmed_understanding": {"type": "string"},
-            "current_gap": {"type": "string"},
             "has_misconception": {"type": "boolean"},
             "misconception_detail": {"type": "string"},
         },
@@ -634,18 +774,7 @@ TURN_ENVELOPE_SCHEMA = {
             "reason": "当前缺口主要在边界，不在定义本身。",
             "expected_gain": "medium",
             "ui_mode": "verify",
-        },
-        "reply": {
-            "visible_reply": "你已经碰到关键点了：MVCC 确实让事务能基于历史快照读数据，但它只解决快照读的一致视图，不会把当前读和锁全都替你处理掉。",
-            "teaching_paragraphs": [],
-            "evidence_reference": "面试常追问 RR 为什么还要 next-key lock，以及快照读 / 当前读边界。",
-            "next_prompt": "那你现在继续说说，为什么 RR 有 MVCC 了，当前读还是要 next-key lock？",
-            "takeaway": "先记住：MVCC 主要管快照读，当前读和幻读边界还要看锁。",
-            "confirmed_understanding": "你已经知道 MVCC 和历史快照有关。",
-            "remaining_gap": "还没把快照读 / 当前读 / 锁边界讲成一条完整链路。",
-            "revisit_reason": "",
-            "requires_response": True,
-            "complete_current_unit": False,
+            "follow_up_question": "那你现在继续说说，为什么 RR 有 MVCC 了，当前读还是要 next-key lock？",
         },
         "writeback_suggestion": {
             "should_write": True,
@@ -661,11 +790,10 @@ TURN_ENVELOPE_SCHEMA = {
     "schema": {
         "type": "object",
         "additionalProperties": False,
-        "required": ["runtime_map", "next_move", "reply", "writeback_suggestion"],
+        "required": ["runtime_map", "next_move", "writeback_suggestion"],
         "properties": {
             "runtime_map": {"type": "object"},
             "next_move": {"type": "object"},
-            "reply": {"type": "object"},
             "writeback_suggestion": {"type": "object"},
         },
     },
@@ -828,7 +956,6 @@ class ProviderTutorIntelligence:
                 "evidence_quality": "none",
                 "key_claim": "",
                 "confirmed_understanding": ensure_string((context_packet.get("anchor_state") or {}).get("confirmed_understanding")),
-                "current_gap": ensure_string((context_packet.get("anchor_state") or {}).get("current_gap")),
                 "has_misconception": False,
                 "misconception_detail": "",
             }
@@ -852,6 +979,43 @@ class ProviderTutorIntelligence:
         )
         return normalize_turn_envelope_payload(result.parsed, concept)
 
+    def generate_reply_stream(
+        self,
+        *,
+        concept: Dict[str, Any],
+        context_packet: Dict[str, Any],
+        answer: str,
+    ) -> str:
+        prompt = build_reply_stream_prompt(context_packet=context_packet, answer=answer)
+        if self.provider == "DEEPSEEK":
+            return call_deepseek_text(
+                api_key=self.api_key,
+                model=self.model,
+                prompt=prompt,
+                base_url=self.base_url or DEFAULT_DEEPSEEK_BASE_URL,
+            )
+        return call_openai_text(api_key=self.api_key, model=self.model, prompt=prompt)
+
+    def generate_reply_stream_events(
+        self,
+        *,
+        concept: Dict[str, Any],
+        context_packet: Dict[str, Any],
+        answer: str,
+    ) -> Iterator[str]:
+        prompt = build_reply_stream_prompt(context_packet=context_packet, answer=answer)
+        if self.provider == "DEEPSEEK":
+            yield from stream_deepseek_text_chunks(
+                api_key=self.api_key,
+                model=self.model,
+                prompt=prompt,
+                base_url=self.base_url or DEFAULT_DEEPSEEK_BASE_URL,
+            )
+            return
+        text = call_openai_text(api_key=self.api_key, model=self.model, prompt=prompt)
+        if text:
+            yield text
+
     def explain_concept(self, *, session: Dict[str, Any], concept: Dict[str, Any], context_packet: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         envelope = self.generate_turn_envelope(
             concept=concept,
@@ -865,7 +1029,7 @@ class ProviderTutorIntelligence:
             "visibleReply": reply.get("visible_reply") or concept.get("summary", ""),
             "teachingParagraphs": teaching_paragraphs[:4],
             "checkQuestion": reply.get("next_prompt") or concept.get("checkQuestion") or concept.get("retryQuestion") or "",
-            "takeaway": reply.get("takeaway") or concept.get("summary", ""),
+            "takeaway": reply.get("takeaway") or "",
         }
         validate_explain_concept_payload(payload)
         return normalize_explain_concept_payload(payload, concept)

@@ -8,7 +8,7 @@ import { aqsMarkdownDocument } from "../tests/fixtures/materials.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const legacyBaseline = JSON.parse(
-  readFileSync(path.resolve(__dirname, "../tests/cases/aqs-legacy-baseline.json"), "utf8")
+  readFileSync(path.resolve(__dirname, "./aqs-legacy-baseline.json"), "utf8")
 );
 
 const genericThemePattern = /Concurrency|Collections|HTTP|Java Fundamentals|JVM/;

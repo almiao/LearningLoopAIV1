@@ -45,7 +45,7 @@ def choose_next_action(
     signal = "positive" if judge["state"] in {"partial", "solid"} else "negative"
 
     if judge["state"] == "不可判":
-        return "abstain"
+        return "advance"
 
     if signal == "positive":
         if fatigue == "high" or headroom == "low" or (importance != "core" and judge["confidence"] >= 0.6):

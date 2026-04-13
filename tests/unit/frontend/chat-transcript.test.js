@@ -37,7 +37,7 @@ test("chat transcript keeps workspace switches visible instead of rendering them
   assert.equal(timeline[2].role, "assistant");
 });
 
-test("chat transcript groups tutor feedback and the next tutor question into one assistant block", () => {
+test("chat transcript keeps tutor feedback and the next tutor question as separate messages", () => {
   const timeline = buildChatTimeline([
     {
       role: "learner",
@@ -67,11 +67,13 @@ test("chat transcript groups tutor feedback and the next tutor question into one
     }
   ]);
 
-  assert.equal(timeline.length, 2);
+  assert.equal(timeline.length, 3);
   assert.equal(timeline[1].role, "assistant");
   assert.match(timeline[1].body, /抓到主要方向/);
-  assert.match(timeline[1].followUpQuestion, /next-key lock/);
+  assert.equal(timeline[1].followUpQuestion, "");
   assert.equal(timeline[1].topicShiftLabel, "");
+  assert.equal(timeline[2].role, "assistant");
+  assert.match(timeline[2].body, /next-key lock/);
 });
 
 test("chat transcript does not merge feedback with the next question when the concept switches", () => {
@@ -113,7 +115,7 @@ test("chat transcript does not merge feedback with the next question when the co
   assert.equal(timeline[2].conceptTitle, "MySQL 索引设计与查询计划");
 });
 
-test("chat transcript keeps teaching paragraphs and candidate follow-up visible", () => {
+test("chat transcript keeps reply markdown body and candidate follow-up visible", () => {
   const timeline = buildChatTimeline([
     {
       role: "learner",
@@ -129,12 +131,8 @@ test("chat transcript keeps teaching paragraphs and candidate follow-up visible"
       action: "teach",
       conceptId: "fallback",
       conceptTitle: "降级 / 熔断 / 隔离策略取舍",
-      content: "好，我先把这套策略收成一条主线。",
-      takeaway: "先记住：隔离防扩散，熔断防空耗，降级保主链。",
-      teachingParagraphs: [
-        "先看隔离，它负责把问题关在局部资源池里，避免一个下游把全站线程和连接都拖死。",
-        "如果故障已经持续扩散，再用熔断快速失败，把无效等待切断；最后再通过降级保核心路径，把非关键能力先让出去。"
-      ],
+      content:
+        "好，我先把这套策略收成一条主线。\n\n先看隔离，它负责把问题关在局部资源池里，避免一个下游把全站线程和连接都拖死。\n\n如果故障已经持续扩散，再用熔断快速失败，把无效等待切断；最后再通过降级保核心路径，把非关键能力先让出去。",
       candidateCoachingStep: "现在你用自己的话重讲一遍：隔离、熔断、降级各自先保护哪一层？",
       timestamp: 21
     }
@@ -142,9 +140,9 @@ test("chat transcript keeps teaching paragraphs and candidate follow-up visible"
 
   assert.equal(timeline.length, 2);
   assert.equal(timeline[1].role, "assistant");
-  assert.equal(timeline[1].teachingParagraphs.length, 2);
   assert.match(timeline[1].body, /这套策略收成一条主线/);
-  assert.match(timeline[1].takeaway, /隔离防扩散/);
+  assert.equal(timeline[1].teachingParagraphs.length, 0);
+  assert.equal(timeline[1].takeaway, "");
   assert.match(timeline[1].candidateFollowUpQuestion, /隔离、熔断、降级/);
 });
 

@@ -91,21 +91,7 @@ class FakeTeachIntelligence:
                 "reason": "用户显式请求讲解。",
                 "expected_gain": "medium",
                 "ui_mode": "teach",
-            },
-            "reply": {
-                "visible_reply": "先别整段重背。你现在真正缺的是一句边界：MVCC 主要解决快照读一致视图，不会替当前读把锁问题消掉。",
-                "teaching_paragraphs": [
-                    "很多人会把 MVCC 讲成“并发万能药”，但它更准确的工作面其实是快照读。一旦你是在做当前读，读到的是要参与竞争的最新版本，就不能只靠历史版本链。",
-                    "所以面试里一追到当前读、锁、幻读，你就得把边界说出来：MVCC 解决的是一致视图，不是把当前读的加锁语义整体替掉。",
-                ],
-                "evidence_reference": concept["excerpt"],
-                "next_prompt": "那你现在用自己的话说一句：为什么当前读不能只靠 MVCC？",
-                "takeaway": "先记住：MVCC 管快照读一致视图，当前读边界还要看锁。",
-                "confirmed_understanding": "",
-                "remaining_gap": "还没把快照读和当前读的边界收成一句话。",
-                "revisit_reason": "",
-                "requires_response": True,
-                "complete_current_unit": False,
+                "follow_up_question": "那你现在用自己的话说一句：为什么当前读不能只靠 MVCC？",
             },
             "writeback_suggestion": {
                 "should_write": False,
@@ -119,6 +105,12 @@ class FakeTeachIntelligence:
             },
         }
 
+    def generate_reply_stream(self, *, concept, context_packet, answer):
+        return (
+            "先别整段重背。你现在真正缺的是一句边界：MVCC 主要解决快照读一致视图，不会替当前读把锁问题消掉。\n\n"
+            "很多人会把 MVCC 讲成“并发万能药”，但它更准确的工作面其实是快照读。一旦你是在做当前读，读到的是要参与竞争的最新版本，就不能只靠历史版本链。"
+        )
+
     def explain_concept(self, *args, **kwargs):
         raise AssertionError("teach control should use generate_turn_envelope, not explain_concept")
 
@@ -129,8 +121,6 @@ class TutorFlowTests(unittest.TestCase):
         concept = session["concepts"][0]
         session["conceptStates"][concept["id"]]["anchorState"] = {
             "confirmedUnderstanding": "已经知道 MVCC 和历史版本有关。",
-            "currentGap": "还没讲清快照读和当前读的边界。",
-            "lastTeachingPoint": "MVCC 只覆盖快照读。",
             "lastFollowupGoal": "让用户用自己的话复述当前读为什么还要看锁。",
             "lastLearnerIntent": "answer",
             "lastTutorAction": "teach",
@@ -144,14 +134,14 @@ class TutorFlowTests(unittest.TestCase):
         )
 
         self.assertEqual(packet["anchor_state"]["confirmed_understanding"], "已经知道 MVCC 和历史版本有关。")
-        self.assertEqual(packet["dynamic"]["anchorState"]["current_gap"], "还没讲清快照读和当前读的边界。")
+        self.assertNotIn("current_gap", packet["anchor_state"])
+        self.assertNotIn("last_teaching_point", packet["anchor_state"])
 
     def test_prompt_builders_include_contract_priority_and_examples(self):
         concept = make_concept()
         context_packet = {
             "anchor_state": {
                 "confirmed_understanding": "知道 MVCC 和快照读有关。",
-                "current_gap": "还没讲出当前读边界。",
             },
             "dynamic": {"currentQuestion": concept["diagnosticQuestion"]},
             "stop_conditions": {},
@@ -170,7 +160,6 @@ class TutorFlowTests(unittest.TestCase):
                 "evidence_quality": "partial",
                 "key_claim": "用户知道 MVCC 和快照读有关。",
                 "confirmed_understanding": "知道 MVCC 和快照读有关。",
-                "current_gap": "还没讲出当前读边界。",
                 "has_misconception": False,
                 "misconception_detail": "",
             },
@@ -183,7 +172,7 @@ class TutorFlowTests(unittest.TestCase):
         self.assertIn("Follow the learner's explicit intent before inferred intent.", envelope_prompt)
         self.assertIn("one highest-value missing link > listing multiple gaps at once", envelope_prompt)
 
-    def test_answer_session_updates_anchor_state_from_fallback_feedback(self):
+    def test_answer_session_requires_configured_ai_instead_of_fallback(self):
         session = create_session(make_session_payload())
         payload = SimpleNamespace(
             answer="我只知道这是并发控制的一部分。",
@@ -193,12 +182,8 @@ class TutorFlowTests(unittest.TestCase):
         )
 
         with patch("app.engine.session_engine.get_tutor_intelligence", return_value=None):
-            projected = answer_session(session, payload)
-
-        anchor_state = projected["currentAnchorState"]
-        self.assertEqual(anchor_state["lastLearnerIntent"], "answer")
-        self.assertEqual(anchor_state["lastTutorAction"], projected["latestFeedback"]["action"])
-        self.assertTrue(anchor_state["currentGap"])
+            with self.assertRaisesRegex(RuntimeError, "AI tutor intelligence is required"):
+                answer_session(session, payload)
 
     def test_teach_control_uses_unified_turn_generation_and_updates_anchor_state(self):
         session = create_session(make_session_payload())
@@ -218,7 +203,7 @@ class TutorFlowTests(unittest.TestCase):
         self.assertEqual(projected["currentProbe"], "那你现在用自己的话说一句：为什么当前读不能只靠 MVCC？")
         self.assertEqual(projected["currentAnchorState"]["lastLearnerIntent"], "teach")
         self.assertEqual(projected["currentAnchorState"]["lastTutorAction"], "teach")
-        self.assertEqual(projected["currentAnchorState"]["lastTeachingPoint"], "先记住：MVCC 管快照读一致视图，当前读边界还要看锁。")
+        self.assertNotIn("lastTeachingPoint", projected["currentAnchorState"])
         self.assertEqual(
             projected["currentAnchorState"]["lastFollowupGoal"],
             "先把快照读和当前读边界讲清，再用一句 teach-back 确认。",

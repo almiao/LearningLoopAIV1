@@ -59,7 +59,7 @@ export function evaluateAbstention({
 
   const severe = reasons.includes("提示污染证据") || reasons.includes("新增追问已无信息增益");
   return {
-    status: severe ? "abstain" : "partial",
+    status: severe ? "stop" : "partial",
     label: severe ? "当前不可判" : "仅部分可判",
     reasons
   };

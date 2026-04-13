@@ -1,79 +1,84 @@
 # Learning Loop AI
 
-Split architecture version of the AI interview tutoring platform.
+AI interview tutoring project with a split runtime:
 
-## Services
+- `frontend/`: Next.js web client
+- `bff/`: Node.js BFF and orchestration layer
+- `ai-service/`: FastAPI-based AI service
+- `src/`: shared JavaScript domain engine still used by BFF, tests, scripts, and parts of the frontend
 
-- `frontend/`: Next.js web app
-- `bff/`: Node.js BFF
-- `ai-service/`: Python FastAPI AI service
+## Quick start
 
-## Prerequisites
+Requirements:
 
 - Node.js 20+
 - npm
 - Python 3.11+
 
-## First-time install
+Install:
 
 ```bash
 npm install --prefix frontend
 python3 -m pip install --user -r ai-service/requirements.txt
 ```
 
-## One-click start
-
-Run from the repository root:
+Start all services from the repository root:
 
 ```bash
 bash start-services.sh
 ```
 
-This will:
-
-- build the frontend production bundle
-- start the Python AI service on `8000`
-- start the Node BFF on `4000`
-- start the frontend on `3000`
-- wait for health checks before returning
-
-After startup, open:
+Endpoints:
 
 - Frontend: [http://127.0.0.1:3000](http://127.0.0.1:3000)
 - BFF: [http://127.0.0.1:4000](http://127.0.0.1:4000)
 - AI service: [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
-Logs are written to:
+Logs:
 
 - `.omx/logs/split-services/frontend.log`
 - `.omx/logs/split-services/bff.log`
 - `.omx/logs/split-services/ai-service.log`
 
-## Stop services
+Stop services:
 
 ```bash
 bash stop-services.sh
 ```
 
-## Alternative npm entrypoints
-
-These delegate to the same split-service startup flow:
-
-```bash
-npm start
-npm run dev
-```
-
-## Verification
-
-Smoke test the split main flow:
-
-```bash
-npm run smoke:split
-```
-
-Run the default split-focused tests:
+## Common commands
 
 ```bash
 npm test
+npm run build
+npm run smoke:split
+npm run eval:auto
+npm run eval:sessions
+npm run validate:cases
 ```
+
+## Repository map
+
+| Directory | Purpose |
+| --- | --- |
+| `ai-service/` | Python service, request parsing, tutor engine bridge, observability |
+| `archive/` | Archived historical scripts, legacy artifacts, and old generated review snapshots |
+| `bff/` | BFF API layer and integration with shared JS engine |
+| `contracts/` | API contracts and cross-service interface documents |
+| `frontend/` | Next.js routes, UI shell, and browser-side API helpers |
+| `scripts/` | Manual utilities, smoke scripts, evaluation runners, and maintenance scripts |
+| `src/` | Shared JS tutoring engine, source ingestion, baseline packs, and session projection |
+| `tests/` | Unit, integration, e2e, evaluation, personas, and fixtures |
+
+Each main directory now has its own `README.md` with a more detailed folder breakdown.
+
+## Documentation conventions
+
+- Active docs use descriptive kebab-case names.
+- Generated review outputs are no longer kept in the active tree by default.
+- Historical or one-off artifacts live under `archive/`.
+
+## Notes
+
+- `src/` is still active. It is not dead code; the BFF, tests, scripts, and some frontend projection logic import it directly.
+- `tests/eval/generated/` is treated as a runtime output directory. The previously committed snapshots were moved to `archive/`.

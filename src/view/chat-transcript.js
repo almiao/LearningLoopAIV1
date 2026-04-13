@@ -35,39 +35,8 @@ function buildUserIntentLabel(turn) {
   return "";
 }
 
-function collectTeachingParagraphs(turn) {
-  return Array.isArray(turn?.teachingParagraphs)
-    ? turn.teachingParagraphs.map((item) => String(item || "").trim()).filter(Boolean)
-    : [];
-}
-
 function buildAssistantBodyParts(turn) {
-  return [String(turn?.content || "").trim(), ...collectTeachingParagraphs(turn)].filter(Boolean);
-}
-
-function normalizeText(value) {
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function buildTakeaway(turn) {
-  const takeaway = normalizeText(turn?.takeaway || "");
-  if (!takeaway) {
-    return "";
-  }
-
-  const action = String(turn?.action || "").trim();
-  const bodyParts = buildAssistantBodyParts(turn).map((item) => normalizeText(item));
-  const shouldShow =
-    action === "teach" ||
-    action === "advance" ||
-    action === "abstain" ||
-    (!turn?.coachingStep && !turn?.candidateCoachingStep);
-
-  if (!shouldShow) {
-    return "";
-  }
-
-  return bodyParts.includes(takeaway) ? "" : takeaway;
+  return [String(turn?.content || "").trim()].filter(Boolean);
 }
 
 function buildAssistantEntry(turn, index) {
@@ -79,8 +48,8 @@ function buildAssistantEntry(turn, index) {
     conceptTitle: turn.conceptTitle || "",
     body: bodyParts[0] || "",
     bodyParts,
-    teachingParagraphs: collectTeachingParagraphs(turn),
-    takeaway: buildTakeaway(turn),
+    teachingParagraphs: [],
+    takeaway: "",
     followUpQuestion: "",
     candidateFollowUpQuestion: turn.candidateCoachingStep || "",
     coachingStep: turn.coachingStep || "",
@@ -135,30 +104,11 @@ export function buildChatTimeline(turns = [], { limit = 24 } = {}) {
         nextTurn.conceptId === turn.conceptId;
 
       if (sameConceptFollowUp) {
-        const bodyParts = buildAssistantBodyParts(turn);
         timeline.push({
-          id: `${createEntryId(turn, index)}+${createEntryId(nextTurn, index + 1)}`,
-          type: "message",
-          role: "assistant",
-          conceptTitle: nextTurn.conceptTitle || turn.conceptTitle || "",
-          body: bodyParts[0] || "",
-          bodyParts,
-          teachingParagraphs: collectTeachingParagraphs(turn),
-          takeaway: buildTakeaway(turn),
-          followUpQuestion: nextTurn.content || "",
-          candidateFollowUpQuestion:
-            turn.candidateCoachingStep && turn.candidateCoachingStep !== nextTurn.content
-              ? turn.candidateCoachingStep
-              : "",
-          coachingStep:
-            turn.coachingStep && turn.coachingStep !== nextTurn.content ? turn.coachingStep : "",
-          topicShiftLabel:
-            nextTurn.conceptId && nextTurn.conceptId !== turn.conceptId && nextTurn.conceptTitle
-              ? `接下来进入：${nextTurn.conceptTitle}`
-              : "",
-          timestamp: nextTurn.timestamp || turn.timestamp || index
+          ...buildAssistantEntry(turn, index),
+          candidateFollowUpQuestion: "",
+          coachingStep: ""
         });
-        index += 1;
         continue;
       }
     }

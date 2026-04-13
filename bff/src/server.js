@@ -5,6 +5,10 @@ import {
   getBaselinePackById,
   listBaselinePacks
 } from "../../src/baseline/baseline-packs.js";
+import {
+  readJavaGuideAsset,
+  readJavaGuideDocument
+} from "../../src/knowledge/java-guide-doc-service.js";
 import { createMemoryProfileStore } from "../../src/tutor/memory-profile-store.js";
 import { createUserProfileStore } from "../../src/user/user-profile-store.js";
 import { buildUserProfileView } from "../../src/user/profile-aggregator.js";
@@ -27,6 +31,27 @@ function withCorsHeaders(response, statusCode, extraHeaders = {}) {
 function sendJson(response, statusCode, payload) {
   withCorsHeaders(response, statusCode);
   response.end(JSON.stringify(payload));
+}
+
+function sendBuffer(response, statusCode, body, extraHeaders = {}) {
+  response.writeHead(statusCode, {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "content-type,authorization",
+    ...extraHeaders,
+  });
+  response.end(body);
+}
+
+function withStreamHeaders(response, statusCode) {
+  response.writeHead(statusCode, {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "content-type,authorization",
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive",
+  });
 }
 
 async function readJsonBody(request) {
@@ -151,6 +176,106 @@ async function handleAnswer(body) {
   };
 }
 
+function parseSseEvent(rawEvent) {
+  const lines = String(rawEvent || "").split(/\r?\n/);
+  let event = "message";
+  const dataLines = [];
+  for (const line of lines) {
+    if (line.startsWith("event:")) {
+      event = line.slice("event:".length).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trimStart());
+    }
+  }
+  return {
+    event,
+    dataText: dataLines.join("\n")
+  };
+}
+
+function serializeSseEvent(event, payload) {
+  return `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+}
+
+function buildServiceBaseUrl(request) {
+  const host = request.headers.host || `127.0.0.1:${port}`;
+  const protocol = String(request.headers["x-forwarded-proto"] || "http").split(",")[0].trim() || "http";
+  return `${protocol}://${host}`;
+}
+
+async function persistAnswerSideEffects(result) {
+  const memoryProfileSnapshot = result.memoryProfileSnapshot;
+  if (memoryProfileSnapshot?.id) {
+    await memoryProfileStore.save(memoryProfileSnapshot);
+  }
+  if (result.userId && result.targetBaseline?.id) {
+    const user = await getUserProfile(result.userId);
+    const previous = user.targets[result.targetBaseline.id] || {};
+    user.targets[result.targetBaseline.id] = {
+      targetBaselineId: result.targetBaseline.id,
+      title: result.targetBaseline.title,
+      targetRole: result.targetBaseline.targetRole || "",
+      createdAt: previous.createdAt || new Date().toISOString(),
+      lastActivityAt: new Date().toISOString(),
+      sessionsStarted: previous.sessionsStarted || 0,
+    };
+    user.lastActiveAt = user.targets[result.targetBaseline.id].lastActivityAt;
+    await userProfileStore.save(user);
+  }
+  delete result.memoryProfileSnapshot;
+}
+
+async function handleAnswerStream(body, response) {
+  const upstream = await fetch(`${aiServiceUrl}/api/interview/answer-stream`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!upstream.ok || !upstream.body) {
+    const rawText = await upstream.text();
+    let data;
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      data = { error: rawText || "Downstream AI service stream failed." };
+    }
+    throw new Error(data.detail || data.error || "Downstream AI service stream failed.");
+  }
+
+  withStreamHeaders(response, 200);
+  const traceId = upstream.headers.get("x-trace-id") || "";
+  if (traceId) {
+    response.write(serializeSseEvent("trace", { traceId }));
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for await (const chunk of upstream.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary >= 0) {
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const parsed = parseSseEvent(rawEvent);
+      if (parsed.event === "turn_result" || parsed.event === "session") {
+        const data = parsed.dataText ? JSON.parse(parsed.dataText) : {};
+        await persistAnswerSideEffects(data);
+        response.write(serializeSseEvent("turn_result", { ...data, traceId }));
+      } else {
+        response.write(`${rawEvent}\n\n`);
+      }
+      boundary = buffer.indexOf("\n\n");
+    }
+  }
+  if (buffer.trim()) {
+    response.write(`${buffer}\n\n`);
+  }
+  response.end();
+}
+
 const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url, "http://localhost");
@@ -190,6 +315,56 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/knowledge/doc") {
+      const docPath = url.searchParams.get("path") || "";
+      const document = await readJavaGuideDocument(docPath, {
+        serviceBaseUrl: buildServiceBaseUrl(request),
+      });
+      sendJson(response, 200, document);
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/knowledge/asset") {
+      const assetPath = url.searchParams.get("path");
+      const remoteUrl = url.searchParams.get("url");
+
+      if (assetPath) {
+        const asset = await readJavaGuideAsset(assetPath);
+        sendBuffer(response, 200, asset.body, {
+          "cache-control": "public, max-age=3600",
+          "content-type": asset.mimeType,
+        });
+        return;
+      }
+
+      if (remoteUrl) {
+        const upstream = await fetch(remoteUrl);
+        if (!upstream.ok) {
+          throw new Error("Remote asset request failed.");
+        }
+        sendBuffer(response, 200, Buffer.from(await upstream.arrayBuffer()), {
+          "cache-control": "public, max-age=3600",
+          "content-type": upstream.headers.get("content-type") || "application/octet-stream",
+        });
+        return;
+      }
+
+      throw new Error("knowledge asset path is required.");
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/knowledge/redirect") {
+      const remoteUrl = url.searchParams.get("url") || "";
+      if (!/^https?:\/\//i.test(remoteUrl)) {
+        throw new Error("knowledge redirect url is invalid.");
+      }
+      response.writeHead(302, {
+        "access-control-allow-origin": "*",
+        location: remoteUrl,
+      });
+      response.end();
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/interview/start-target") {
       sendJson(response, 200, await handleStartTarget(await readJsonBody(request)));
       return;
@@ -197,6 +372,11 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/interview/answer") {
       sendJson(response, 200, await handleAnswer(await readJsonBody(request)));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/interview/answer-stream") {
+      await handleAnswerStream(await readJsonBody(request), response);
       return;
     }
 

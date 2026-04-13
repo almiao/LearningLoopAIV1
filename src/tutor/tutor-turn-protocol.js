@@ -92,56 +92,22 @@ export function mergeRuntimeMaps(previousMap = null, nextMap = null, concept) {
   };
 }
 
-function normalizeReply(payload, concept) {
-  const judge = payload?.judge ?? {};
-  const confidence =
-    typeof judge.confidence === "number" && judge.confidence >= 0 && judge.confidence <= 1
-      ? judge.confidence
-      : 0.3;
-  const teachingParagraphs = ensureArray(payload?.teachingParagraphs)
-    .map((item) => ensureString(item))
-    .filter(Boolean)
-    .slice(0, 4);
-  const teachingChunk = ensureString(payload?.teachingChunk, teachingParagraphs.join("\n\n"));
-
+function normalizeNextMove(payload) {
+  const uiMode = ensureString(payload?.uiMode, "repair");
   return {
-    moveType: ensureString(payload?.moveType, "repair"),
-    signal: allowedSignals.has(payload?.signal) ? payload.signal : "noise",
-    judge: {
-      state: allowedJudgeStates.has(judge?.state) ? judge.state : "weak",
-      confidence,
-      reasons: ensureArray(judge?.reasons).map((item) => ensureString(item)).filter(Boolean).slice(0, 4)
-    },
-    visibleReply: ensureString(payload?.visibleReply, concept.summary),
-    evidenceReference: ensureString(payload?.evidenceReference, concept.excerpt || concept.summary),
-    teachingChunk: ensureString(teachingChunk, concept.summary),
-    teachingParagraphs,
-    nextQuestion: ensureString(payload?.nextQuestion),
-    takeaway: ensureString(payload?.takeaway, concept.summary),
-    confirmedUnderstanding: ensureString(payload?.confirmedUnderstanding),
-    remainingGap: ensureString(payload?.remainingGap),
-    revisitReason: ensureString(payload?.revisitReason),
-    completeCurrentUnit: Boolean(payload?.completeCurrentUnit),
-    requiresResponse: payload?.requiresResponse !== false
-  };
-}
-
-function normalizeNextMove(payload, reply) {
-  const uiMode = ensureString(payload?.uiMode, reply.moveType || "repair");
-  return {
-    intent: ensureString(payload?.intent, reply.visibleReply),
-    reason: ensureString(payload?.reason, reply.remainingGap || reply.takeaway),
+    intent: ensureString(payload?.intent, "先继续围绕当前点推进。"),
+    reason: ensureString(payload?.reason, "当前还需要一个更明确的下一步判断。"),
     expectedGain: normalizeInfoGainLevel(payload?.expectedGain, "medium"),
     uiMode,
-    shouldStop: Boolean(payload?.shouldStop),
-    requiresResponse: payload?.requiresResponse ?? reply.requiresResponse
+    shouldStop: payload?.shouldStop ?? ["advance", "stop", "revisit"].includes(uiMode),
+    followUpQuestion: ensureString(payload?.followUpQuestion)
   };
 }
 
-function normalizeWritebackSuggestion(payload, reply, concept, session) {
+function normalizeWritebackSuggestion(payload, concept, session) {
   const confidenceLevel = normalizeConfidenceLevel(
     payload?.anchorPatch?.confidenceLevel,
-    confidenceToLevel(reply.judge.confidence)
+    "medium"
   );
 
   return {
@@ -150,9 +116,9 @@ function normalizeWritebackSuggestion(payload, reply, concept, session) {
     reason: ensureString(payload?.reason, "当前轮产生了可归档的能力证据。"),
     admission: ensureString(payload?.admission, "review"),
     anchorPatch: {
-      state: allowedJudgeStates.has(payload?.anchorPatch?.state) ? payload.anchorPatch.state : reply.judge.state,
+      state: allowedJudgeStates.has(payload?.anchorPatch?.state) ? payload.anchorPatch.state : "partial",
       confidenceLevel,
-      derivedPrinciple: ensureString(payload?.anchorPatch?.derivedPrinciple, reply.takeaway || concept.summary),
+      derivedPrinciple: ensureString(payload?.anchorPatch?.derivedPrinciple, concept.summary),
       projectedTargets: ensureArray(payload?.anchorPatch?.projectedTargets)
         .map((item) => ensureString(item))
         .filter(Boolean)
@@ -164,12 +130,10 @@ function normalizeWritebackSuggestion(payload, reply, concept, session) {
 }
 
 export function normalizeTutorTurnEnvelope(payload, { concept, session, previousRuntimeMap = null }) {
-  const reply = normalizeReply(payload?.reply || payload, concept);
   const runtimeMap = mergeRuntimeMaps(previousRuntimeMap, payload?.runtimeMap, concept);
-  const nextMove = normalizeNextMove(payload?.nextMove, reply);
+  const nextMove = normalizeNextMove(payload?.nextMove);
   const writebackSuggestion = normalizeWritebackSuggestion(
     payload?.writebackSuggestion,
-    reply,
     concept,
     session
   );
@@ -177,7 +141,6 @@ export function normalizeTutorTurnEnvelope(payload, { concept, session, previous
   return {
     runtimeMap,
     nextMove,
-    reply,
     writebackSuggestion
   };
 }
@@ -187,21 +150,20 @@ export function assertTutorTurnEnvelope(envelope, { scopeType = "pack" } = {}) {
     throw new Error("Tutor intelligence returned an invalid tutor turn (missing runtime map).");
   }
 
-  if (!envelope.reply?.visibleReply) {
-    throw new Error("Tutor intelligence returned an invalid tutor turn (missing reply).");
-  }
-
   if (envelope.runtimeMap.infoGainLevel === "negligible" && ["probe", "repair", "deepen", "check"].includes(envelope.nextMove.uiMode)) {
     throw new Error(
       `Tutor intelligence returned an inconsistent tutor turn (low-gain probe). nextMove=${envelope.nextMove.uiMode}`
     );
   }
 
-  if (envelope.nextMove.shouldStop && envelope.reply.requiresResponse) {
-    throw new Error("Tutor intelligence returned an inconsistent tutor turn (stop with required response).");
+  if (
+    ["probe", "teach", "verify"].includes(envelope.nextMove.uiMode) &&
+    !envelope.nextMove.followUpQuestion
+  ) {
+    throw new Error("Tutor intelligence returned an inconsistent tutor turn (interactive move without follow-up).");
   }
 
-  if (scopeType === "concept" && envelope.reply.completeCurrentUnit && envelope.nextMove.uiMode === "advance") {
+  if (scopeType === "concept" && envelope.nextMove.uiMode === "advance") {
     throw new Error("Tutor intelligence returned an inconsistent tutor turn (concept scope attempted to advance away).");
   }
 }

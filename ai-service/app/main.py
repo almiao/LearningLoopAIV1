@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+import queue
+import threading
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.core.tracing import (
@@ -18,6 +21,7 @@ from app.engine.session_engine import (
     apply_focus_concept,
     apply_focus_domain,
     create_session,
+    get_tutor_intelligence,
     get_session,
     project_session,
     SESSIONS,
@@ -26,6 +30,42 @@ from app.infra.llm.snapshot import SnapshotStore
 from app.observability import events
 from app.observability.logger import logger
 from app.engine.tutor_intelligence import describe_tutor_intelligence
+
+
+def sse_event(event: str, data: Dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+class StreamingTutorIntelligence:
+    def __init__(self, base, on_chunk, on_done):
+        self.base = base
+        self.on_chunk = on_chunk
+        self.on_done = on_done
+
+    @property
+    def configured(self) -> bool:
+        return bool(getattr(self.base, "configured", False))
+
+    def generate_turn_envelope(self, **kwargs):
+        return self.base.generate_turn_envelope(**kwargs)
+
+    def generate_reply_stream(self, **kwargs) -> str:
+        chunks = []
+        if hasattr(self.base, "generate_reply_stream_events"):
+            for chunk in self.base.generate_reply_stream_events(**kwargs):
+                if not chunk:
+                    continue
+                chunks.append(chunk)
+                self.on_chunk(chunk)
+            self.on_done()
+            return "".join(chunks)
+
+        text = self.base.generate_reply_stream(**kwargs) if hasattr(self.base, "generate_reply_stream") else ""
+        if text:
+            chunks.append(text)
+            self.on_chunk(text)
+        self.on_done()
+        return "".join(chunks)
 
 
 class StartTargetRequest(BaseModel):
@@ -103,6 +143,55 @@ def answer(payload: AnswerRequest) -> Dict[str, Any]:
     result = answer_session(session, payload)
     SESSIONS[payload.sessionId] = session
     return result
+
+
+@app.post("/api/interview/answer-stream")
+def answer_stream(payload: AnswerRequest) -> StreamingResponse:
+    session = SESSIONS.get(payload.sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail="Unknown session.")
+    set_session_context(session_id=payload.sessionId, turn=len(session.get("turns", [])))
+
+    def generate():
+        event_queue: queue.Queue[tuple[str, Dict[str, Any]]] = queue.Queue()
+
+        def emit_delta(delta: str) -> None:
+            event_queue.put(("reply_delta", {"delta": delta}))
+
+        def emit_reply_done() -> None:
+            event_queue.put(("reply_done", {}))
+
+        base_intelligence = get_tutor_intelligence()
+        intelligence = StreamingTutorIntelligence(base_intelligence, emit_delta, emit_reply_done) if base_intelligence else None
+
+        def worker():
+            try:
+                result = answer_session(session, payload, intelligence_override=intelligence)
+                SESSIONS[payload.sessionId] = session
+                event_queue.put(("turn_result", result))
+            except Exception as exc:  # pragma: no cover - streamed back to client
+                event_queue.put(("error", {"error": str(exc) or "Answer stream failed."}))
+            finally:
+                event_queue.put(("done", {}))
+
+        threading.Thread(target=worker, daemon=True).start()
+        yield sse_event("reply_status", {"status": "started"})
+
+        while True:
+            event, data = event_queue.get()
+            if event == "done":
+                yield sse_event("done", data)
+                break
+            yield sse_event(event, data)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/api/interview/focus-domain")

@@ -1,0 +1,3514 @@
+{
+  "version": "2.10",
+  "children": [
+    {
+      "type": "frame",
+      "id": "bi8Au",
+      "x": 0,
+      "y": 0,
+      "name": "Home Page - LearningLoop AI",
+      "clip": true,
+      "width": 1440,
+      "height": 900,
+      "fill": "#FAFAF8",
+      "layout": "vertical",
+      "gap": 48,
+      "padding": [
+        24,
+        48,
+        56,
+        48
+      ],
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "i26A7",
+          "name": "Top Bar",
+          "width": "fill_container",
+          "height": 44,
+          "fill": "#FAFAF8",
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "TsZ7V",
+              "name": "Brand Mark",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "0Ncbu",
+                  "name": "Logo Dot",
+                  "width": 28,
+                  "height": 28,
+                  "fill": "#111111",
+                  "cornerRadius": 8
+                },
+                {
+                  "type": "text",
+                  "id": "t3LuJ",
+                  "name": "brandText",
+                  "fill": "#151515",
+                  "content": "LearningLoop AI",
+                  "fontFamily": "Inter",
+                  "fontSize": 16,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "TJpKA",
+              "name": "Upgrade Capsule",
+              "height": 36,
+              "fill": "#111111",
+              "cornerRadius": 8,
+              "gap": 8,
+              "padding": [
+                8,
+                14
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "4ERCH",
+                  "name": "upgradeIcon",
+                  "width": 16,
+                  "height": 16,
+                  "iconFontName": "sparkles",
+                  "iconFontFamily": "lucide",
+                  "fill": "#F8F8F4"
+                },
+                {
+                  "type": "text",
+                  "id": "rISQH",
+                  "name": "upgradeText",
+                  "fill": "#F8F8F4",
+                  "content": "升级套餐",
+                  "fontFamily": "Inter",
+                  "fontSize": 14,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "kZEVP",
+          "name": "Center Search Area",
+          "width": 760,
+          "fill": "#FAFAF8",
+          "layout": "vertical",
+          "gap": 24,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "0XgRC",
+              "name": "heroKicker",
+              "fill": "#6E6B64",
+              "content": "面向开发者的主动学习路径",
+              "fontFamily": "Inter",
+              "fontSize": 15,
+              "fontWeight": "500"
+            },
+            {
+              "type": "text",
+              "id": "YeLrB",
+              "name": "heroTitle",
+              "fill": "#171717",
+              "content": "今天想学习什么？",
+              "fontFamily": "Inter",
+              "fontSize": 34,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "mCfeu",
+              "name": "Search Input",
+              "width": "fill_container",
+              "height": 62,
+              "fill": "#FFFFFF",
+              "cornerRadius": 8,
+              "stroke": {
+                "thickness": 1,
+                "fill": "#E5E1D8"
+              },
+              "effect": {
+                "type": "shadow",
+                "shadowType": "outer",
+                "color": "#00000012",
+                "offset": {
+                  "x": 0,
+                  "y": 8
+                },
+                "blur": 24
+              },
+              "gap": 12,
+              "padding": [
+                0,
+                18
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "hEGEx",
+                  "name": "searchIcon",
+                  "width": 20,
+                  "height": 20,
+                  "iconFontName": "search",
+                  "iconFontFamily": "lucide",
+                  "fill": "#8A877F"
+                },
+                {
+                  "type": "text",
+                  "id": "JZpcy",
+                  "name": "searchText",
+                  "fill": "#8A877F",
+                  "content": "搜索学习路线、知识点或面经",
+                  "fontFamily": "Inter",
+                  "fontSize": 16
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "f07og",
+              "name": "Quick Prompts",
+              "fill": "#FAFAF8",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "M07NZ",
+                  "name": "chip1",
+                  "height": 32,
+                  "fill": "#111111",
+                  "cornerRadius": 8,
+                  "padding": [
+                    0,
+                    14
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "DF7av",
+                      "name": "chip1Text",
+                      "fill": "#FFFFFF",
+                      "content": "Java 面试（JavaGuide版）",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "gOJ3A",
+                  "name": "chip2",
+                  "height": 32,
+                  "fill": "#F0EFEA",
+                  "cornerRadius": 8,
+                  "padding": [
+                    0,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "SGLpG",
+                      "name": "chip2Text",
+                      "fill": "#4B4842",
+                      "content": "C++ 面试",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Yj2pE",
+                  "name": "chip3",
+                  "height": 32,
+                  "fill": "#F0EFEA",
+                  "cornerRadius": 8,
+                  "padding": [
+                    0,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "d13AO",
+                      "name": "chip3Text",
+                      "fill": "#4B4842",
+                      "content": "前端面试",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "zpuhS",
+          "name": "Learning Packs",
+          "width": 960,
+          "fill": "#FAFAF8",
+          "layout": "vertical",
+          "gap": 16,
+          "children": [
+            {
+              "type": "frame",
+              "id": "10Zrt",
+              "name": "Section Header",
+              "width": "fill_container",
+              "fill": "#FAFAF8",
+              "justifyContent": "space_between",
+              "alignItems": "end",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "KsgV3",
+                  "name": "headCopy",
+                  "fill": "#FAFAF8",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "rUUrs",
+                      "name": "headTitle",
+                      "fill": "#1B1B1B",
+                      "content": "选择学习主题",
+                      "fontFamily": "Inter",
+                      "fontSize": 22,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "AiPGI",
+                      "name": "headDesc",
+                      "fill": "#77736A",
+                      "content": "当前主题会在下方展开具体知识项目，点击知识项目直接进入学习。",
+                      "fontFamily": "Inter",
+                      "fontSize": 14
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "AeOu9",
+                  "x": 863,
+                  "y": 24,
+                  "name": "viewAll",
+                  "enabled": false,
+                  "height": 34,
+                  "fill": "#FAFAF8",
+                  "cornerRadius": 8,
+                  "gap": 6,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "JArl3",
+                      "name": "viewAllText",
+                      "fill": "#4C4942",
+                      "content": "全部内容",
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "icon_font",
+                      "id": "OJXV2",
+                      "name": "viewAllIcon",
+                      "width": 15,
+                      "height": 15,
+                      "iconFontName": "arrow-right",
+                      "iconFontFamily": "lucide",
+                      "fill": "#4C4942"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "lIr8e",
+              "name": "Pack Row 1",
+              "width": "fill_container",
+              "height": 206,
+              "fill": "#FAFAF8",
+              "gap": 14,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "9wYGv",
+                  "name": "Java Interview Pack",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 8,
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "#111111"
+                  },
+                  "effect": {
+                    "type": "shadow",
+                    "shadowType": "outer",
+                    "color": "#00000014",
+                    "offset": {
+                      "x": 0,
+                      "y": 12
+                    },
+                    "blur": 26
+                  },
+                  "layout": "vertical",
+                  "gap": 14,
+                  "padding": 22,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "EhEb3",
+                      "name": "mainTop",
+                      "width": "fill_container",
+                      "fill": "#FFFFFF",
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "NIIxN",
+                          "name": "mainBadge",
+                          "height": 28,
+                          "fill": "#111111",
+                          "cornerRadius": 8,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "cjrPG",
+                              "name": "mainBadgeText",
+                              "fill": "#FFFFFF",
+                              "content": "已选中",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "iuw4d",
+                          "name": "mainIconBox",
+                          "width": 34,
+                          "height": 34,
+                          "fill": "#F4F2EC",
+                          "cornerRadius": 8,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon_font",
+                              "id": "TB4WZ",
+                              "name": "mainIcon",
+                              "width": 18,
+                              "height": 18,
+                              "iconFontName": "check",
+                              "iconFontFamily": "lucide",
+                              "fill": "#111111"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "pzKWb",
+                      "name": "mainTitle",
+                      "fill": "#171717",
+                      "content": "Java 面试（JavaGuide版）",
+                      "fontFamily": "Inter",
+                      "fontSize": 21,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "lDhPM",
+                      "name": "mainDesc",
+                      "fill": "#6F6A61",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "基于 JavaGuide 组织成可练习的知识项目：先理解核心概念，再进入面试追问和复盘。",
+                      "lineHeight": 1.45,
+                      "fontFamily": "Inter",
+                      "fontSize": 14
+                    },
+                    {
+                      "type": "frame",
+                      "id": "mecOF",
+                      "x": 22,
+                      "y": 149,
+                      "name": "mainAction",
+                      "enabled": false,
+                      "height": 32,
+                      "fill": "#F0EFEA",
+                      "cornerRadius": 8,
+                      "gap": 8,
+                      "padding": [
+                        0,
+                        12
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "rkAeV",
+                          "name": "mainActionText",
+                          "fill": "#25231F",
+                          "content": "进入知识项目",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "icon_font",
+                          "id": "HiWMt",
+                          "name": "mainActionIcon",
+                          "width": 15,
+                          "height": 15,
+                          "iconFontName": "chevron-right",
+                          "iconFontFamily": "lucide",
+                          "fill": "#25231F"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "fSjMY",
+                  "name": "Placeholder Column",
+                  "width": 304,
+                  "height": "fill_container",
+                  "fill": "#FAFAF8",
+                  "layout": "vertical",
+                  "gap": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "sZtR1",
+                      "name": "Spring Pack Placeholder",
+                      "width": "fill_container",
+                      "height": "fill_container",
+                      "fill": "#F7F6F1",
+                      "cornerRadius": 8,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "#E5E1D8"
+                      },
+                      "gap": 14,
+                      "padding": 18,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "R6Okc",
+                          "name": "springIconBox",
+                          "width": 38,
+                          "height": 38,
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 8,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon_font",
+                              "id": "OFI9Z",
+                              "name": "springIcon",
+                              "width": 18,
+                              "height": 18,
+                              "iconFontName": "leaf",
+                              "iconFontFamily": "lucide",
+                              "fill": "#47735E"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "lQZHF",
+                          "name": "springCopy",
+                          "width": "fill_container",
+                          "fill": "#F4F3EE",
+                          "layout": "vertical",
+                          "gap": 4,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "Md2eZ",
+                              "name": "springTitle",
+                              "fill": "#2A2925",
+                              "content": "Spring",
+                              "fontFamily": "Inter",
+                              "fontSize": 16,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "text",
+                              "id": "zlmN2",
+                              "name": "springDesc",
+                              "fill": "#8B867C",
+                              "content": "后续主题",
+                              "fontFamily": "Inter",
+                              "fontSize": 13
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "kkFUM",
+                      "name": "Database Pack Placeholder",
+                      "width": "fill_container",
+                      "height": "fill_container",
+                      "fill": "#F7F6F1",
+                      "cornerRadius": 8,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "#E5E1D8"
+                      },
+                      "gap": 14,
+                      "padding": 18,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "oBEVw",
+                          "name": "dbIconBox",
+                          "width": 38,
+                          "height": 38,
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 8,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon_font",
+                              "id": "fhHSH",
+                              "name": "dbIcon",
+                              "width": 18,
+                              "height": 18,
+                              "iconFontName": "database",
+                              "iconFontFamily": "lucide",
+                              "fill": "#5A5E91"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "iHWpu",
+                          "name": "dbCopy",
+                          "width": "fill_container",
+                          "fill": "#F4F3EE",
+                          "layout": "vertical",
+                          "gap": 4,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "uF0sc",
+                              "name": "dbTitle",
+                              "fill": "#2A2925",
+                              "content": "数据库",
+                              "fontFamily": "Inter",
+                              "fontSize": 16,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "text",
+                              "id": "9PyQC",
+                              "name": "dbDesc",
+                              "fill": "#8B867C",
+                              "content": "后续主题",
+                              "fontFamily": "Inter",
+                              "fontSize": 13
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "aJxOO",
+              "name": "Pack Row 2",
+              "width": "fill_container",
+              "height": 124,
+              "fill": "#FAFAF8",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "VT7Ba",
+                  "name": "system",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "fill": "#F7F6F1",
+                  "cornerRadius": 8,
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "#E8E4DA"
+                  },
+                  "gap": 14,
+                  "padding": 18,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "zwaK5",
+                      "name": "systemIconBox",
+                      "width": 38,
+                      "height": 38,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 8,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "89enp",
+                          "name": "systemIcon",
+                          "width": 18,
+                          "height": 18,
+                          "iconFontName": "network",
+                          "iconFontFamily": "lucide",
+                          "fill": "#6A5540"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "jrTtq",
+                      "name": "systemCopy",
+                      "width": "fill_container",
+                      "fill": "#F7F6F1",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "eacpl",
+                          "name": "systemTitle",
+                          "fill": "#2A2925",
+                          "content": "Java 基础",
+                          "fontFamily": "Inter",
+                          "fontSize": 16,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "text",
+                          "id": "xDlOv",
+                          "name": "systemDesc",
+                          "fill": "#8B867C",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "语法、集合、异常与泛型",
+                          "fontFamily": "Inter",
+                          "fontSize": 13
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "wRDr5",
+                  "name": "algo",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "fill": "#F7F6F1",
+                  "cornerRadius": 8,
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "#E8E4DA"
+                  },
+                  "gap": 14,
+                  "padding": 18,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "R3NSs",
+                      "name": "algoIconBox",
+                      "width": 38,
+                      "height": 38,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 8,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "wBDU1",
+                          "name": "algoIcon",
+                          "width": 18,
+                          "height": 18,
+                          "iconFontName": "binary",
+                          "iconFontFamily": "lucide",
+                          "fill": "#37605D"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "18WRu",
+                      "name": "algoCopy",
+                      "width": "fill_container",
+                      "fill": "#F7F6F1",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "UWL54",
+                          "name": "algoTitle",
+                          "fill": "#2A2925",
+                          "content": "JVM 与并发",
+                          "fontFamily": "Inter",
+                          "fontSize": 16,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "text",
+                          "id": "hbzVx",
+                          "name": "algoDesc",
+                          "fill": "#8B867C",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "内存结构、GC、线程池与锁",
+                          "fontFamily": "Inter",
+                          "fontSize": 13
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "IdvwG",
+                  "name": "cloud",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "fill": "#F7F6F1",
+                  "cornerRadius": 8,
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "#E8E4DA"
+                  },
+                  "gap": 14,
+                  "padding": 18,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "VZgB7",
+                      "name": "cloudIconBox",
+                      "width": 38,
+                      "height": 38,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 8,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "CDKSd",
+                          "name": "cloudIcon",
+                          "width": 18,
+                          "height": 18,
+                          "iconFontName": "cloud",
+                          "iconFontFamily": "lucide",
+                          "fill": "#4E6480"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Xj5GI",
+                      "name": "cloudCopy",
+                      "width": "fill_container",
+                      "fill": "#F7F6F1",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "ASRmM",
+                          "name": "cloudTitle",
+                          "fill": "#2A2925",
+                          "content": "项目追问",
+                          "fontFamily": "Inter",
+                          "fontSize": 16,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "text",
+                          "id": "uqvpL",
+                          "name": "cloudDesc",
+                          "fill": "#8B867C",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "结合真实场景练表达",
+                          "fontFamily": "Inter",
+                          "fontSize": 13
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "akDuN",
+              "name": "Selection Hint",
+              "width": "fill_container",
+              "height": 46,
+              "fill": "#FAFAF8",
+              "cornerRadius": 8,
+              "gap": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "Q67b8",
+                  "name": "hintIcon",
+                  "width": 16,
+                  "height": 16,
+                  "iconFontName": "mouse-pointer-click",
+                  "iconFontFamily": "lucide",
+                  "fill": "#8A877F"
+                },
+                {
+                  "type": "text",
+                  "id": "nV0rQ",
+                  "name": "hintText",
+                  "fill": "#77736A",
+                  "content": "点击具体知识项目进入学习页；主题卡只负责切换内容范围。",
+                  "fontFamily": "Inter",
+                  "fontSize": 14
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "N98DU",
+      "x": 1540,
+      "y": 0,
+      "name": "Study Page - Java Interview",
+      "width": 1440,
+      "height": 900,
+      "fill": "#FFFFFF",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "mHttQ",
+          "name": "Study Top Bar",
+          "width": "fill_container",
+          "height": 56,
+          "fill": "#FFFFFF",
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "#E7E7E4"
+          },
+          "gap": 16,
+          "padding": [
+            0,
+            20
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "9o4Xi",
+              "name": "back",
+              "fill": "#202124",
+              "content": "‹",
+              "fontFamily": "Inter",
+              "fontSize": 28,
+              "fontWeight": "500"
+            },
+            {
+              "type": "frame",
+              "id": "CYXZU",
+              "name": "Brand Chip",
+              "width": 28,
+              "height": 28,
+              "fill": "#111111",
+              "cornerRadius": 7,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "pH53j",
+                  "name": "brandT",
+                  "fill": "#FFFFFF",
+                  "content": "L",
+                  "fontFamily": "Inter",
+                  "fontSize": 16,
+                  "fontWeight": "800"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "lFzQ5",
+              "name": "breadcrumb",
+              "fill": "#202124",
+              "content": "Java 面试（JavaGuide版） / JVM 基础",
+              "fontFamily": "Inter",
+              "fontSize": 15,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "HJYTM",
+              "name": "Spacer",
+              "width": "fill_container",
+              "height": 1,
+              "fill": "#FFFFFF"
+            },
+            {
+              "type": "frame",
+              "id": "L9rXX",
+              "name": "Progress Pill",
+              "fill": "#F3F6FA",
+              "cornerRadius": 8,
+              "gap": 6,
+              "padding": [
+                7,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "3nkkC",
+                  "name": "progressT",
+                  "fill": "#2B67C8",
+                  "content": "掌握度 42%",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "l999g",
+          "name": "Study Main",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "#F8F8F6",
+          "children": [
+            {
+              "type": "frame",
+              "id": "uPeA9",
+              "name": "Material Reader",
+              "width": 860,
+              "height": "fill_container",
+              "fill": "#FFFFFF",
+              "stroke": {
+                "align": "inside",
+                "thickness": {
+                  "right": 1
+                },
+                "fill": "#E4E4E1"
+              },
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "9Q0TF",
+                  "name": "Reader Header",
+                  "width": "fill_container",
+                  "height": 54,
+                  "fill": "#FFFFFF",
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": {
+                      "bottom": 1
+                    },
+                    "fill": "#ECECEA"
+                  },
+                  "gap": 12,
+                  "padding": [
+                    0,
+                    20
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "XemoA",
+                      "name": "readerTitle",
+                      "fill": "#202124",
+                      "content": "JVM 内存结构.md",
+                      "fontFamily": "Inter",
+                      "fontSize": 15,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "acLl6",
+                      "name": "readerMeta",
+                      "fill": "#8B8D88",
+                      "content": "来自 JavaGuide / docs/java/jvm",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ZxOSC",
+                      "name": "Reader Spacer",
+                      "width": "fill_container",
+                      "height": 1,
+                      "fill": "#FFFFFF"
+                    },
+                    {
+                      "type": "text",
+                      "id": "7oXnJ",
+                      "name": "readerTools",
+                      "fill": "#5F6368",
+                      "content": "重点 · 笔记 · 全屏",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "cOhgU",
+                  "name": "Reader Body",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "fill": "#FFFFFF",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "gQv8e",
+                      "name": "Knowledge Outline",
+                      "width": 230,
+                      "height": "fill_container",
+                      "fill": "#F6F7F4",
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": {
+                          "right": 1
+                        },
+                        "fill": "#E4E4E1"
+                      },
+                      "layout": "vertical",
+                      "gap": 8,
+                      "padding": 18,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "rdntp",
+                          "name": "outlineTitle",
+                          "fill": "#202124",
+                          "content": "知识目录",
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "800"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Sgu6W",
+                          "name": "Current Selection",
+                          "width": "fill_container",
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 8,
+                          "stroke": {
+                            "align": "inside",
+                            "thickness": 1,
+                            "fill": "#E4E4E1"
+                          },
+                          "layout": "vertical",
+                          "gap": 4,
+                          "padding": 10,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "Lhz3b",
+                              "name": "currentLabel",
+                              "fill": "#8B8D88",
+                              "content": "当前已选",
+                              "fontFamily": "Inter",
+                              "fontSize": 11,
+                              "fontWeight": "700"
+                            },
+                            {
+                              "type": "text",
+                              "id": "dH2vj",
+                              "name": "currentValue",
+                              "fill": "#202124",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "Java 面试 / JVM / 内存结构",
+                              "fontFamily": "Inter",
+                              "fontSize": 12,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "aj2eg",
+                          "name": "Topic Selector",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 6,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "beDIH",
+                              "name": "topicTitle",
+                              "fill": "#8B8D88",
+                              "content": "主题",
+                              "fontFamily": "Inter",
+                              "fontSize": 11,
+                              "fontWeight": "800"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "JOCkg",
+                              "name": "Topic Active",
+                              "width": "fill_container",
+                              "fill": "#111111",
+                              "cornerRadius": 8,
+                              "gap": 6,
+                              "padding": [
+                                8,
+                                10
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "wJUIk",
+                                  "name": "topicActiveText",
+                                  "fill": "#FFFFFF",
+                                  "content": "Java 面试（JavaGuide版）",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "700"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "FQRR8",
+                          "name": "Module Tree",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 6,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "g6AF9",
+                              "name": "moduleTitle",
+                              "fill": "#8B8D88",
+                              "content": "模块与知识点",
+                              "fontFamily": "Inter",
+                              "fontSize": 11,
+                              "fontWeight": "800"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "wAKlD",
+                              "name": "Module Java Basic",
+                              "width": "fill_container",
+                              "fill": "#FFFFFF",
+                              "cornerRadius": 8,
+                              "layout": "vertical",
+                              "gap": 2,
+                              "padding": 10,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "0fWnd",
+                                  "name": "basicT",
+                                  "fill": "#373A36",
+                                  "content": "Java 基础",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 13,
+                                  "fontWeight": "700"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "cca5m",
+                                  "name": "basicS",
+                                  "fill": "#8B8D88",
+                                  "content": "语法 · 集合 · 异常",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "ow9vl",
+                              "name": "Module JVM Expanded",
+                              "width": "fill_container",
+                              "fill": "#EEF4FF",
+                              "cornerRadius": 8,
+                              "layout": "vertical",
+                              "gap": 6,
+                              "padding": 8,
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "nmrCq",
+                                  "name": "JVM Header",
+                                  "width": "fill_container",
+                                  "gap": 6,
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "7wAag",
+                                      "name": "jvmArrow",
+                                      "fill": "#1A5FCC",
+                                      "content": "▾",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 12,
+                                      "fontWeight": "800"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "hslzx",
+                                      "name": "jvmT",
+                                      "fill": "#1A5FCC",
+                                      "content": "JVM",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 13,
+                                      "fontWeight": "800"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "IU17m",
+                                  "name": "Outline Active",
+                                  "width": "fill_container",
+                                  "fill": "#DCEBFF",
+                                  "cornerRadius": 8,
+                                  "layout": "vertical",
+                                  "gap": 3,
+                                  "padding": [
+                                    8,
+                                    10
+                                  ],
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "tPfZO",
+                                      "name": "o1t",
+                                      "fill": "#1A5FCC",
+                                      "content": "内存结构",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 12,
+                                      "fontWeight": "700"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "KgpOV",
+                                      "name": "o1s",
+                                      "fill": "#5E7FB6",
+                                      "content": "正在学习 · 12 min",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 11,
+                                      "fontWeight": "500"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "7NNEB",
+                                  "name": "Outline Item GC",
+                                  "width": "fill_container",
+                                  "fill": "#FFFFFF",
+                                  "cornerRadius": 8,
+                                  "layout": "vertical",
+                                  "gap": 3,
+                                  "padding": 10,
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "WqDpG",
+                                      "name": "o2t",
+                                      "fill": "#373A36",
+                                      "content": "垃圾回收",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 12,
+                                      "fontWeight": "600"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "TrE0l",
+                                      "name": "o2s",
+                                      "fill": "#8B8D88",
+                                      "content": "未开始 · 18 min",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 11,
+                                      "fontWeight": "500"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "F09Ww",
+                                  "name": "Outline Item Thread",
+                                  "width": "fill_container",
+                                  "fill": "#FFFFFF",
+                                  "cornerRadius": 8,
+                                  "layout": "vertical",
+                                  "gap": 3,
+                                  "padding": 10,
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "akYQ5",
+                                      "name": "o3t",
+                                      "fill": "#373A36",
+                                      "content": "类加载机制",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 12,
+                                      "fontWeight": "600"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "c6KiY",
+                                      "name": "o3s",
+                                      "fill": "#8B8D88",
+                                      "content": "待复习 · 9 min",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 11,
+                                      "fontWeight": "500"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "iSeOe",
+                              "name": "Module Concurrent",
+                              "width": "fill_container",
+                              "fill": "#FFFFFF",
+                              "cornerRadius": 8,
+                              "layout": "vertical",
+                              "gap": 2,
+                              "padding": 10,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "HSgYT",
+                                  "name": "concurrentT",
+                                  "fill": "#373A36",
+                                  "content": "并发编程",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 13,
+                                  "fontWeight": "700"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "YaNAG",
+                                  "name": "concurrentS",
+                                  "fill": "#8B8D88",
+                                  "content": "线程池 · 锁 · JUC",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "GB0KY",
+                              "name": "Module Project",
+                              "width": "fill_container",
+                              "fill": "#FFFFFF",
+                              "cornerRadius": 8,
+                              "layout": "vertical",
+                              "gap": 2,
+                              "padding": 10,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "Q5xJf",
+                                  "name": "projectT",
+                                  "fill": "#373A36",
+                                  "content": "项目追问",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 13,
+                                  "fontWeight": "700"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "Wywlw",
+                                  "name": "projectS",
+                                  "fill": "#8B8D88",
+                                  "content": "场景表达 · 复盘卡片",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "CRo6Q",
+                      "name": "Document Surface",
+                      "width": "fill_container",
+                      "height": "fill_container",
+                      "fill": "#FFFFFF",
+                      "layout": "vertical",
+                      "gap": 18,
+                      "padding": [
+                        34,
+                        54
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "tuNFw",
+                          "name": "docH",
+                          "fill": "#202124",
+                          "content": "JVM 内存结构",
+                          "fontFamily": "Inter",
+                          "fontSize": 30,
+                          "fontWeight": "800"
+                        },
+                        {
+                          "type": "text",
+                          "id": "H3MHG",
+                          "name": "docLead",
+                          "fill": "#4D514B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "JVM 运行时数据区可以分为线程私有和线程共享两类。面试时需要能说明每个区域存放什么、何时创建、常见异常是什么。",
+                          "lineHeight": 1.55,
+                          "fontFamily": "Inter",
+                          "fontSize": 16
+                        },
+                        {
+                          "type": "frame",
+                          "id": "pgpEJ",
+                          "name": "Exam Callout",
+                          "width": "fill_container",
+                          "fill": "#F7FAFF",
+                          "cornerRadius": 8,
+                          "stroke": {
+                            "align": "inside",
+                            "thickness": 1,
+                            "fill": "#C8DAFF"
+                          },
+                          "layout": "vertical",
+                          "gap": 8,
+                          "padding": 16,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "rmSJJ",
+                              "name": "calloutT",
+                              "fill": "#174EA6",
+                              "content": "面试追问",
+                              "fontFamily": "Inter",
+                              "fontSize": 14,
+                              "fontWeight": "800"
+                            },
+                            {
+                              "type": "text",
+                              "id": "P1H1i",
+                              "name": "calloutS",
+                              "fill": "#2F4E82",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "为什么程序计数器是唯一一个不会出现 OutOfMemoryError 的区域？",
+                              "fontFamily": "Inter",
+                              "fontSize": 14,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "SMi8p",
+                          "name": "p1",
+                          "fill": "#202124",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "1. 程序计数器：记录当前线程执行到的字节码行号，线程私有，占用空间很小。",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Inter",
+                          "fontSize": 15
+                        },
+                        {
+                          "type": "text",
+                          "id": "2qcOS",
+                          "name": "p2",
+                          "fill": "#202124",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "2. 虚拟机栈：每次方法调用都会创建栈帧，保存局部变量表、操作数栈、动态链接和返回地址。",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Inter",
+                          "fontSize": 15
+                        },
+                        {
+                          "type": "text",
+                          "id": "ulcIB",
+                          "name": "p3",
+                          "fill": "#202124",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "3. 堆：对象实例主要分配在堆上，是垃圾回收管理的核心区域，也是面试中最常被追问的部分。",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Inter",
+                          "fontSize": 15
+                        },
+                        {
+                          "type": "frame",
+                          "id": "AlBhw",
+                          "name": "Memory Map",
+                          "width": "fill_container",
+                          "height": 118,
+                          "fill": "#F6F6F3",
+                          "cornerRadius": 8,
+                          "gap": 10,
+                          "padding": 12,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "832xq",
+                              "name": "Private Memory",
+                              "width": "fill_container",
+                              "height": "fill_container",
+                              "fill": "#FFFFFF",
+                              "cornerRadius": 8,
+                              "layout": "vertical",
+                              "gap": 6,
+                              "padding": 12,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "g72Xm",
+                                  "name": "q1t",
+                                  "fill": "#202124",
+                                  "content": "线程私有",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 13,
+                                  "fontWeight": "800"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "yZhPr",
+                                  "name": "q1s",
+                                  "fill": "#696D66",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "程序计数器 / 虚拟机栈 / 本地方法栈",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "jecwo",
+                              "name": "Shared Memory",
+                              "width": "fill_container",
+                              "height": "fill_container",
+                              "fill": "#FFFFFF",
+                              "cornerRadius": 8,
+                              "layout": "vertical",
+                              "gap": 6,
+                              "padding": 12,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "xOyWL",
+                                  "name": "q2t",
+                                  "fill": "#202124",
+                                  "content": "线程共享",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 13,
+                                  "fontWeight": "800"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "fjuvj",
+                                  "name": "q2s",
+                                  "fill": "#696D66",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "堆 / 方法区 / 运行时常量池",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "oU0oB",
+              "name": "Tutor QA",
+              "width": "fill_container",
+              "height": "fill_container",
+              "fill": "#FAFAF8",
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "o5ejK",
+                  "name": "QA Header",
+                  "width": "fill_container",
+                  "height": 54,
+                  "fill": "#FFFFFF",
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": {
+                      "bottom": 1
+                    },
+                    "fill": "#ECECEA"
+                  },
+                  "gap": 10,
+                  "padding": [
+                    0,
+                    18
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "vqUXU",
+                      "name": "qaTitle",
+                      "fill": "#202124",
+                      "content": "AI 学习问答",
+                      "fontFamily": "Inter",
+                      "fontSize": 15,
+                      "fontWeight": "800"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "gbth1",
+                      "name": "QA Spacer",
+                      "width": "fill_container",
+                      "height": 1,
+                      "fill": "#FFFFFF"
+                    },
+                    {
+                      "type": "text",
+                      "id": "KlvQg",
+                      "name": "qaStatus",
+                      "fill": "#176B4D",
+                      "content": "记忆模式已开启",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "0l91c",
+                      "name": "Memory Update Chip",
+                      "fill": "#ECF7F1",
+                      "cornerRadius": 8,
+                      "gap": 6,
+                      "padding": [
+                        6,
+                        9
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "ellipse",
+                          "id": "6bUS1",
+                          "name": "Memory Dot",
+                          "fill": "#21A36A",
+                          "width": 6,
+                          "height": 6
+                        },
+                        {
+                          "type": "text",
+                          "id": "iRDyT",
+                          "name": "memText",
+                          "fill": "#176B4D",
+                          "content": "本次更新 3 条",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "ESxVf",
+                  "name": "Chat Area",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "fill": "#FAFAF8",
+                  "layout": "vertical",
+                  "gap": 14,
+                  "padding": 20,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "sjP8g",
+                      "name": "Learning Task Card",
+                      "width": "fill_container",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 8,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E4E4E1"
+                      },
+                      "layout": "vertical",
+                      "gap": 10,
+                      "padding": 16,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "Uj6Rk",
+                          "name": "Task Top",
+                          "width": "fill_container",
+                          "gap": 10,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "e6BFs",
+                              "name": "Task Icon",
+                              "width": 28,
+                              "height": 28,
+                              "fill": "#F0F4FF",
+                              "cornerRadius": 8,
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "AeBpm",
+                                  "name": "taskIconT",
+                                  "fill": "#2B67C8",
+                                  "content": "✓",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 15,
+                                  "fontWeight": "800"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "3rI4o",
+                              "name": "taskTitle",
+                              "fill": "#202124",
+                              "content": "当前任务：理解 JVM 运行时数据区",
+                              "fontFamily": "Inter",
+                              "fontSize": 14,
+                              "fontWeight": "800"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "NyRXp",
+                          "name": "taskDesc",
+                          "fill": "#646A5F",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "先阅读左侧材料，再回答 3 个追问。系统会根据回答判断是否进入下一知识项目。",
+                          "lineHeight": 1.45,
+                          "fontFamily": "Inter",
+                          "fontSize": 13
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "EdbGn",
+                      "name": "Tutor Message",
+                      "width": "fill_container",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 8,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E4E4E1"
+                      },
+                      "layout": "vertical",
+                      "gap": 8,
+                      "padding": 14,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "g0rPQ",
+                          "name": "msg1h",
+                          "fill": "#2B67C8",
+                          "content": "LearningLoop Tutor",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "800"
+                        },
+                        {
+                          "type": "text",
+                          "id": "rEzFF",
+                          "name": "msg1b",
+                          "fill": "#202124",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "请用自己的话解释：虚拟机栈里的“栈帧”包含哪些信息？回答后我会追问 StackOverflowError 和 OOM 的区别。",
+                          "lineHeight": 1.5,
+                          "fontFamily": "Inter",
+                          "fontSize": 14
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "yy6qF",
+                      "name": "Answer Row",
+                      "width": "fill_container",
+                      "fill": "#FAFAF8",
+                      "justifyContent": "end",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "w6Ytu",
+                          "name": "Answer Draft",
+                          "width": 420,
+                          "fill": "#EEF1F4",
+                          "cornerRadius": 8,
+                          "stroke": {
+                            "align": "inside",
+                            "thickness": 1,
+                            "fill": "#DDE2E7"
+                          },
+                          "layout": "vertical",
+                          "gap": 8,
+                          "padding": 14,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "eukd8",
+                              "name": "answerH",
+                              "fill": "#5D6670",
+                              "content": "我的回答",
+                              "fontFamily": "Inter",
+                              "fontSize": 12,
+                              "fontWeight": "800"
+                            },
+                            {
+                              "type": "text",
+                              "id": "5EAIT",
+                              "name": "answerB",
+                              "fill": "#202124",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "栈帧应该包含局部变量表、操作数栈、动态链接和方法返回地址……",
+                              "lineHeight": 1.45,
+                              "fontFamily": "Inter",
+                              "fontSize": 14
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "yZs7b",
+                      "name": "Chat Spacer",
+                      "width": "fill_container",
+                      "height": "fill_container",
+                      "fill": "#FAFAF8"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "lOgdf",
+                      "name": "Suggested Questions",
+                      "width": "fill_container",
+                      "gap": 8,
+                      "justifyContent": "end",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "xXvsC",
+                          "name": "Chip 1",
+                          "fill": "#F1F2EF",
+                          "cornerRadius": 8,
+                          "padding": [
+                            8,
+                            10
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "0fRoU",
+                              "name": "chip1t",
+                              "fill": "#4E5349",
+                              "content": "讲一下",
+                              "fontFamily": "Inter",
+                              "fontSize": 12,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "jfA0t",
+                          "name": "Chip 2",
+                          "fill": "#F1F2EF",
+                          "cornerRadius": 8,
+                          "padding": [
+                            8,
+                            10
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "IgTi4",
+                              "name": "chip2t",
+                              "fill": "#4E5349",
+                              "content": "下一问题",
+                              "fontFamily": "Inter",
+                              "fontSize": 12,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "bHkqJ",
+                          "x": 166,
+                          "y": 0,
+                          "name": "Chip 3",
+                          "enabled": false,
+                          "fill": "#F1F2EF",
+                          "cornerRadius": 8,
+                          "padding": [
+                            8,
+                            10
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "up4x3",
+                              "name": "chip3t",
+                              "fill": "#4E5349",
+                              "content": "标记不懂",
+                              "fontFamily": "Inter",
+                              "fontSize": 12,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "vgTDE",
+                      "name": "Question Input",
+                      "width": "fill_container",
+                      "height": 58,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 8,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#DCDDD8"
+                      },
+                      "gap": 10,
+                      "padding": 10,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "eCujf",
+                          "name": "Attach",
+                          "width": 36,
+                          "height": 36,
+                          "fill": "#F4F5F2",
+                          "cornerRadius": 8,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "Yaqfm",
+                              "name": "plusT",
+                              "fill": "#555A52",
+                              "content": "+",
+                              "fontFamily": "Inter",
+                              "fontSize": 20
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "Kepvi",
+                          "name": "placeholder",
+                          "fill": "#8B8D88",
+                          "content": "问一个问题，或直接回答当前追问",
+                          "fontFamily": "Inter",
+                          "fontSize": 14
+                        },
+                        {
+                          "type": "frame",
+                          "id": "R7ufb",
+                          "name": "Input Spacer",
+                          "width": "fill_container",
+                          "height": 1,
+                          "fill": "#FFFFFF"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "KULaI",
+                          "name": "Send",
+                          "width": 36,
+                          "height": 36,
+                          "fill": "#111111",
+                          "cornerRadius": 8,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "sAyqt",
+                              "name": "sendT",
+                              "fill": "#FFFFFF",
+                              "content": "↑",
+                              "fontFamily": "Inter",
+                              "fontSize": 18,
+                              "fontWeight": "800"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "rXSq6",
+      "x": 3100,
+      "y": 0,
+      "name": "Profile Page - Learning Goals",
+      "width": 1440,
+      "height": 900,
+      "fill": "#FAFAF8",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "SHDEG",
+          "name": "Profile Header",
+          "width": "fill_container",
+          "height": 72,
+          "fill": "#FFFFFF",
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "#E7E7E4"
+          },
+          "gap": 18,
+          "padding": [
+            0,
+            36
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "IYKAr",
+              "name": "Logo",
+              "width": 30,
+              "height": 30,
+              "fill": "#111111",
+              "cornerRadius": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "Xy6k8",
+                  "name": "logoT",
+                  "fill": "#FFFFFF",
+                  "content": "L",
+                  "fontFamily": "Inter",
+                  "fontSize": 16,
+                  "fontWeight": "800"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "d1pbz",
+              "name": "Profile Title Group",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 3,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "rwb5p",
+                  "name": "title",
+                  "fill": "#202124",
+                  "content": "个人档案",
+                  "fontFamily": "Inter",
+                  "fontSize": 20,
+                  "fontWeight": "800"
+                },
+                {
+                  "type": "text",
+                  "id": "jm5FM",
+                  "name": "subtitle",
+                  "fill": "#77736A",
+                  "content": "按不同学习目标查看进展、记忆内容与下一步建议。",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "dbxFt",
+              "name": "Memory Status",
+              "fill": "#ECF7F1",
+              "cornerRadius": 8,
+              "gap": 8,
+              "padding": [
+                8,
+                12
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "nYN9c",
+                  "name": "Status Dot",
+                  "fill": "#21A36A",
+                  "width": 7,
+                  "height": 7
+                },
+                {
+                  "type": "text",
+                  "id": "quENA",
+                  "name": "statusT",
+                  "fill": "#176B4D",
+                  "content": "记忆模式已开启",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "700"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "5K6Tx",
+          "name": "Profile Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "#FAFAF8",
+          "gap": 24,
+          "padding": 28,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Ctjti",
+              "name": "Goals and Progress Work Area",
+              "width": 860,
+              "height": "fill_container",
+              "layout": "vertical",
+              "gap": 18,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "OEpNd",
+                  "name": "Learner Summary",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 8,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#E5E1D8"
+                  },
+                  "gap": 18,
+                  "padding": 20,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Qxe2H",
+                      "name": "Avatar",
+                      "width": 58,
+                      "height": 58,
+                      "fill": "#111111",
+                      "cornerRadius": 8,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "SS5ZN",
+                          "name": "avatarT",
+                          "fill": "#FFFFFF",
+                          "content": "Lee",
+                          "fontFamily": "Inter",
+                          "fontSize": 16,
+                          "fontWeight": "800"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "w2dkL",
+                      "name": "Learner Info",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 6,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "RPSlN",
+                          "name": "name",
+                          "fill": "#202124",
+                          "content": "Lee 的学习档案",
+                          "fontFamily": "Inter",
+                          "fontSize": 22,
+                          "fontWeight": "800"
+                        },
+                        {
+                          "type": "text",
+                          "id": "FhyBR",
+                          "name": "meta",
+                          "fill": "#696D66",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "目标：提升面试表达与知识迁移 · 当前主线：Java 面试（JavaGuide版）",
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "rrF4z",
+                      "name": "Profile Stats",
+                      "gap": 10,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "x4uHy",
+                          "name": "Stat 1",
+                          "width": 92,
+                          "fill": "#F6F7F4",
+                          "cornerRadius": 8,
+                          "layout": "vertical",
+                          "gap": 4,
+                          "padding": 10,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "4Yf5q",
+                              "name": "s1v",
+                              "fill": "#202124",
+                              "content": "42%",
+                              "fontFamily": "Inter",
+                              "fontSize": 20,
+                              "fontWeight": "800"
+                            },
+                            {
+                              "type": "text",
+                              "id": "d8BYm",
+                              "name": "s1l",
+                              "fill": "#77736A",
+                              "content": "总掌握度",
+                              "fontFamily": "Inter",
+                              "fontSize": 11,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Nu1hM",
+                          "name": "Stat 2",
+                          "width": 92,
+                          "fill": "#F6F7F4",
+                          "cornerRadius": 8,
+                          "layout": "vertical",
+                          "gap": 4,
+                          "padding": 10,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "MOpAk",
+                              "name": "s2v",
+                              "fill": "#202124",
+                              "content": "18",
+                              "fontFamily": "Inter",
+                              "fontSize": 20,
+                              "fontWeight": "800"
+                            },
+                            {
+                              "type": "text",
+                              "id": "QG6Kd",
+                              "name": "s2l",
+                              "fill": "#77736A",
+                              "content": "已记忆点",
+                              "fontFamily": "Inter",
+                              "fontSize": 11,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "1qIV1",
+                  "name": "Goals Section Header",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 5,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "7UdoR",
+                      "name": "sectionT",
+                      "fill": "#202124",
+                      "content": "学习目标进展",
+                      "fontFamily": "Inter",
+                      "fontSize": 18,
+                      "fontWeight": "800"
+                    },
+                    {
+                      "type": "text",
+                      "id": "qNLtK",
+                      "name": "sectionD",
+                      "fill": "#77736A",
+                      "content": "不同目标分别沉淀进度、薄弱点和下一步任务。",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "ViWP2",
+                  "name": "Goal Cards",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 12,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "tmh9H",
+                      "name": "Goal Java Interview",
+                      "width": "fill_container",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 8,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#D7D2C8"
+                      },
+                      "layout": "vertical",
+                      "gap": 12,
+                      "padding": 18,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "hXzCT",
+                          "name": "Goal Top 1",
+                          "width": "fill_container",
+                          "gap": 12,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "KEX1d",
+                              "name": "g1Title",
+                              "fill": "#202124",
+                              "content": "Java 面试（JavaGuide版）",
+                              "fontFamily": "Inter",
+                              "fontSize": 16,
+                              "fontWeight": "800"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "x58S8",
+                              "name": "spacer",
+                              "width": "fill_container",
+                              "height": 1,
+                              "fill": "#FFFFFF"
+                            },
+                            {
+                              "type": "text",
+                              "id": "LBSgb",
+                              "name": "g1Pct",
+                              "fill": "#1A5FCC",
+                              "content": "42%",
+                              "fontFamily": "Inter",
+                              "fontSize": 16,
+                              "fontWeight": "800"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Taclw",
+                          "name": "Goal Bar 1",
+                          "clip": true,
+                          "width": "fill_container",
+                          "height": 8,
+                          "fill": "#EDF0F5",
+                          "cornerRadius": 8,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "yIed3",
+                              "name": "Goal Fill 1",
+                              "width": 310,
+                              "height": "fill_container",
+                              "fill": "#2B67C8",
+                              "cornerRadius": 8
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "T4BLn",
+                          "name": "g1Desc",
+                          "fill": "#696D66",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "已完成 Java 基础与 JVM 内存结构，下一步建议进入垃圾回收和并发线程池追问。",
+                          "lineHeight": 1.45,
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "7PELG",
+                      "name": "Goal Frontend Interview",
+                      "width": "fill_container",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 8,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E5E1D8"
+                      },
+                      "layout": "vertical",
+                      "gap": 12,
+                      "padding": 18,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "huQdu",
+                          "name": "Goal Top 2",
+                          "width": "fill_container",
+                          "gap": 12,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "f6wry",
+                              "name": "g2Title",
+                              "fill": "#202124",
+                              "content": "前端面试",
+                              "fontFamily": "Inter",
+                              "fontSize": 16,
+                              "fontWeight": "800"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "DZ2NE",
+                              "name": "spacer",
+                              "width": "fill_container",
+                              "height": 1,
+                              "fill": "#FFFFFF"
+                            },
+                            {
+                              "type": "text",
+                              "id": "BfMtn",
+                              "name": "g2Pct",
+                              "fill": "#6A5540",
+                              "content": "18%",
+                              "fontFamily": "Inter",
+                              "fontSize": 16,
+                              "fontWeight": "800"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "PCiJ7",
+                          "name": "Goal Bar 2",
+                          "clip": true,
+                          "width": "fill_container",
+                          "height": 8,
+                          "fill": "#F0EFEA",
+                          "cornerRadius": 8,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "xjgZq",
+                              "name": "Goal Fill 2",
+                              "width": 132,
+                              "height": "fill_container",
+                              "fill": "#9A7B52",
+                              "cornerRadius": 8
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "o3qAW",
+                          "name": "g2Desc",
+                          "fill": "#696D66",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "已建立浏览器渲染、事件循环和组件化基础记忆，待补充项目场景表达。",
+                          "lineHeight": 1.45,
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "AQjYq",
+                      "name": "Goal Cpp Interview",
+                      "width": "fill_container",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 8,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E5E1D8"
+                      },
+                      "layout": "vertical",
+                      "gap": 12,
+                      "padding": 18,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "klpOZ",
+                          "name": "Goal Top 3",
+                          "width": "fill_container",
+                          "gap": 12,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "M0Pv7",
+                              "name": "g3Title",
+                              "fill": "#202124",
+                              "content": "C++ 面试",
+                              "fontFamily": "Inter",
+                              "fontSize": 16,
+                              "fontWeight": "800"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "w2wDv",
+                              "name": "spacer",
+                              "width": "fill_container",
+                              "height": 1,
+                              "fill": "#FFFFFF"
+                            },
+                            {
+                              "type": "text",
+                              "id": "jwP8y",
+                              "name": "g3Pct",
+                              "fill": "#37605D",
+                              "content": "7%",
+                              "fontFamily": "Inter",
+                              "fontSize": 16,
+                              "fontWeight": "800"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "QrE0i",
+                          "name": "Goal Bar 3",
+                          "clip": true,
+                          "width": "fill_container",
+                          "height": 8,
+                          "fill": "#EEF2F1",
+                          "cornerRadius": 8,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "gXMSW",
+                              "name": "Goal Fill 3",
+                              "width": 52,
+                              "height": "fill_container",
+                              "fill": "#37605D",
+                              "cornerRadius": 8
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "hVU0h",
+                          "name": "g3Desc",
+                          "fill": "#696D66",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "刚开始建立语言特性与内存管理路线，当前记忆不足，建议先补 RAII、智能指针和虚函数。",
+                          "lineHeight": 1.45,
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "3jjRC",
+                  "name": "Profile Bottom",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "gap": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "vx4BL",
+                      "name": "Next Suggestion",
+                      "width": "fill_container",
+                      "fill": "#111111",
+                      "cornerRadius": 8,
+                      "layout": "vertical",
+                      "gap": 10,
+                      "padding": 18,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "YHgId",
+                          "name": "nextT",
+                          "fill": "#FFFFFF",
+                          "content": "下一步建议",
+                          "fontFamily": "Inter",
+                          "fontSize": 15,
+                          "fontWeight": "800"
+                        },
+                        {
+                          "type": "text",
+                          "id": "ogRPh",
+                          "name": "nextD",
+                          "fill": "#D9DED6",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "继续学习 JVM 垃圾回收：先读资料，再用 3 个追问检验表达。",
+                          "lineHeight": 1.45,
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "AlzQy",
+                      "name": "Recent Activity",
+                      "width": "fill_container",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 8,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "#E5E1D8"
+                      },
+                      "layout": "vertical",
+                      "gap": 10,
+                      "padding": 18,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "jfzdn",
+                          "name": "actT",
+                          "fill": "#202124",
+                          "content": "最近学习",
+                          "fontFamily": "Inter",
+                          "fontSize": 15,
+                          "fontWeight": "800"
+                        },
+                        {
+                          "type": "text",
+                          "id": "b6N9f",
+                          "name": "act1",
+                          "fill": "#696D66",
+                          "content": "今天 · 回答了 JVM 栈帧追问",
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "ehoJ9",
+                          "name": "act2",
+                          "fill": "#696D66",
+                          "content": "昨天 · 新增 3 条长期记忆",
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Vg6Lf",
+              "name": "Memory Work Area",
+              "width": "fill_container",
+              "height": "fill_container",
+              "fill": "#F8FAFC",
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 20,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "noX9U",
+                  "name": "Memory Header",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "xOE9m",
+                      "name": "title",
+                      "fill": "#111827",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "记忆内容",
+                      "lineHeight": 1.2,
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 24,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "wkoLb",
+                      "name": "subtitle",
+                      "fill": "#64748B",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "汇总用户在学习目标、对话反馈和长期偏好中的关键记忆。",
+                      "lineHeight": 1.45,
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 13
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "fpUKM",
+                  "name": "记忆摘要",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 8,
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "#E5E7EB"
+                  },
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "DQan7",
+                      "name": "summaryTop",
+                      "width": "fill_container",
+                      "gap": 10,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "xbjeh",
+                          "name": "summaryIcon",
+                          "width": 28,
+                          "height": 28,
+                          "fill": "#E0F2FE",
+                          "cornerRadius": 8,
+                          "layout": "vertical",
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "GIjaX",
+                              "name": "summaryIconText",
+                              "fill": "#0369A1",
+                              "content": "摘",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "eJLid",
+                          "name": "summaryTitle",
+                          "fill": "#0F172A",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "记忆摘要",
+                          "lineHeight": 1.25,
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 16,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "6PZnK",
+                      "name": "summaryBody",
+                      "fill": "#475569",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "用户正在围绕 Java 面试、系统设计和个人学习节奏建立长期学习档案。当前记忆重点集中在目标规划、复盘习惯和偏好的讲解方式。",
+                      "lineHeight": 1.55,
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 13
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "kyvGx",
+                  "name": "本次对话新增记忆",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 8,
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "#E5E7EB"
+                  },
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "RDuRs",
+                      "name": "newHead",
+                      "width": "fill_container",
+                      "gap": 10,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "nAIqu",
+                          "name": "newIcon",
+                          "width": 28,
+                          "height": 28,
+                          "fill": "#DCFCE7",
+                          "cornerRadius": 8,
+                          "layout": "vertical",
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "IzSZe",
+                              "name": "newIconText",
+                              "fill": "#15803D",
+                              "content": "新",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "TgJ31",
+                          "name": "newTitle",
+                          "fill": "#0F172A",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "本次对话新增记忆",
+                          "lineHeight": 1.25,
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 16,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "gBxtD",
+                      "name": "新增记忆列表",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "pc8GH",
+                          "name": "newItem1",
+                          "width": "fill_container",
+                          "gap": 8,
+                          "children": [
+                            {
+                              "type": "ellipse",
+                              "id": "q1Xc3",
+                              "name": "newDot1",
+                              "fill": "#22C55E",
+                              "width": 6,
+                              "height": 6
+                            },
+                            {
+                              "type": "text",
+                              "id": "EYXOH",
+                              "name": "newText1",
+                              "fill": "#475569",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "希望学习建议直接落到可执行任务，减少泛泛解释。",
+                              "lineHeight": 1.45,
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 13
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "PYhYE",
+                          "name": "newItem2",
+                          "width": "fill_container",
+                          "gap": 8,
+                          "children": [
+                            {
+                              "type": "ellipse",
+                              "id": "xvpb6",
+                              "name": "newDot2",
+                              "fill": "#22C55E",
+                              "width": 6,
+                              "height": 6
+                            },
+                            {
+                              "type": "text",
+                              "id": "UL3bR",
+                              "name": "newText2",
+                              "fill": "#475569",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "当前关注 Java 面试准备，需要把知识点和题目练习关联起来。",
+                              "lineHeight": 1.45,
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 13
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "difVQ",
+                  "name": "长期偏好",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 8,
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "#E5E7EB"
+                  },
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "E61m3",
+                      "name": "prefsHead",
+                      "width": "fill_container",
+                      "gap": 10,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "jLbAT",
+                          "name": "prefsIcon",
+                          "width": 28,
+                          "height": 28,
+                          "fill": "#FEF3C7",
+                          "cornerRadius": 8,
+                          "layout": "vertical",
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "iuiZG",
+                              "name": "prefsIconText",
+                              "fill": "#B45309",
+                              "content": "偏",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "HvaIA",
+                          "name": "prefsTitle",
+                          "fill": "#0F172A",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "长期偏好",
+                          "lineHeight": 1.25,
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 16,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "gPlmP",
+                      "name": "偏好标签",
+                      "width": "fill_container",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "8MlbF",
+                          "name": "prefTag1",
+                          "fill": "#F1F5F9",
+                          "cornerRadius": 8,
+                          "layout": "vertical",
+                          "padding": [
+                            6,
+                            10
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "1GGoX",
+                              "name": "prefTagText1",
+                              "fill": "#334155",
+                              "content": "中文说明",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "oN1zJ",
+                          "name": "prefTag2",
+                          "fill": "#F1F5F9",
+                          "cornerRadius": 8,
+                          "layout": "vertical",
+                          "padding": [
+                            6,
+                            10
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "h4rc3",
+                              "name": "prefTagText2",
+                              "fill": "#334155",
+                              "content": "分步任务",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Giuv2",
+                          "name": "prefTag3",
+                          "fill": "#F1F5F9",
+                          "cornerRadius": 8,
+                          "layout": "vertical",
+                          "padding": [
+                            6,
+                            10
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "R2CmB",
+                              "name": "prefTagText3",
+                              "fill": "#334155",
+                              "content": "面试场景",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "ZvlNC",
+                      "name": "prefBody",
+                      "fill": "#475569",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "偏好结构化学习路径，先给结论和步骤，再补充原因。遇到复杂概念时，更适合用真实题目或项目例子串联。",
+                      "lineHeight": 1.5,
+                      "fontFamily": "PingFang SC",
+                      "fontSize": 13
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "ewERM",
+                  "name": "待确认记忆",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 8,
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "#E5E7EB"
+                  },
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "C41nv",
+                      "name": "pendingHead",
+                      "width": "fill_container",
+                      "gap": 10,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "qFZtb",
+                          "name": "pendingIcon",
+                          "width": 28,
+                          "height": 28,
+                          "fill": "#FEE2E2",
+                          "cornerRadius": 8,
+                          "layout": "vertical",
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "ynUZs",
+                              "name": "pendingIconText",
+                              "fill": "#B91C1C",
+                              "content": "待",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "OKoqf",
+                          "name": "pendingTitle",
+                          "fill": "#0F172A",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "待确认记忆",
+                          "lineHeight": 1.25,
+                          "fontFamily": "PingFang SC",
+                          "fontSize": 16,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "h7EkF",
+                          "name": "pendingCount",
+                          "fill": "#FFF1F2",
+                          "cornerRadius": 8,
+                          "layout": "vertical",
+                          "padding": [
+                            4,
+                            8
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "kgePl",
+                              "name": "pendingCountText",
+                              "fill": "#BE123C",
+                              "content": "2 条",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Pk1tn",
+                      "name": "待确认列表",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "a607R",
+                          "name": "pendingItem1",
+                          "width": "fill_container",
+                          "fill": "#F8FAFC",
+                          "cornerRadius": 8,
+                          "layout": "vertical",
+                          "gap": 6,
+                          "padding": 10,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "xkjy7",
+                              "name": "pendingText1",
+                              "fill": "#334155",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "是否将“每天晚间复盘 20 分钟”保存为固定学习习惯？",
+                              "lineHeight": 1.45,
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "text",
+                              "id": "jQT0Q",
+                              "name": "pendingMeta1",
+                              "fill": "#94A3B8",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "来源：本次对话 · 置信度 78%",
+                              "lineHeight": 1.35,
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "CnCgH",
+                          "name": "pendingItem2",
+                          "width": "fill_container",
+                          "fill": "#F8FAFC",
+                          "cornerRadius": 8,
+                          "layout": "vertical",
+                          "gap": 6,
+                          "padding": 10,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "vPukG",
+                              "name": "pendingText2",
+                              "fill": "#334155",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "是否优先推荐后端工程师成长路径相关内容？",
+                              "lineHeight": 1.45,
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "text",
+                              "id": "Dw404",
+                              "name": "pendingMeta2",
+                              "fill": "#94A3B8",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "来源：学习目标 · 置信度 64%",
+                              "lineHeight": 1.35,
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ZOj4Z",
+                      "name": "actions",
+                      "width": "fill_container",
+                      "gap": 8,
+                      "justifyContent": "end",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "i6D0d",
+                          "name": "secondary",
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 8,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "#CBD5E1"
+                          },
+                          "layout": "vertical",
+                          "padding": [
+                            8,
+                            12
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "2rfVd",
+                              "name": "secondaryText",
+                              "fill": "#475569",
+                              "content": "稍后处理",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "ELkA0",
+                          "name": "primary",
+                          "fill": "#2563EB",
+                          "cornerRadius": 8,
+                          "layout": "vertical",
+                          "padding": [
+                            8,
+                            12
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "ZwMak",
+                              "name": "primaryText",
+                              "fill": "#FFFFFF",
+                              "content": "确认记忆",
+                              "fontFamily": "PingFang SC",
+                              "fontSize": 12,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -137,14 +137,13 @@ export function buildControlVerdict({
   scopeType = "pack"
 }) {
   const nextMove = envelope.next_move || {};
-  const reply = envelope.reply || {};
   const runtimeMap = envelope.runtime_map || {};
   const stopConditions = contextPacket.stop_conditions || {};
   const budget = contextPacket.budget || {};
 
   let shouldStop = false;
   let reason = "continue";
-  if (["advance", "stop", "revisit"].includes(nextMove.ui_mode) || reply.requires_response === false) {
+  if (["advance", "stop", "revisit"].includes(nextMove.ui_mode)) {
     shouldStop = true;
     reason = "next_move_requests_stop";
   } else if (runtimeMap.info_gain_level === "negligible") {
@@ -200,20 +199,14 @@ function validateNextMove(nextMove) {
     allowedInfoGainLevels.has(nextMove.expected_gain),
     "Turn envelope next_move expected_gain is invalid."
   );
-}
-
-function validateReply(reply) {
-  assert(reply && typeof reply === "object", "Turn envelope reply is required.");
-  ensureNonEmptyString(reply.visible_reply, "reply.visible_reply");
-  ensureNonEmptyString(reply.evidence_reference, "reply.evidence_reference");
-  ensureNonEmptyString(reply.takeaway, "reply.takeaway");
-  assert(typeof reply.requires_response === "boolean", "Turn envelope reply.requires_response is invalid.");
-  assert(typeof reply.complete_current_unit === "boolean", "Turn envelope reply.complete_current_unit is invalid.");
-  if (reply.requires_response) {
-    ensureNonEmptyString(reply.next_prompt, "reply.next_prompt");
+  if (["probe", "teach", "verify"].includes(nextMove.ui_mode)) {
+    ensureNonEmptyString(nextMove.follow_up_question, "next_move.follow_up_question");
   }
-  if (reply.teaching_paragraphs) {
-    assert(Array.isArray(reply.teaching_paragraphs), "Turn envelope reply.teaching_paragraphs is invalid.");
+  if (["advance", "stop", "revisit"].includes(nextMove.ui_mode)) {
+    assert(
+      typeof nextMove.follow_up_question !== "string" || !nextMove.follow_up_question.trim(),
+      "Turn envelope next_move.follow_up_question must be empty for terminal moves."
+    );
   }
 }
 
@@ -246,12 +239,11 @@ export function assertValidTurnEnvelope(envelope, expectedAnchorId) {
   assert(envelope && typeof envelope === "object", "Turn envelope payload is required.");
   validateRuntimeMap(envelope.runtime_map, expectedAnchorId);
   validateNextMove(envelope.next_move);
-  validateReply(envelope.reply);
   validateWritebackSuggestion(envelope.writeback_suggestion);
 }
 
 export function assertConsistentTurnEnvelope(envelope, contextPacket) {
-  const { runtime_map: runtimeMap, next_move: nextMove, reply } = envelope;
+  const { runtime_map: runtimeMap, next_move: nextMove } = envelope;
 
   if (runtimeMap.info_gain_level === "negligible" && nextMove.ui_mode === "probe") {
     throw new Error("Turn envelope is inconsistent: negligible info gain cannot continue probing.");
@@ -261,21 +253,13 @@ export function assertConsistentTurnEnvelope(envelope, contextPacket) {
     throw new Error("Turn envelope is inconsistent: stop conditions discourage more probing.");
   }
 
-  if (["advance", "stop", "revisit"].includes(nextMove.ui_mode) && reply.requires_response) {
-    throw new Error("Turn envelope is inconsistent: non-interactive moves cannot require a response.");
-  }
-
-  if (["probe", "verify"].includes(nextMove.ui_mode) && !reply.requires_response) {
-    throw new Error("Turn envelope is inconsistent: probing moves must require a response.");
-  }
-
-  if (nextMove.ui_mode === "teach" && (!Array.isArray(reply.teaching_paragraphs) || !reply.teaching_paragraphs.length)) {
-    throw new Error("Turn envelope is inconsistent: teach move requires teaching_paragraphs.");
+  if (["probe", "teach", "verify"].includes(nextMove.ui_mode) && !String(nextMove.follow_up_question || "").trim()) {
+    throw new Error("Turn envelope is inconsistent: interactive moves must include follow_up_question.");
   }
 }
 
-export function turnEnvelopeToTutorMove(envelope, concept) {
-  const { runtime_map: runtimeMap, next_move: nextMove, reply } = envelope;
+export function turnEnvelopeToTutorMove(envelope, { replyText = "" } = {}) {
+  const { runtime_map: runtimeMap, next_move: nextMove } = envelope;
   const moveType =
     nextMove.ui_mode === "teach"
       ? "teach"
@@ -286,7 +270,7 @@ export function turnEnvelopeToTutorMove(envelope, concept) {
         : nextMove.ui_mode === "advance" || nextMove.ui_mode === "revisit"
           ? "advance"
           : nextMove.ui_mode === "stop"
-            ? "abstain"
+            ? "advance"
             : runtimeMap.turn_signal === "positive"
               ? "deepen"
               : "repair";
@@ -300,17 +284,11 @@ export function turnEnvelopeToTutorMove(envelope, concept) {
       confidenceLevel: runtimeMap.anchor_assessment.confidence_level,
       reasons: runtimeMap.anchor_assessment.reasons
     },
-    visibleReply: reply.visible_reply,
-    evidenceReference: reply.evidence_reference || concept.excerpt,
-    teachingChunk: Array.isArray(reply.teaching_paragraphs) ? reply.teaching_paragraphs.join("\n\n") : "",
-    teachingParagraphs: Array.isArray(reply.teaching_paragraphs) ? reply.teaching_paragraphs : [],
-    nextQuestion: reply.next_prompt || "",
-    takeaway: reply.takeaway || concept.summary,
-    confirmedUnderstanding: reply.confirmed_understanding || "",
-    remainingGap: reply.remaining_gap || "",
-    revisitReason: reply.revisit_reason || "",
-    completeCurrentUnit: reply.complete_current_unit,
-    requiresResponse: reply.requires_response,
+    replyText,
+    followUpQuestion: nextMove.follow_up_question || "",
+    shouldStop: ["advance", "stop", "revisit"].includes(nextMove.ui_mode),
+    revisitReason: nextMove.ui_mode === "revisit" ? nextMove.reason || "" : "",
+    completeCurrentUnit: ["advance", "stop", "revisit"].includes(nextMove.ui_mode),
     nextMove: nextMove,
     runtimeMap: runtimeMap,
     writebackSuggestion: envelope.writeback_suggestion

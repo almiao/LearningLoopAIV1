@@ -133,7 +133,7 @@ function normalizeTutorMovePayload(payload, concept) {
     evidenceReference: ensureString(payload?.evidenceReference || concept.excerpt),
     teachingChunk: ensureString(payload?.teachingChunk),
     nextQuestion: ensureString(payload?.nextQuestion),
-    takeaway: ensureString(payload?.takeaway, concept.summary),
+    takeaway: ensureString(payload?.takeaway),
     confirmedUnderstanding: ensureString(payload?.confirmedUnderstanding),
     remainingGap: ensureString(payload?.remainingGap),
     revisitReason: ensureString(payload?.revisitReason),
@@ -164,7 +164,7 @@ function normalizeExplainConceptPayload(payload, concept) {
     teachingChunk: ensureString(teachingChunk, concept.summary),
     teachingParagraphs: paragraphs.length ? paragraphs : [ensureString(teachingChunk, concept.summary)],
     checkQuestion: ensureString(payload?.checkQuestion, concept.checkQuestion || concept.retryQuestion),
-    takeaway: ensureString(payload?.takeaway, concept.summary)
+    takeaway: ensureString(payload?.takeaway)
   };
 }
 
@@ -287,6 +287,14 @@ function normalizeTeachingParagraph(text) {
     .trim();
 }
 
+function normalizeReplyStreamText(text, concept) {
+  return ensureString(text, concept.summary)
+    .replace(/^```markdown\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
 const stateAliases = new Map([
   ["solid", "solid"],
   ["完全掌握", "solid"],
@@ -331,10 +339,6 @@ function normalizeTurnEnvelopePayload(payload, concept) {
   const runtimeMap = payload?.runtime_map || {};
   const anchorAssessment = runtimeMap.anchor_assessment || {};
   const nextMove = payload?.next_move || {};
-  const reply = payload?.reply || {};
-  const teachingParagraphs = ensureArray(reply.teaching_paragraphs)
-    .map((item) => normalizeTeachingParagraph(ensureString(item)))
-    .filter(Boolean);
 
   return {
     runtime_map: {
@@ -357,19 +361,8 @@ function normalizeTurnEnvelopePayload(payload, concept) {
       expected_gain: normalizeInfoGainLevel(nextMove.expected_gain, "medium"),
       ui_mode: ["probe", "teach", "verify", "advance", "revisit", "stop"].includes(nextMove.ui_mode)
         ? nextMove.ui_mode
-        : "probe"
-    },
-    reply: {
-      visible_reply: ensureString(reply.visible_reply, concept.summary),
-      teaching_paragraphs: teachingParagraphs,
-      evidence_reference: ensureString(reply.evidence_reference, concept.excerpt || concept.summary),
-      next_prompt: ensureString(reply.next_prompt),
-      takeaway: ensureString(reply.takeaway, concept.summary),
-      confirmed_understanding: ensureString(reply.confirmed_understanding),
-      remaining_gap: ensureString(reply.remaining_gap),
-      revisit_reason: ensureString(reply.revisit_reason),
-      requires_response: reply.requires_response !== false,
-      complete_current_unit: Boolean(reply.complete_current_unit)
+        : "probe",
+      follow_up_question: ensureString(nextMove.follow_up_question || nextMove.followUpQuestion)
     },
     writeback_suggestion: {
       should_write: payload?.writeback_suggestion?.should_write !== false,
@@ -540,6 +533,62 @@ async function callOpenAIJson({
   }
 }
 
+async function callOpenAIText({
+  apiKey,
+  model = defaultOpenAIModel,
+  prompt,
+  fetchImpl = globalThis.fetch,
+  timeoutMs = defaultProviderTimeoutMs
+}) {
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is required for AI tutor mode.");
+  }
+
+  const timeout = createTimeoutSignal(timeoutMs);
+  try {
+    const response = await fetchImpl(OPENAI_RESPONSES_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json"
+      },
+      signal: timeout.signal,
+      body: JSON.stringify({
+        model,
+        input: [
+          {
+            role: "system",
+            content: [
+              {
+                type: "input_text",
+                text:
+                  "You are a strong human tutor. Return only the learner-facing markdown reply text. " +
+                  "Do not return JSON, labels, analysis notes, or next-step planning."
+              }
+            ]
+          },
+          {
+            role: "user",
+            content: [{ type: "input_text", text: prompt }]
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
+    }
+
+    const payload = await response.json();
+    return ensureString(extractTextFromResponsesPayload(payload));
+  } catch (error) {
+    throw wrapProviderError(error, "OpenAI", timeoutMs);
+  } finally {
+    timeout.clear();
+  }
+}
+
 function extractMessageContent(payload, providerName) {
   const content = payload?.choices?.[0]?.message?.content;
   if (typeof content === "string" && content.trim()) {
@@ -619,6 +668,59 @@ async function callDeepSeekJson({
   }
 
   throw wrapProviderError(lastError, "DeepSeek", timeoutMs);
+}
+
+async function callDeepSeekText({
+  apiKey,
+  baseUrl = defaultDeepSeekBaseUrl,
+  model = defaultDeepSeekModel,
+  prompt,
+  fetchImpl = globalThis.fetch,
+  timeoutMs = defaultProviderTimeoutMs
+}) {
+  if (!apiKey) {
+    throw new Error("LLAI_DEEPSEEK_API_KEY is required for DeepSeek tutor mode.");
+  }
+
+  const url = `${baseUrl.replace(/\/$/, "")}${DEEPSEEK_CHAT_COMPLETIONS_URL}`;
+  const timeout = createTimeoutSignal(timeoutMs);
+  try {
+    const response = await fetchImpl(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json"
+      },
+      signal: timeout.signal,
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a strong human tutor. Return only the learner-facing markdown reply text. " +
+              "Do not return JSON, labels, analysis notes, or next-step planning."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`DeepSeek request failed: ${response.status} ${errorText}`);
+    }
+
+    const payload = await response.json();
+    return ensureString(extractMessageContent(payload, "DeepSeek"));
+  } catch (error) {
+    throw wrapProviderError(error, "DeepSeek", timeoutMs);
+  } finally {
+    timeout.clear();
+  }
 }
 
 const decompositionSchema = {
@@ -813,7 +915,7 @@ const tutorMoveSchema = {
     properties: {
       moveType: {
         type: "string",
-        enum: ["probe", "affirm", "deepen", "repair", "teach", "check", "summarize", "advance", "abstain"]
+        enum: ["probe", "affirm", "deepen", "repair", "teach", "check", "summarize", "advance"]
       },
       signal: {
         type: "string",
@@ -1063,19 +1165,8 @@ const turnEnvelopeSchema = {
       intent: "先把用户已经说对的部分接住，再用一个更窄的问题验证他是否真的分清了快照读和当前读。",
       reason: "当前缺口主要在边界，不在定义本身。",
       expected_gain: "medium",
-      ui_mode: "verify"
-    },
-    reply: {
-      visible_reply: "你已经碰到关键点了：MVCC 确实让事务能基于历史快照读数据，但它只解决快照读的一致视图，不会把当前读和锁全都替你处理掉。",
-      teaching_paragraphs: [],
-      evidence_reference: "面试常追问 RR 为什么还要 next-key lock，以及快照读 / 当前读边界。",
-      next_prompt: "那你现在继续说说，为什么 RR 有 MVCC 了，当前读还是要 next-key lock？",
-      takeaway: "先记住：MVCC 主要管快照读，当前读和幻读边界还要看锁。",
-      confirmed_understanding: "你已经知道 MVCC 和历史快照有关。",
-      remaining_gap: "还没把快照读 / 当前读 / 锁边界讲成一条完整链路。",
-      revisit_reason: "",
-      requires_response: true,
-      complete_current_unit: false
+      ui_mode: "verify",
+      follow_up_question: "那你现在继续说说，为什么 RR 有 MVCC 了，当前读还是要 next-key lock？"
     },
     writeback_suggestion: {
       should_write: true,
@@ -1091,7 +1182,7 @@ const turnEnvelopeSchema = {
   schema: {
     type: "object",
     additionalProperties: false,
-    required: ["runtime_map", "next_move", "reply", "writeback_suggestion"],
+    required: ["runtime_map", "next_move", "writeback_suggestion"],
     properties: {
       runtime_map: {
         type: "object",
@@ -1129,40 +1220,13 @@ const turnEnvelopeSchema = {
       next_move: {
         type: "object",
         additionalProperties: false,
-        required: ["intent", "reason", "expected_gain", "ui_mode"],
+        required: ["intent", "reason", "expected_gain", "ui_mode", "follow_up_question"],
         properties: {
           intent: { type: "string" },
           reason: { type: "string" },
           expected_gain: { type: "string", enum: ["high", "medium", "low", "negligible"] },
-          ui_mode: { type: "string", enum: ["probe", "teach", "verify", "advance", "revisit", "stop"] }
-        }
-      },
-      reply: {
-        type: "object",
-        additionalProperties: false,
-        required: [
-          "visible_reply",
-          "teaching_paragraphs",
-          "evidence_reference",
-          "next_prompt",
-          "takeaway",
-          "confirmed_understanding",
-          "remaining_gap",
-          "revisit_reason",
-          "requires_response",
-          "complete_current_unit"
-        ],
-        properties: {
-          visible_reply: { type: "string" },
-          teaching_paragraphs: { type: "array", items: { type: "string" } },
-          evidence_reference: { type: "string" },
-          next_prompt: { type: "string" },
-          takeaway: { type: "string" },
-          confirmed_understanding: { type: "string" },
-          remaining_gap: { type: "string" },
-          revisit_reason: { type: "string" },
-          requires_response: { type: "boolean" },
-          complete_current_unit: { type: "boolean" }
+          ui_mode: { type: "string", enum: ["probe", "teach", "verify", "advance", "revisit", "stop"] },
+          follow_up_question: { type: "string" }
         }
       },
       writeback_suggestion: {
@@ -1200,25 +1264,37 @@ function formatSourceForPrompt(source) {
     .join("\n");
 }
 
-function buildTurnEnvelopePrompt({ contextPacket, answer }) {
+function buildReplyStreamPrompt({ contextPacket, answer }) {
   return [
-    "You are the main reasoning engine for one AI tutor turn. Return json only.",
-    "Use Chinese in all visible learner-facing text.",
-    "Follow this internal order: first update runtime_map, then decide next_move, then write the reply, then propose writeback_suggestion.",
+    "You are writing the learner-facing reply for one AI tutor turn.",
+    "Use Chinese markdown only. Do not return JSON.",
+    "Focus only on evaluating the learner's current answer and giving the most helpful explanation or correction for this moment.",
+    "Do not promise what the system will ask next.",
+    "Do not say you will switch topics, stop, or move on.",
+    "Do not include labels such as '下一步' or 'gap' or 'runtime'.",
+    "If useful, end with one stable takeaway sentence naturally inside the prose.",
+    "If the learner is mainly asking for explanation, give a direct explanation instead of interrogating.",
+    "Keep the reply self-contained and valuable even if the learner stops here.",
+    "",
+    "CONTEXT_PACKET_JSON:",
+    JSON.stringify(contextPacket, null, 2),
+    "",
+    `CURRENT_LEARNER_INPUT: ${answer}`
+  ].join("\n");
+}
+
+function buildDecisionEnvelopePrompt({ contextPacket, answer }) {
+  return [
+    "You are the main decision engine for one AI tutor turn. Return json only.",
+    "Do not write the learner-facing reply here.",
+    "Update runtime_map, then decide next_move, then propose writeback_suggestion.",
     "Preserve prior hypotheses unless new evidence explicitly refutes them.",
     "The runtime_map must stay anchored to the current anchor_id and cite evidence ids where possible.",
     "Do not ask repetitive probes when info_gain_level is negligible or stop_conditions discourage more probing.",
     "Budget, friction_signals, and stop_conditions are orchestration factors. Consider them before proposing continued probing or verification.",
-    "The reply must sound like a strong human tutor, not like a template or checklist.",
     "Interpret the learner utterance pragmatically: it may contain an answer, a request for explanation, a request to move on, or a mix of these.",
-    "When the learner utterance is mainly asking for explanation or summary rather than offering substantive evidence, prefer a closure-oriented helpful reply instead of a bare acknowledgement plus another question.",
-    "Prefer incremental tutoring over repetition. If recent turns on the same anchor already explained the core mechanism, do not restate the whole explanation unless the learner is still clearly lost; instead name the one missing link, add at most one new example, and move to a narrower follow-up.",
-    "Avoid repeatedly opening with stock transitions such as '进入学习模式' or similar phrases if recent turns already used them.",
-    "Use anchor_history to understand what has already been taught on the current anchor; if it contains recent tutor explanations, treat them as prior teaching context rather than repeating them verbatim.",
-    "When teach is the right move, teaching_paragraphs must contain a complete explanation; do not use rigid headings such as 核心结论 or 理解抓手.",
-    "When you choose verify, the visible reply should still add concrete value before any follow-up question.",
-    "When a response is still needed on the current anchor, next_prompt must be a concrete question the learner can answer immediately.",
-    "Treat next_prompt as a candidate follow-up only for staying on the current anchor. If the turn should hand off to a different anchor or stop, leave next_prompt empty.",
+    "When a response is still needed on the current anchor, follow_up_question must be a concrete question the learner can answer immediately.",
+    "Treat follow_up_question as a candidate follow-up only for staying on the current anchor. If the turn should hand off to a different anchor or stop, leave follow_up_question empty.",
     "When long-term memory should not be updated, set writeback_suggestion.should_write to false and mode to noop.",
     "",
     "CONTEXT_PACKET_JSON:",
@@ -1261,16 +1337,32 @@ export function createOpenAITutorIntelligence({
       return normalizeDecompositionPayload(payload, source);
     },
 
-    async generateTurnEnvelope({ concept, contextPacket, answer }) {
+    async generateDecisionEnvelope({ concept, contextPacket, answer }) {
       const payload = await callOpenAIJson({
         apiKey,
         model,
         fetchImpl,
-        prompt: buildTurnEnvelopePrompt({ contextPacket, answer }),
+        prompt: buildDecisionEnvelopePrompt({ contextPacket, answer }),
         schema: turnEnvelopeSchema
       });
 
       return normalizeTurnEnvelopePayload(payload, concept);
+    },
+
+    async generateReplyStream({ concept, contextPacket, answer }) {
+      return normalizeReplyStreamText(
+        await callOpenAIText({
+          apiKey,
+          model,
+          fetchImpl,
+          prompt: buildReplyStreamPrompt({ contextPacket, answer })
+        }),
+        concept
+      );
+    },
+
+    async generateTurnEnvelope(args) {
+      return this.generateDecisionEnvelope(args);
     },
 
     async reviewTurn({ session, concept, answer, burdenSignal = "normal", priorEvidence = [] }) {
@@ -1319,43 +1411,46 @@ export function createOpenAITutorIntelligence({
         priorEvidence,
         rawEvidencePoint
       });
-      const prompt = [
-        "You are the cognition layer for one live AI tutor turn.",
-        "Return one json object with runtimeMap, nextMove, reply, and writebackSuggestion.",
-        "Use Chinese in all learner-facing text.",
-        "Follow this internal order: update the runtime understanding map, choose the next best move, generate the visible reply, then suggest writeback.",
-        "Preserve prior supported hypotheses unless new evidence explicitly refutes them.",
-        "Do not sound mechanical in the reply. Avoid rigid labels like 'gap' or 'next step' in visible learner-facing text.",
-        "The system has hard guardrails for scope and stop conditions. Do not try to override them in prose.",
-        "",
-        "CONTEXT PACKET:",
-        formatContextPacketForPrompt(contextPacket),
-        "",
-        "Requirements:",
-        "- runtimeMap.hypotheses must be evidence-linked and concise.",
-        "- nextMove should describe intent and reason, not just name an action.",
-        "- reply must be self-contained and genuinely useful even if the learner stops here.",
-        "- writebackSuggestion should be conservative: suggest strong admission only when this turn materially changes or reinforces the anchor state."
-      ].join("\n");
+      const [replyText, decision] = await Promise.all([
+        this.generateReplyStream({ concept, contextPacket, answer }),
+        this.generateDecisionEnvelope({ concept, contextPacket, answer })
+      ]);
 
-      const payload = await callOpenAIJson({
-        apiKey,
-        model,
-        fetchImpl,
-        prompt,
-        schema: tutorTurnEnvelopeSchema
-      });
-
-      return normalizeTutorTurnEnvelope(payload, {
-        concept,
-        session,
-        previousRuntimeMap: session.runtimeMaps?.[concept.id] || null
-      });
+      return {
+        ...normalizeTutorTurnEnvelope(
+          {
+            runtimeMap: decision.runtime_map,
+            nextMove: {
+              intent: decision.next_move.intent,
+              reason: decision.next_move.reason,
+              expectedGain: decision.next_move.expected_gain,
+              uiMode: decision.next_move.ui_mode,
+              followUpQuestion: decision.next_move.follow_up_question
+            },
+            writebackSuggestion: {
+              shouldWrite: decision.writeback_suggestion.should_write,
+              mode: decision.writeback_suggestion.mode,
+              reason: decision.writeback_suggestion.reason,
+              anchorPatch: {
+                state: decision.writeback_suggestion.anchor_patch.state,
+                confidenceLevel: decision.writeback_suggestion.anchor_patch.confidence_level,
+                derivedPrinciple: decision.writeback_suggestion.anchor_patch.derived_principle
+              }
+            }
+          },
+          {
+            concept,
+            session,
+            previousRuntimeMap: session.runtimeMaps?.[concept.id] || null
+          }
+        ),
+        replyText
+      };
     },
 
     async generateTutorMove(args) {
       const envelope = await this.generateTutorTurn(args);
-      return envelope.reply;
+      return { replyText: envelope.replyText, nextMove: envelope.nextMove, runtimeMap: envelope.runtimeMap };
     },
 
     async explainConcept({ session, concept, contextPacket = null }) {
@@ -1439,17 +1534,34 @@ export function createDeepSeekTutorIntelligence({
       return normalizeDecompositionPayload(payload, source);
     },
 
-    async generateTurnEnvelope({ concept, contextPacket, answer }) {
+    async generateDecisionEnvelope({ concept, contextPacket, answer }) {
       const payload = await callDeepSeekJson({
         apiKey,
         baseUrl,
         model,
         fetchImpl,
-        prompt: buildTurnEnvelopePrompt({ contextPacket, answer }),
+        prompt: buildDecisionEnvelopePrompt({ contextPacket, answer }),
         schema: turnEnvelopeSchema
       });
 
       return normalizeTurnEnvelopePayload(payload, concept);
+    },
+
+    async generateReplyStream({ concept, contextPacket, answer }) {
+      return normalizeReplyStreamText(
+        await callDeepSeekText({
+          apiKey,
+          baseUrl,
+          model,
+          fetchImpl,
+          prompt: buildReplyStreamPrompt({ contextPacket, answer })
+        }),
+        concept
+      );
+    },
+
+    async generateTurnEnvelope(args) {
+      return this.generateDecisionEnvelope(args);
     },
 
     async reviewTurn({ session, concept, answer, burdenSignal = "normal", priorEvidence = [] }) {
@@ -1499,43 +1611,46 @@ export function createDeepSeekTutorIntelligence({
         priorEvidence,
         rawEvidencePoint
       });
-      const prompt = [
-        "You are the cognition layer for one live AI tutor turn. Return json only.",
-        "Return one json object with runtimeMap, nextMove, reply, and writebackSuggestion.",
-        "Use Chinese in all learner-facing text.",
-        "Follow this internal order: update runtimeMap, choose nextMove, generate reply, then suggest writeback.",
-        "Preserve prior supported hypotheses unless new evidence explicitly refutes them.",
-        "Do not sound mechanical in the reply. Avoid rigid labels like 'gap' or 'next step' in visible learner-facing text.",
-        "",
-        "CONTEXT PACKET:",
-        formatContextPacketForPrompt(contextPacket),
-        "",
-        "Requirements:",
-        "- runtimeMap.hypotheses must be evidence-linked and concise.",
-        "- nextMove should describe intent and reason, not just name an action.",
-        "- reply must be self-contained and genuinely useful even if the learner stops here.",
-        "- writebackSuggestion should be conservative: suggest strong admission only when this turn materially changes or reinforces the anchor state."
-      ].join("\n");
+      const [replyText, decision] = await Promise.all([
+        this.generateReplyStream({ concept, contextPacket, answer }),
+        this.generateDecisionEnvelope({ concept, contextPacket, answer })
+      ]);
 
-      const payload = await callDeepSeekJson({
-        apiKey,
-        baseUrl,
-        model,
-        fetchImpl,
-        prompt,
-        schema: tutorTurnEnvelopeSchema
-      });
-
-      return normalizeTutorTurnEnvelope(payload, {
-        concept,
-        session,
-        previousRuntimeMap: session.runtimeMaps?.[concept.id] || null
-      });
+      return {
+        ...normalizeTutorTurnEnvelope(
+          {
+            runtimeMap: decision.runtime_map,
+            nextMove: {
+              intent: decision.next_move.intent,
+              reason: decision.next_move.reason,
+              expectedGain: decision.next_move.expected_gain,
+              uiMode: decision.next_move.ui_mode,
+              followUpQuestion: decision.next_move.follow_up_question
+            },
+            writebackSuggestion: {
+              shouldWrite: decision.writeback_suggestion.should_write,
+              mode: decision.writeback_suggestion.mode,
+              reason: decision.writeback_suggestion.reason,
+              anchorPatch: {
+                state: decision.writeback_suggestion.anchor_patch.state,
+                confidenceLevel: decision.writeback_suggestion.anchor_patch.confidence_level,
+                derivedPrinciple: decision.writeback_suggestion.anchor_patch.derived_principle
+              }
+            }
+          },
+          {
+            concept,
+            session,
+            previousRuntimeMap: session.runtimeMaps?.[concept.id] || null
+          }
+        ),
+        replyText
+      };
     },
 
     async generateTutorMove(args) {
       const envelope = await this.generateTutorTurn(args);
-      return envelope.reply;
+      return { replyText: envelope.replyText, nextMove: envelope.nextMove, runtimeMap: envelope.runtimeMap };
     },
 
     async explainConcept({ session, concept, contextPacket = null }) {
@@ -1636,7 +1751,62 @@ export function createHeuristicTutorIntelligence() {
       };
     },
 
-    async generateTurnEnvelope({ session, concept, answer, burdenSignal = "normal", priorEvidence = [], contextPacket }) {
+    async generateReplyStream({ session, concept, answer }) {
+      const analysis = analyzeLearnerAnswer({ concept, answer });
+      const normalizedSignal = analysis.signal;
+      const tutorFeedback = buildTutorFeedback({
+        concept,
+        analysis,
+        noiseDetected: normalizedSignal === "noise"
+      });
+      const interactionPreference = session?.interactionPreference || "balanced";
+
+      if (!String(answer || "").trim()) {
+        return normalizeReplyStreamText(`我们先把这个点收窄一下。${concept.summary}`, concept);
+      }
+
+      if (normalizedSignal === "positive") {
+        return normalizeReplyStreamText(
+          [
+            `你这轮已经抓住了“${concept.title}”的关键点。`,
+            tutorFeedback.enrichment || "",
+            concept.summary && !String(tutorFeedback.explanation || "").includes(concept.summary)
+              ? `如果再往前补一步，可以把边界收得更准：${concept.summary}`
+              : ""
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+          concept
+        );
+      }
+
+      if (analysis.asksForExplanation || /讲|解释|总结|梳理/.test(String(answer))) {
+        return normalizeReplyStreamText(
+          [
+            "我先不继续追问，直接把这一层讲清楚。",
+            tutorFeedback.teachingChunk || concept.summary
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+          concept
+        );
+      }
+
+      return normalizeReplyStreamText(
+        [
+          interactionPreference === "explain-first"
+            ? "我先把这一层讲清楚，再继续往下收。"
+            : "你的方向不算离谱，但还没把关键机制讲完整。",
+          tutorFeedback.explanation || `你现在还没把“${concept.title}”讲成稳定链路。`,
+          tutorFeedback.teachingChunk || ""
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+        concept
+      );
+    },
+
+    async generateDecisionEnvelope({ session, concept, answer, burdenSignal = "normal", priorEvidence = [], contextPacket }) {
       const analysis = analyzeLearnerAnswer({ concept, answer });
       const normalizedSignal = analysis.signal;
       const tutorFeedback = buildTutorFeedback({
@@ -1833,19 +2003,8 @@ export function createHeuristicTutorIntelligence() {
                     ? "用户已经摸到关键方向，可以通过一个更具体的问题确认是否真的稳了。"
                     : "用户还没有把机制链路讲完整，需要更具体的验证。 ",
             expected_gain: infoGainLevel,
-            ui_mode: uiMode
-          },
-          reply: {
-            visible_reply: visibleReply,
-            teaching_paragraphs: teachingParagraphs,
-            evidence_reference: concept.excerpt,
-            next_prompt: nextPrompt,
-            takeaway: concept.summary,
-            confirmed_understanding: confirmedUnderstanding,
-            remaining_gap: remainingGap,
-            revisit_reason: revisitReason,
-            requires_response: requiresResponse,
-            complete_current_unit: completeCurrentUnit
+            ui_mode: uiMode,
+            follow_up_question: nextPrompt
           },
           writeback_suggestion: {
             should_write: suggestionMode !== "noop",
@@ -1870,6 +2029,10 @@ export function createHeuristicTutorIntelligence() {
         },
         concept
       );
+    },
+
+    async generateTurnEnvelope(args) {
+      return this.generateDecisionEnvelope(args);
     },
 
     async generateTutorTurn({ session, concept, answer, burdenSignal = "normal", priorEvidence = [], rawEvidencePoint = null }) {
@@ -1930,7 +2093,7 @@ export function createHeuristicTutorIntelligence() {
           evidenceReference: concept.excerpt,
           teachingChunk: "",
           nextQuestion: "",
-          takeaway: concept.summary,
+          takeaway: "",
           confirmedUnderstanding: normalizedSignal === "positive" ? `你已经碰到了“${concept.title}”的核心方向。` : "",
           remainingGap: tutorFeedback.gap,
           revisitReason: importanceNeedsRevisit(concept) ? "这个点后面可以再结合相关场景复查。" : "",
@@ -1957,7 +2120,7 @@ export function createHeuristicTutorIntelligence() {
           evidenceReference: concept.excerpt,
           teachingChunk: tutorFeedback.teachingChunk || concept.summary,
           nextQuestion: concept.checkQuestion || tutorFeedback.checkQuestion || concept.retryQuestion,
-          takeaway: concept.summary,
+          takeaway: "",
           confirmedUnderstanding: normalizedSignal === "negative" ? "你已经碰到了相关概念。" : "",
           remainingGap: tutorFeedback.gap,
           revisitReason: "如果现在还不稳，后面可以再结合具体场景回头检查。",
@@ -1984,7 +2147,7 @@ export function createHeuristicTutorIntelligence() {
           evidenceReference: concept.excerpt,
           teachingChunk: "",
           nextQuestion: concept.stretchQuestion || createFollowUpQuestion({ concept, lastSignal: normalizedSignal, burdenSignal }),
-          takeaway: concept.summary,
+          takeaway: "",
           confirmedUnderstanding: tutorFeedback.positiveConfirmation || `你已经抓住了“${concept.title}”的关键点。`,
           remainingGap: "",
           revisitReason: "",
@@ -2010,7 +2173,7 @@ export function createHeuristicTutorIntelligence() {
         evidenceReference: concept.excerpt,
         teachingChunk: "",
         nextQuestion: concept.retryQuestion || tutorFeedback.coachingStep,
-        takeaway: concept.summary,
+        takeaway: "",
         confirmedUnderstanding: normalizedSignal === "negative" ? "你已经碰到了一部分关键词。" : "",
         remainingGap: tutorFeedback.gap,
         revisitReason: "如果这一轮先不继续深挖，后面可以再回访这个关键点。",
@@ -2056,7 +2219,7 @@ export function createHeuristicTutorIntelligence() {
           .filter(Boolean)
           .join("\n\n"),
         checkQuestion: concept.checkQuestion || concept.retryQuestion,
-        takeaway: concept.summary
+        takeaway: ""
       };
     }
   };

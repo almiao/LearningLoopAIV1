@@ -81,8 +81,6 @@ def build_anchor_state_snapshot(session: Dict[str, Any], concept_id: str) -> Dic
     anchor_state = concept_state.get("anchorState") or {}
     return {
         "confirmed_understanding": trim_text(anchor_state.get("confirmedUnderstanding", ""), 180),
-        "current_gap": trim_text(anchor_state.get("currentGap", ""), 180),
-        "last_teaching_point": trim_text(anchor_state.get("lastTeachingPoint", ""), 180),
         "last_followup_goal": trim_text(anchor_state.get("lastFollowupGoal", ""), 180),
         "last_learner_intent": trim_text(anchor_state.get("lastLearnerIntent", ""), 80),
         "last_tutor_action": trim_text(anchor_state.get("lastTutorAction", ""), 80),

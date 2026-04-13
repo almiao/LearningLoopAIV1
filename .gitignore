@@ -7,5 +7,7 @@
 .env.*
 /frontend/node_modules/
 /frontend/.next/
+/tests/eval/generated/*
+!/tests/eval/generated/README.md
 __pycache__/
 *.py[cod]

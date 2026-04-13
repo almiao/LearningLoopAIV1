@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -90,8 +91,6 @@ def rank_state(state: str) -> int:
 def create_empty_anchor_state() -> Dict[str, Any]:
     return {
         "confirmedUnderstanding": "",
-        "currentGap": "",
-        "lastTeachingPoint": "",
         "lastFollowupGoal": "",
         "lastLearnerIntent": "",
         "lastTutorAction": "",
@@ -107,24 +106,36 @@ def update_anchor_state(
 ) -> Dict[str, Any]:
     anchor_state = session["conceptStates"][concept["id"]].setdefault("anchorState", create_empty_anchor_state())
     strength = latest_feedback.get("strength") or ""
-    gap = latest_feedback.get("gap") or ""
-    takeaway = latest_feedback.get("takeaway") or ""
     model_next_move = latest_feedback.get("modelNextMove") or latest_feedback.get("nextMove") or {}
 
     if strength:
         anchor_state["confirmedUnderstanding"] = strength
-    if gap:
-        anchor_state["currentGap"] = gap
-    elif latest_feedback.get("action") in {"advance", "abstain"} or ((latest_feedback.get("judge") or {}).get("state") == "solid"):
-        anchor_state["currentGap"] = ""
-
-    if latest_feedback.get("action") == "teach" and takeaway:
-        anchor_state["lastTeachingPoint"] = takeaway
 
     anchor_state["lastFollowupGoal"] = model_next_move.get("intent", "") if latest_feedback.get("coachingStep") else ""
     anchor_state["lastLearnerIntent"] = learner_intent
     anchor_state["lastTutorAction"] = latest_feedback.get("action", "")
     return anchor_state
+
+
+def move_requires_response(move: Dict[str, Any] | None) -> bool:
+    ui_mode = ((move or {}).get("nextMove") or {}).get("ui_mode", "")
+    return ui_mode in {"probe", "teach", "verify"}
+
+
+def get_move_follow_up_question(move: Dict[str, Any] | None) -> str:
+    if not move_requires_response(move):
+        return ""
+    return str((move or {}).get("followUpQuestion") or "").strip()
+
+
+def move_type_to_ui_mode(move_type: str = "") -> str:
+    if move_type == "teach":
+        return "teach"
+    if move_type == "advance":
+        return "advance"
+    if move_type in {"deepen", "affirm", "check"}:
+        return "verify"
+    return "probe"
 
 
 def create_evidence_ledger(concepts: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
@@ -489,98 +500,6 @@ def evaluate_answer(concept: Dict[str, Any], answer: str, attempts: int) -> Dict
     }
 
 
-def build_fallback_runtime_map(concept: Dict[str, Any], judge: Dict[str, Any], next_question: str = "") -> Dict[str, Any]:
-    return {
-        "anchor_id": concept["id"],
-        "turn_signal": "positive" if judge["state"] in {"partial", "solid"} else "negative",
-        "anchor_assessment": {
-            "state": judge["state"],
-            "confidence_level": judge.get("confidenceLevel") or score_to_confidence_level(judge.get("confidence", 0)),
-            "reasons": judge.get("reasons", []),
-        },
-        "hypotheses": [],
-        "misunderstandings": [],
-        "open_questions": [next_question] if next_question else [],
-        "verification_targets": (
-            [{"id": f"{concept['id']}-legacy-verify", "question": next_question, "why": concept.get("summary", "")}] if next_question else []
-        ),
-        "info_gain_level": "low" if judge["state"] == "solid" else "medium",
-    }
-
-
-def fallback_turn_envelope(*, session: Dict[str, Any], concept: Dict[str, Any], answer: str, burden_signal: str) -> Dict[str, Any]:
-    attempt_index = session["conceptStates"][concept["id"]]["attempts"]
-    judge = evaluate_answer(concept, answer, attempt_index)
-    move_type = choose_next_action(
-        concept,
-        session["conceptStates"][concept["id"]],
-        judge,
-        burden_signal,
-        session["interactionPreference"],
-    )
-    next_question = build_prompt_for_action(move_type, concept)
-    if move_type == "advance":
-        visible_reply = "这一点你已经抓到主要方向了，我们先往下走，别在这里卡太久。"
-        next_question = ""
-        requires_response = False
-        complete_current_unit = True
-        teaching_paragraphs: List[str] = []
-    elif move_type == "teach":
-        visible_reply = f"你前面的方向有一点接近，但还差最关键的一层。 我先把这一层讲清楚：{concept.get('summary', '')}"
-        teaching_paragraphs = [concept.get("summary", "")]
-        requires_response = True
-        complete_current_unit = False
-    elif move_type in {"deepen", "affirm"}:
-        visible_reply = "你这轮已经抓住了关键点。如果再补完整一点，会更像面试里的高质量表达。"
-        teaching_paragraphs = []
-        requires_response = True
-        complete_current_unit = False
-    elif move_type == "abstain":
-        visible_reply = "这一轮暂时还没法稳定判断，我们先换个点继续推进。"
-        next_question = ""
-        teaching_paragraphs = []
-        requires_response = False
-        complete_current_unit = True
-    else:
-        visible_reply = f"你的方向不算离谱，但还没把关键机制讲完整。 我们先收窄到一个点：{concept.get('retryQuestion') or concept.get('checkQuestion') or ''}"
-        teaching_paragraphs = []
-        requires_response = True
-        complete_current_unit = False
-
-    signal = "positive" if judge["state"] in {"partial", "solid"} else "negative"
-    return {
-        "runtime_map": build_fallback_runtime_map(concept, judge, next_question),
-        "next_move": {
-            "intent": "继续围绕当前点推进。" if requires_response else "这个点先收口，继续推进整体节奏。",
-            "reason": "根据当前回答继续收口或深化。",
-            "expected_gain": "medium" if requires_response else "low",
-            "ui_mode": "teach" if move_type == "teach" else "advance" if move_type in {"advance", "abstain"} else "verify" if move_type in {"deepen", "affirm"} else "probe",
-        },
-        "reply": {
-            "visible_reply": visible_reply,
-            "teaching_paragraphs": teaching_paragraphs,
-            "evidence_reference": concept.get("excerpt", ""),
-            "next_prompt": next_question,
-            "takeaway": concept.get("summary", ""),
-            "confirmed_understanding": "你已经抓到主要方向。" if move_type in {"affirm", "deepen", "advance"} else "",
-            "remaining_gap": "" if judge["state"] in {"partial", "solid"} else "回答还不够具体。",
-            "revisit_reason": "",
-            "requires_response": requires_response,
-            "complete_current_unit": complete_current_unit,
-        },
-        "writeback_suggestion": {
-            "should_write": True,
-            "mode": "append_conflict" if signal == "negative" else "update",
-            "reason": "legacy_positive_signal" if signal == "positive" else "legacy_partial_signal",
-            "anchor_patch": {
-                "state": judge["state"],
-                "confidence_level": judge.get("confidenceLevel") or score_to_confidence_level(judge.get("confidence", 0)),
-                "derived_principle": concept.get("summary", ""),
-            },
-        },
-    }
-
-
 def create_session(payload: Any) -> Dict[str, Any]:
     concepts = deepcopy(payload.decomposition["concepts"])
     concept_states = {}
@@ -728,7 +647,14 @@ def apply_focus_concept(session: Dict[str, Any], concept_id: str) -> Dict[str, A
     return project_session(session)
 
 
-def handle_teach_control(*, session: Dict[str, Any], concept: Dict[str, Any], answer: str, burden_signal: str) -> Dict[str, Any]:
+def handle_teach_control(
+    *,
+    session: Dict[str, Any],
+    concept: Dict[str, Any],
+    answer: str,
+    burden_signal: str,
+    intelligence_override: Any = None,
+) -> Dict[str, Any]:
     session["engagement"]["controlCount"] += 1
     session["engagement"]["teachRequestCount"] += 1
     session["engagement"]["consecutiveControlCount"] += 1
@@ -743,62 +669,42 @@ def handle_teach_control(*, session: Dict[str, Any], concept: Dict[str, Any], an
         burden_signal=burden_signal,
         prior_evidence=session["ledger"][concept["id"]]["entries"],
     )
-    intelligence = get_tutor_intelligence()
+    intelligence = intelligence_override or get_tutor_intelligence()
     tutor_move = None
-    if intelligence and intelligence.configured:
-        decision_envelope = intelligence.generate_turn_envelope(
+    if not (intelligence and intelligence.configured):
+        raise RuntimeError("AI tutor intelligence is required but not configured. Check .env.local.")
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        decision_future = executor.submit(
+            intelligence.generate_turn_envelope,
             concept=concept,
             context_packet=context_packet,
             answer=answer,
             forced_action="teach",
         )
-        assert_valid_turn_envelope(decision_envelope, concept["id"])
-        assert_consistent_turn_envelope(decision_envelope, context_packet)
-        tutor_move = turn_envelope_to_tutor_move(decision_envelope, concept)
-        tutor_move["runtimeMap"] = merge_runtime_maps(session["runtimeMaps"].get(concept["id"]), tutor_move["runtimeMap"], concept["id"])
-        session["runtimeMaps"][concept["id"]] = tutor_move["runtimeMap"]
+        reply_future = executor.submit(
+            intelligence.generate_reply_stream,
+            concept=concept,
+            context_packet=context_packet,
+            answer=answer,
+        )
+
+        decision_envelope = decision_future.result()
+        reply_text = reply_future.result()
+    assert_valid_turn_envelope(decision_envelope, concept["id"])
+    assert_consistent_turn_envelope(decision_envelope, context_packet)
+    if not reply_text:
+        raise RuntimeError("AI reply_stream returned empty text.")
+    tutor_move = turn_envelope_to_tutor_move(decision_envelope, concept, reply_text=reply_text)
+    tutor_move["runtimeMap"] = merge_runtime_maps(session["runtimeMaps"].get(concept["id"]), tutor_move["runtimeMap"], concept["id"])
+    session["runtimeMaps"][concept["id"]] = tutor_move["runtimeMap"]
 
     explanation = (
-        tutor_move["visibleReply"]
-        if tutor_move
-        else " ".join(
-            item
-            for item in [
-                "我们先把这一层拆开讲清楚。",
-                concept.get("summary", ""),
-                concept.get("misconception", "") and f"容易错在：{concept.get('misconception', '')}",
-                concept.get("remediationHint", "") and f"你可以先抓住：{concept.get('remediationHint', '')}",
-            ]
-            if item
-        )
+        tutor_move["replyText"]
     )
-    teaching_chunk = (
-        tutor_move["teachingChunk"]
-        if tutor_move
-        else "\n\n".join(
-            item
-            for item in [
-                concept.get("summary", ""),
-                concept.get("misconception", "") and f"常见误区：{concept.get('misconception', '')}",
-                concept.get("remediationHint", "") and f"复述抓手：{concept.get('remediationHint', '')}",
-            ]
-            if item
-        )
-    )
-    teaching_paragraphs = (
-        tutor_move["teachingParagraphs"]
-        if tutor_move
-        else [
-            item
-            for item in [
-                concept.get("summary", ""),
-                concept.get("misconception", "") and f"常见误区：{concept.get('misconception', '')}",
-                concept.get("remediationHint", "") and f"复述抓手：{concept.get('remediationHint', '')}",
-            ]
-            if item
-        ]
-    )
-    coaching_step = (tutor_move or {}).get("nextQuestion") or concept.get("checkQuestion") or concept.get("retryQuestion") or ""
+    teaching_chunk = ""
+    teaching_paragraphs: List[str] = []
+    coaching_step = (tutor_move or {}).get("followUpQuestion") or concept.get("checkQuestion") or concept.get("retryQuestion") or ""
 
     session["currentProbe"] = coaching_step
     session["currentQuestionMeta"] = create_question_meta(concept)
@@ -806,22 +712,22 @@ def handle_teach_control(*, session: Dict[str, Any], concept: Dict[str, Any], an
     latest_feedback = {
         "conceptId": concept["id"],
         "conceptTitle": concept["title"],
-        "signal": (tutor_move or {}).get("signal", "noise"),
+        "signal": tutor_move.get("signal", "noise"),
         "action": "teach",
         "explanation": explanation,
-        "gap": (tutor_move or {}).get("remainingGap", ""),
+        "gap": (tutor_move.get("nextMove") or {}).get("reason", ""),
         "evidenceReference": concept.get("excerpt", ""),
         "coachingStep": coaching_step,
         "candidateCoachingStep": coaching_step,
-        "strength": (tutor_move or {}).get("confirmedUnderstanding", ""),
-        "takeaway": (tutor_move or {}).get("takeaway") or concept.get("summary", ""),
+        "strength": "",
+        "takeaway": "",
         "teachingChunk": teaching_chunk,
         "teachingParagraphs": teaching_paragraphs,
-        "judge": (tutor_move or {}).get("judge") or session["conceptStates"][concept["id"]]["judge"],
-        "runtimeMap": (tutor_move or {}).get("runtimeMap") or session["runtimeMaps"][concept["id"]],
-        "nextMove": (tutor_move or {}).get("nextMove") or {"intent": "先把当前缺口讲清楚，再做 teach-back。", "reason": "用户直接请求讲解。", "ui_mode": "teach"},
-        "modelNextMove": (tutor_move or {}).get("nextMove") or {"intent": "先把当前缺口讲清楚，再做 teach-back。", "reason": "用户直接请求讲解。", "ui_mode": "teach"},
-        "writebackSuggestion": (tutor_move or {}).get("writebackSuggestion"),
+        "judge": tutor_move.get("judge") or session["conceptStates"][concept["id"]]["judge"],
+        "runtimeMap": tutor_move.get("runtimeMap") or session["runtimeMaps"][concept["id"]],
+        "nextMove": tutor_move.get("nextMove"),
+        "modelNextMove": tutor_move.get("nextMove"),
+        "writebackSuggestion": tutor_move.get("writebackSuggestion"),
         "controlVerdict": None,
         "turnResolution": {
             "mode": "stay",
@@ -850,7 +756,7 @@ def handle_advance_control(*, session: Dict[str, Any], concept: Dict[str, Any]) 
             "conceptId": concept["id"],
             "conceptTitle": concept["title"],
             "reason": "skipped-by-user",
-            "takeaway": concept.get("summary", ""),
+            "takeaway": "",
             "queuedAt": now_iso(),
             "done": False,
         }
@@ -871,7 +777,7 @@ def handle_advance_control(*, session: Dict[str, Any], concept: Dict[str, Any]) 
         "coachingStep": "",
         "candidateCoachingStep": "",
         "strength": "",
-        "takeaway": concept.get("summary", ""),
+        "takeaway": "",
         "teachingChunk": "",
         "teachingParagraphs": [],
         "judge": session["conceptStates"][concept["id"]]["judge"],
@@ -894,7 +800,7 @@ def handle_advance_control(*, session: Dict[str, Any], concept: Dict[str, Any]) 
     }
 
 
-def answer_session(session: Dict[str, Any], payload: Any) -> Dict[str, Any]:
+def answer_session(session: Dict[str, Any], payload: Any, intelligence_override: Any = None) -> Dict[str, Any]:
     concept = next(item for item in session["concepts"] if item["id"] == session["currentConceptId"])
     if payload.interactionPreference:
         session["interactionPreference"] = normalize_interaction_preference(payload.interactionPreference)
@@ -925,7 +831,13 @@ def answer_session(session: Dict[str, Any], payload: Any) -> Dict[str, Any]:
         },
     )
     if control_intent == "teach":
-        latest_feedback = handle_teach_control(session=session, concept=concept, answer=answer, burden_signal=payload.burdenSignal)
+        latest_feedback = handle_teach_control(
+            session=session,
+            concept=concept,
+            answer=answer,
+            burden_signal=payload.burdenSignal,
+            intelligence_override=intelligence_override,
+        )
         latest_memory_events: List[Dict[str, Any]] = []
     elif control_intent == "advance":
         latest_feedback = handle_advance_control(session=session, concept=concept)
@@ -953,20 +865,31 @@ def answer_session(session: Dict[str, Any], payload: Any) -> Dict[str, Any]:
             current_concept_id=concept["id"],
         )
 
-        intelligence = get_tutor_intelligence()
-        if intelligence and intelligence.configured:
-            decision_envelope = intelligence.generate_turn_envelope(concept=concept, context_packet=context_packet, answer=answer)
-        else:
-            logger.event(
-                events.FALLBACK_TRIGGERED,
-                current_concept_id=concept["id"],
-                reason="llm_provider_unconfigured",
+        intelligence = intelligence_override or get_tutor_intelligence()
+        if not (intelligence and intelligence.configured):
+            raise RuntimeError("AI tutor intelligence is required but not configured. Check .env.local.")
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            decision_future = executor.submit(
+                intelligence.generate_turn_envelope,
+                concept=concept,
+                context_packet=context_packet,
+                answer=answer,
             )
-            decision_envelope = fallback_turn_envelope(session=session, concept=concept, answer=answer, burden_signal=payload.burdenSignal)
+            reply_future = executor.submit(
+                intelligence.generate_reply_stream,
+                concept=concept,
+                context_packet=context_packet,
+                answer=answer,
+            )
+            decision_envelope = decision_future.result()
+            reply_text = reply_future.result()
 
         assert_valid_turn_envelope(decision_envelope, concept["id"])
         assert_consistent_turn_envelope(decision_envelope, context_packet)
-        tutor_move = turn_envelope_to_tutor_move(decision_envelope, concept)
+        if not reply_text:
+            raise RuntimeError("AI reply_stream returned empty text.")
+        tutor_move = turn_envelope_to_tutor_move(decision_envelope, concept, reply_text=reply_text)
         tutor_move["runtimeMap"] = merge_runtime_maps(session["runtimeMaps"].get(concept["id"]), tutor_move["runtimeMap"], concept["id"])
         session["runtimeMaps"][concept["id"]] = tutor_move["runtimeMap"]
 
@@ -978,11 +901,11 @@ def answer_session(session: Dict[str, Any], payload: Any) -> Dict[str, Any]:
                 "prompt": context_packet["draft_evidence"]["prompt"],
                 "answer": answer,
                 "signal": tutor_move["signal"],
-                "explanation": tutor_move["visibleReply"],
+                "explanation": tutor_move["replyText"],
                 "whyJudgedThisWay": "；".join((tutor_move["judge"] or {}).get("reasons", [])),
                 "sourceRefs": context_packet["draft_evidence"]["sourceRefs"],
                 "confidenceLevel": tutor_move["judge"].get("confidenceLevel") or score_to_confidence_level(tutor_move["judge"].get("confidence", 0)),
-                "evidenceReference": tutor_move["evidenceReference"],
+                "evidenceReference": concept["excerpt"],
                 "sourceAligned": True,
             },
         )
@@ -1000,7 +923,7 @@ def answer_session(session: Dict[str, Any], payload: Any) -> Dict[str, Any]:
                     "conceptId": concept["id"],
                     "conceptTitle": concept["title"],
                     "reason": tutor_move["revisitReason"],
-                    "takeaway": tutor_move.get("takeaway", concept.get("summary", "")),
+                    "takeaway": tutor_move.get("takeaway", ""),
                     "queuedAt": now_iso(),
                     "done": False,
                 }
@@ -1009,8 +932,7 @@ def answer_session(session: Dict[str, Any], payload: Any) -> Dict[str, Any]:
         control_verdict = build_control_verdict(
             envelope={
                 "runtime_map": tutor_move["runtimeMap"],
-                "next_move": tutor_move.get("nextMove") or {"ui_mode": tutor_move["moveType"]},
-                "reply": {"requires_response": tutor_move["requiresResponse"]},
+                "next_move": tutor_move.get("nextMove") or {"ui_mode": move_type_to_ui_mode(tutor_move["moveType"]), "follow_up_question": get_move_follow_up_question(tutor_move)},
             },
             context_packet=context_packet,
             scope_type=get_workspace_scope(session)["type"],
@@ -1019,7 +941,7 @@ def answer_session(session: Dict[str, Any], payload: Any) -> Dict[str, Any]:
         should_complete = (
             tutor_move["completeCurrentUnit"]
             or tutor_move["judge"]["state"] in {"solid", "不可判"}
-            or tutor_move["moveType"] in {"advance", "abstain"}
+            or tutor_move["moveType"] == "advance"
         )
         if should_complete:
             session["conceptStates"][concept["id"]]["completed"] = True
@@ -1064,7 +986,7 @@ def answer_session(session: Dict[str, Any], payload: Any) -> Dict[str, Any]:
         session["currentProbe"] = (
             resolve_prompt_for_concept(concept=next_concept, revisit=bool(next_unit.get("revisit")))
             if next_concept and switched
-            else (tutor_move["nextQuestion"] if tutor_move["requiresResponse"] else "")
+            else get_move_follow_up_question(tutor_move)
             if next_concept
             else ""
         )
@@ -1082,15 +1004,16 @@ def answer_session(session: Dict[str, Any], payload: Any) -> Dict[str, Any]:
             "conceptTitle": concept["title"],
             "signal": tutor_move["signal"],
             "action": tutor_move["moveType"],
-            "explanation": tutor_move["visibleReply"],
-            "gap": tutor_move["remainingGap"],
-            "evidenceReference": tutor_move["evidenceReference"],
-            "coachingStep": tutor_move["nextQuestion"] if turn_resolution["mode"] == "stay" else "",
-            "candidateCoachingStep": tutor_move["nextQuestion"],
-            "strength": tutor_move["confirmedUnderstanding"],
-            "takeaway": tutor_move["takeaway"],
-            "teachingChunk": tutor_move["teachingChunk"],
-            "teachingParagraphs": tutor_move["teachingParagraphs"],
+            "explanation": tutor_move["replyText"],
+            "replyStream": tutor_move["replyText"],
+            "gap": (tutor_move.get("nextMove") or {}).get("reason", ""),
+            "evidenceReference": concept["excerpt"],
+            "coachingStep": get_move_follow_up_question(tutor_move) if turn_resolution["mode"] == "stay" else "",
+            "candidateCoachingStep": get_move_follow_up_question(tutor_move),
+            "strength": "",
+            "takeaway": "",
+            "teachingChunk": "",
+            "teachingParagraphs": [],
             "judge": tutor_move["judge"],
             "runtimeMap": tutor_move["runtimeMap"],
             "nextMove": tutor_move.get("nextMove") if turn_resolution["mode"] == "stay" else None,
@@ -1119,6 +1042,7 @@ def answer_session(session: Dict[str, Any], payload: Any) -> Dict[str, Any]:
             "conceptId": concept["id"],
             "conceptTitle": concept["title"],
             "content": latest_feedback["explanation"],
+            "contentFormat": "markdown",
             "coachingStep": latest_feedback["coachingStep"],
             "candidateCoachingStep": latest_feedback["candidateCoachingStep"],
             "takeaway": latest_feedback["takeaway"],
@@ -1157,7 +1081,7 @@ def answer_session(session: Dict[str, Any], payload: Any) -> Dict[str, Any]:
             "confidence": latest_feedback.get("judge", {}).get("confidence", 0),
         },
         parse_failed_count=0,
-        fallback_used=not (get_tutor_intelligence() and get_tutor_intelligence().configured),
+        fallback_used=False,
         current_concept_id=concept["id"],
     )
     append_interaction_event(

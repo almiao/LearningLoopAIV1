@@ -16,7 +16,7 @@ export function judgeConcept({
   const positives = entry.entries.filter((item) => item.signal === "positive").length;
   const negatives = entry.entries.filter((item) => item.signal === "negative").length;
 
-  if (abstention.status === "abstain") {
+  if (abstention.status === "stop") {
     return {
       state: "不可判",
       confidence: 0,

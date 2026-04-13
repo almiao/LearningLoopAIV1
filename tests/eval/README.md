@@ -1,27 +1,31 @@
 # Session Review Loop
 
-This directory contains evaluation-only tooling for the tutor engine.
+This directory contains deterministic evaluation tooling for the shared tutoring engine.
 
 ## Boundary
 
-- Business code stays in `src/`.
-- Review, replay, scoring, and dossier generation stay in `tests/eval/` and `scripts/`.
-- The review loop only drives the public app service API exposed by `createAppService()`.
-- Heuristic scorecards and review flags are advisory for humans. They are not product logic.
+- Product logic lives in `src/`, `bff/`, and `ai-service/`.
+- Review, replay, scoring, and dossier generation live in `tests/eval/` and `scripts/`.
+- The review loop drives the public app-service surface instead of reaching into private internals.
+- Review flags and scorecards are human aids, not runtime product behavior.
 
 ## What lives here
 
-- `scenarios.js`: deterministic session review scenarios.
-- `session-dossier.js`: replay helpers, heuristic scoring, and artifact writers.
-- `generated/`: reviewable artifacts produced by `npm run eval:sessions`.
+| File or directory | Purpose |
+| --- | --- |
+| `scenarios.js` | Deterministic review scenarios |
+| `session-dossier.js` | Replay helpers, heuristic scoring, and artifact writers |
+| `generated/` | Runtime output directory for generated dossiers |
 
 ## Workflow
 
 1. Run `npm run eval:sessions`.
-2. Review `tests/eval/generated/index.md` plus the per-scenario JSON dossiers.
-3. Compare the generated transcripts against `tests/cases/case-rubric.md`.
-4. Fix product behavior in `src/`, then rerun the review loop.
+2. Review `tests/eval/generated/index.md` and the per-scenario dossiers generated in the same folder.
+3. Compare outputs against `tests/cases/user-case-rubric.md`.
+4. Fix product behavior in active code, then rerun the review loop.
 
-## Why this split exists
+## Archiving policy
 
-The tutor engine should not know anything about regression dossier formats, batch review jobs, or human scoring rubrics. Keeping those capabilities outside `src/` lets us iterate on evaluation quickly without entangling product behavior and test infrastructure.
+- Generated outputs are disposable.
+- Previously committed sample outputs were moved to `archive/session-review-snapshots/`.
+- Keep only the runtime output directory in the active tree.

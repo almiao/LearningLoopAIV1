@@ -8,7 +8,7 @@ test("detectNoise flags short or vague answers", () => {
   assert.equal(detectNoise("HashMap relies on hashCode and equals stability in lookup paths."), false);
 });
 
-test("evaluateAbstention returns abstain when information gain is exhausted", () => {
+test("evaluateAbstention returns stop when information gain is exhausted", () => {
   const result = evaluateAbstention({
     sourceAligned: true,
     promptContaminated: false,
@@ -21,7 +21,7 @@ test("evaluateAbstention returns abstain when information gain is exhausted", ()
     }
   });
 
-  assert.equal(result.status, "abstain");
+  assert.equal(result.status, "stop");
   assert.match(result.label, /不可判/);
 });
 

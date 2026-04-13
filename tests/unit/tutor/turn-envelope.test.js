@@ -30,20 +30,8 @@ function createEnvelope(overrides = {}) {
       reason: "用户已经摸到主干，可以再做一次验证。",
       expected_gain: "medium",
       ui_mode: "verify",
+      follow_up_question: "那你继续说说，为什么 RR 有 MVCC 以后当前读还是要 next-key lock？",
       ...overrides.next_move
-    },
-    reply: {
-      visible_reply: "你已经碰到关键点了，不过还要把当前读和锁边界带上。",
-      teaching_paragraphs: [],
-      evidence_reference: "RR 为什么还要 next-key lock。",
-      next_prompt: "那你继续说说，为什么 RR 有 MVCC 以后当前读还是要 next-key lock？",
-      takeaway: "MVCC 主要管快照读，当前读边界还要看锁。",
-      confirmed_understanding: "你已经知道 MVCC 处理历史快照。",
-      remaining_gap: "还没把当前读和锁边界讲清楚。",
-      revisit_reason: "",
-      requires_response: true,
-      complete_current_unit: false,
-      ...overrides.reply
     },
     writeback_suggestion: {
       should_write: true,
@@ -69,14 +57,12 @@ test("valid positive verify envelopes map to deepen tutor moves for compatibilit
   });
 
   const tutorMove = turnEnvelopeToTutorMove(envelope, {
-    id: "mvcc",
-    summary: "MVCC 概念总结",
-    excerpt: "MVCC 证据"
+    replyText: "你已经碰到关键点了，不过还要把当前读和锁边界带上。"
   });
 
   assert.equal(tutorMove.moveType, "deepen");
   assert.equal(tutorMove.judge.state, "partial");
-  assert.equal(tutorMove.nextQuestion, envelope.reply.next_prompt);
+  assert.equal(tutorMove.followUpQuestion, envelope.next_move.follow_up_question);
 });
 
 test("inconsistent negligible-gain probe envelopes are rejected", () => {
@@ -159,10 +145,8 @@ test("buildControlVerdict emits explicit control-layer stop reasoning", () => {
   const verdict = buildControlVerdict({
     envelope: createEnvelope({
       next_move: {
-        ui_mode: "advance"
-      },
-      reply: {
-        requires_response: false
+        ui_mode: "advance",
+        follow_up_question: ""
       }
     }),
     contextPacket: {

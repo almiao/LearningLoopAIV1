@@ -51,8 +51,7 @@ function pickRecentAnchorTurns(turns = [], conceptId = "", maxTurns = 4, maxChar
       role: turn.role,
       kind: turn.kind || "",
       action: turn.action || "",
-      content: trimText(turn.content, maxChars),
-      takeaway: trimText(turn.takeaway, 140)
+      content: trimText(turn.content, maxChars)
     }));
 }
 
@@ -190,11 +189,7 @@ export function buildContextPacket({
       teachCount: session.conceptStates?.[concept.id]?.teachCount || 0,
       hasRecentTeaching: anchorTurns.some(
         (turn) => turn.role === "tutor" && (turn.action === "teach" || turn.kind === "feedback")
-      ),
-      recentTakeaways: anchorTurns
-        .map((turn) => turn.takeaway)
-        .filter(Boolean)
-        .slice(-2)
+      )
     },
     recentEvidence: pickRecentEvidence(priorEvidence),
     rawEvidencePoint: effectiveRawEvidencePoint
@@ -293,9 +288,7 @@ export function buildContextPacket({
       working_diagnosis: dynamic.previousRuntimeMap || null,
       anchor_history: dynamic.anchorHistory,
       anchor_summary: {
-        confirmed_understanding: dynamic.anchorHistory.recentTakeaways.at(-1) || "",
-        current_gap: (dynamic.previousRuntimeMap?.open_questions || [])[0] || "",
-        last_teaching_point: dynamic.anchorHistory.recentTakeaways.at(-1) || "",
+        confirmed_understanding: "",
         last_updated_at_turn: session.turns?.length || 0
       },
       recent_evidence: dynamic.recentEvidence,

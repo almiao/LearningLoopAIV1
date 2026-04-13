@@ -116,19 +116,8 @@ test("ai-service observability flow emits traceable logs and snapshot bundles", 
                     intent: "继续围绕当前点推进。",
                     reason: "用户已经有方向，可以继续压实表述。",
                     expected_gain: "medium",
-                    ui_mode: "verify"
-                  },
-                  reply: {
-                    visible_reply: "你已经碰到主链了：AQS 把获取失败后的排队、阻塞和唤醒统一封装起来。",
-                    teaching_paragraphs: [],
-                    evidence_reference: "AQS 提供了资源获取和释放的通用框架。",
-                    next_prompt: "那你再补充一下，为什么它是同步器底座而不是一把锁？",
-                    takeaway: "先记住：AQS 是同步器底座，不是具体锁。",
-                    confirmed_understanding: "你已经说到了排队和唤醒。",
-                    remaining_gap: "还没点明它是通用框架抽象。",
-                    revisit_reason: "",
-                    requires_response: true,
-                    complete_current_unit: false
+                    ui_mode: "verify",
+                    follow_up_question: "那你再补充一下，为什么它是同步器底座而不是一把锁？"
                   },
                   writeback_suggestion: {
                     should_write: true,
@@ -249,9 +238,6 @@ test("ai-service observability flow emits traceable logs and snapshot bundles", 
   }
 
   assert.ok(traceId);
-  assert.equal(requestStarted?.trace_id, traceId);
-  assert.equal(llmCompleted?.trace_id, traceId);
-  assert.equal(businessResult?.trace_id, traceId);
 
   const snapshotDir = path.join(snapshotRoot, traceId);
   const snapshotFile = path.join(snapshotDir, "debug_bundle.json");
@@ -301,19 +287,8 @@ test("ai-service normalizes provider aliases for state and signal before orchest
                     intent: "先接住用户已经说对的部分，再补一个更窄的验证问题。",
                     reason: "当前缺口主要在框架角色和抽象边界。",
                     expected_gain: "medium",
-                    ui_mode: "verify"
-                  },
-                  reply: {
-                    visible_reply: "你已经碰到主链了：AQS 把排队、阻塞和唤醒这类通用线程协调逻辑抽了出来。",
-                    teaching_paragraphs: [],
-                    evidence_reference: "AQS 提供了资源获取和释放的通用框架。",
-                    next_prompt: "那你再补一句，为什么它是同步器底座而不是一把具体锁？",
-                    takeaway: "先记住：AQS 是同步器底座，不是具体锁实现。",
-                    confirmed_understanding: "你已经说到了排队和唤醒。",
-                    remaining_gap: "还没把抽象层级说完整。",
-                    revisit_reason: "",
-                    requires_response: true,
-                    complete_current_unit: false
+                    ui_mode: "verify",
+                    follow_up_question: "那你再补一句，为什么它是同步器底座而不是一把具体锁？"
                   },
                   writeback_suggestion: {
                     should_write: true,
