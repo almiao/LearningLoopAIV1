@@ -15,14 +15,27 @@ Requirements:
 - npm
 - Python 3.11+
 
-Install:
+The start script bootstraps missing frontend and Python dependencies automatically on first run.
+If you prefer to install them manually:
 
 ```bash
 npm install --prefix frontend
-python3 -m pip install --user -r ai-service/requirements.txt
+python -m pip install -r ai-service/requirements.txt
 ```
 
 Start all services from the repository root:
+
+```bash
+npm start
+```
+
+Windows PowerShell:
+
+```powershell
+./start-services.ps1
+```
+
+Unix shell:
 
 ```bash
 bash start-services.sh
@@ -43,7 +56,13 @@ Logs:
 Stop services:
 
 ```bash
-bash stop-services.sh
+npm run stop
+```
+
+Windows PowerShell:
+
+```powershell
+./stop-services.ps1
 ```
 
 ## Common commands

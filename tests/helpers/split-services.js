@@ -1,4 +1,14 @@
 import { spawn } from "node:child_process";
+import {
+  loadRuntimeEnv,
+  resolveNodeRuntime,
+  resolvePythonCommand,
+  rootDir
+} from "../../scripts/service-runtime.mjs";
+
+const runtimeEnv = loadRuntimeEnv();
+const nodeRuntime = resolveNodeRuntime(runtimeEnv);
+const pythonRuntime = resolvePythonCommand(runtimeEnv);
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -57,21 +67,21 @@ export async function withSplitServices(t, fn, { aiPort, bffPort } = {}) {
   const resolvedBffPort = bffPort || (14000 + Math.floor(Math.random() * 1000));
 
   const ai = startProcess(
-    "python3",
-    ["-m", "uvicorn", "app.main:app", "--port", String(resolvedAiPort), "--app-dir", "ai-service"],
+    pythonRuntime.command,
+    [...pythonRuntime.prefixArgs, "-m", "uvicorn", "app.main:app", "--port", String(resolvedAiPort), "--app-dir", "ai-service"],
     {
-      cwd: process.cwd(),
-      env: process.env
+      cwd: rootDir,
+      env: runtimeEnv
     }
   );
 
   const bff = startProcess(
-    "node",
+    nodeRuntime.command,
     ["bff/src/server.js"],
     {
-      cwd: process.cwd(),
+      cwd: rootDir,
       env: {
-        ...process.env,
+        ...runtimeEnv,
         PORT: String(resolvedBffPort),
         AI_SERVICE_URL: `http://127.0.0.1:${resolvedAiPort}`
       }

@@ -1,18 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 test("root package scripts default to split entrypoints without legacy aliases", async () => {
+  const testDir = path.dirname(fileURLToPath(import.meta.url));
   const pkg = JSON.parse(
-    await readFile("/Users/lee/IdeaProjects/LearningLoopAIV1/package.json", "utf8")
+    await readFile(path.resolve(testDir, "../../package.json"), "utf8")
   );
 
-  assert.equal(pkg.scripts.start, "bash start-services.sh");
-  assert.equal(pkg.scripts.dev, "bash start-services.sh");
-  assert.match(pkg.scripts.build, /bff\/src\/server\.js/);
-  assert.match(pkg.scripts.build, /frontend/);
-  assert.match(pkg.scripts.test, /split-services\.spec\.js/);
-  assert.match(pkg.scripts.test, /parity-flow\.test\.js/);
+  assert.equal(pkg.scripts.start, "node scripts/start-services.mjs");
+  assert.equal(pkg.scripts.dev, "node scripts/start-services.mjs");
+  assert.equal(pkg.scripts.stop, "node scripts/stop-services.mjs");
+  assert.equal(pkg.scripts.build, "node scripts/build-project.mjs");
+  assert.equal(pkg.scripts.test, "node scripts/test-project.mjs");
   assert.equal("legacy:start" in pkg.scripts, false);
   assert.equal("legacy:dev" in pkg.scripts, false);
   assert.equal("legacy:build" in pkg.scripts, false);

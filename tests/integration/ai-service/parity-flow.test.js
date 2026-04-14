@@ -4,11 +4,19 @@ import { spawn } from "node:child_process";
 import { createAppService } from "../../../src/app-service.js";
 import { createHeuristicTutorIntelligence } from "../../../src/tutor/tutor-intelligence.js";
 import {
+  loadRuntimeEnv,
+  resolvePythonCommand,
+  rootDir
+} from "../../../scripts/service-runtime.mjs";
+import {
   createBaselinePackDecomposition,
   createBaselinePackSource,
   getBaselinePackById
 } from "../../../src/baseline/baseline-packs.js";
 import { createMemoryProfile } from "../../../src/tutor/capability-memory.js";
+
+const runtimeEnv = loadRuntimeEnv();
+const pythonRuntime = resolvePythonCommand(runtimeEnv);
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -55,9 +63,9 @@ test("python ai-service preserves core session semantics for teach, advance, and
   const aiPort = 18100;
   const aiBaseUrl = `http://127.0.0.1:${aiPort}`;
   const ai = startProcess(
-    "python3",
-    ["-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
-    { cwd: "/Users/lee/IdeaProjects/LearningLoopAIV1" }
+    pythonRuntime.command,
+    [...pythonRuntime.prefixArgs, "-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
+    { cwd: rootDir, env: runtimeEnv }
   );
 
   t.after(() => {
@@ -149,9 +157,9 @@ test("python ai-service matches explain-first and switch-suppression semantics o
   const aiPort = 18101;
   const aiBaseUrl = `http://127.0.0.1:${aiPort}`;
   const ai = startProcess(
-    "python3",
-    ["-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
-    { cwd: "/Users/lee/IdeaProjects/LearningLoopAIV1" }
+    pythonRuntime.command,
+    [...pythonRuntime.prefixArgs, "-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
+    { cwd: rootDir, env: runtimeEnv }
   );
 
   t.after(() => {
@@ -230,9 +238,9 @@ test("python ai-service honors explicit structured intent for control actions", 
   const aiPort = 18102;
   const aiBaseUrl = `http://127.0.0.1:${aiPort}`;
   const ai = startProcess(
-    "python3",
-    ["-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
-    { cwd: "/Users/lee/IdeaProjects/LearningLoopAIV1" }
+    pythonRuntime.command,
+    [...pythonRuntime.prefixArgs, "-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
+    { cwd: rootDir, env: runtimeEnv }
   );
 
   t.after(() => {
@@ -277,9 +285,9 @@ test("python ai-service does not auto-revisit skipped concepts after a scoped do
   const aiPort = 18103;
   const aiBaseUrl = `http://127.0.0.1:${aiPort}`;
   const ai = startProcess(
-    "python3",
-    ["-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
-    { cwd: "/Users/lee/IdeaProjects/LearningLoopAIV1" }
+    pythonRuntime.command,
+    [...pythonRuntime.prefixArgs, "-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
+    { cwd: rootDir, env: runtimeEnv }
   );
 
   t.after(() => {

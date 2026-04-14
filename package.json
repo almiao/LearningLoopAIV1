@@ -4,16 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "bash start-services.sh",
-    "dev": "bash start-services.sh",
-    "build": "node --check bff/src/server.js && python3 -m py_compile ai-service/app/main.py ai-service/app/core/config.py ai-service/app/core/tracing.py ai-service/app/observability/events.py ai-service/app/observability/logger.py ai-service/app/infra/llm/snapshot.py ai-service/app/infra/llm/client.py ai-service/app/domain/interview/parsers.py ai-service/app/domain/interview/validators.py ai-service/app/engine/control_intents.py ai-service/app/engine/tutor_policy.py ai-service/app/engine/context_packet.py ai-service/app/engine/java_guide_source_reader.py ai-service/app/engine/turn_envelope.py ai-service/app/engine/tutor_intelligence.py ai-service/app/engine/session_engine.py && npm run build --prefix frontend && bash -n start-dev.sh",
-    "test": "node --test tests/e2e/split-services.spec.js tests/integration/ai-service/parity-flow.test.js tests/integration/ai-service/observability-flow.test.js tests/integration/ai-service/automated-eval-module.test.js tests/integration/user/profile-flow.test.js tests/unit/split-entrypoints.test.js",
+    "start": "node scripts/start-services.mjs",
+    "dev": "node scripts/start-services.mjs",
+    "stop": "node scripts/stop-services.mjs",
+    "build": "node scripts/build-project.mjs",
+    "test": "node scripts/test-project.mjs",
     "eval:auto": "node scripts/run-automated-eval.mjs",
     "eval:sessions": "node scripts/generate-session-dossiers.mjs",
     "validate:cases": "node scripts/validate-case-library.mjs",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev:bff": "npm run dev --prefix bff",
-    "dev:ai": "python3 -m uvicorn app.main:app --reload --port 8000 --app-dir ai-service",
+    "dev:ai": "node scripts/run-python.mjs -m uvicorn app.main:app --reload --port 8000 --app-dir ai-service",
     "smoke:split": "node scripts/smoke-split-services.mjs"
   }
 }
