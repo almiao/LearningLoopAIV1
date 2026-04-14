@@ -346,6 +346,100 @@ function buildDomainMap(session) {
   }));
 }
 
+const pathSegmentLabels = {
+  "high-availability": "高可用",
+  "high-performance": "高性能",
+  "distributed-system": "分布式",
+  "database": "数据库",
+  "mysql": "MySQL",
+  "redis": "Redis",
+  "java": "Java",
+  "concurrent": "并发",
+  "jvm": "JVM",
+  "system-design": "系统设计",
+  "framework": "框架",
+  "spring": "Spring",
+  "cs-basics": "计算机基础",
+  "network": "网络",
+  "message-queue": "消息队列",
+};
+
+function formatPathSegment(segment = "") {
+  return pathSegmentLabels[segment] || String(segment || "")
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function buildKnowledgeTrail({ activeDocPath, knowledgeDoc, currentConcept }) {
+  const relativePath = String(activeDocPath || "").replace(/^docs\//, "");
+  if (!relativePath) {
+    return [];
+  }
+
+  const segments = relativePath.split("/");
+  const folderLabels = segments
+    .slice(0, -1)
+    .map((segment) => formatPathSegment(segment))
+    .filter(Boolean);
+  const docTitle = knowledgeDoc?.title || currentConcept?.javaGuideSources?.[0]?.title || "";
+  const conceptTitle = currentConcept?.title || "";
+  const trail = [...folderLabels, docTitle];
+
+  if (conceptTitle && conceptTitle !== docTitle) {
+    trail.push(conceptTitle);
+  }
+  return trail.filter(Boolean);
+}
+
+function scoreStateForProgress(state = "") {
+  if (state === "solid") {
+    return 100;
+  }
+  if (state === "partial") {
+    return 55;
+  }
+  if (state === "weak") {
+    return 15;
+  }
+  return 0;
+}
+
+function findBestHeadingAnchor(concept, knowledgeDoc) {
+  if (!concept || !knowledgeDoc?.headings?.length) {
+    return null;
+  }
+
+  const title = String(concept.title || "").toLowerCase();
+  const summary = String(concept.summary || concept.excerpt || "").toLowerCase();
+  const keywords = (concept.keywords || []).map((item) => String(item || "").toLowerCase()).filter(Boolean);
+  const anchors = (concept.sourceAnchors || []).map((item) => String(item || "").toLowerCase()).filter(Boolean);
+
+  let best = null;
+  for (const heading of knowledgeDoc.headings) {
+    const text = String(heading.text || "").toLowerCase();
+    let score = 0;
+
+    if (!text) {
+      continue;
+    }
+    if (title && (title.includes(text) || text.includes(title))) {
+      score += 12;
+    }
+    if (summary && (summary.includes(text) || text.includes(summary))) {
+      score += 8;
+    }
+    score += keywords.filter((keyword) => keyword && text.includes(keyword)).length * 2;
+    score += anchors.filter((anchor) => anchor && anchor.includes(text)).length * 2;
+    score += heading.level === 2 ? 1.5 : 0.5;
+
+    if (!best || score > best.score) {
+      best = { ...heading, score };
+    }
+  }
+
+  return best?.score > 0 ? best : null;
+}
+
 export function LearnWorkspace() {
   const searchParams = useSearchParams();
   const autostartRef = useRef(false);
@@ -366,6 +460,8 @@ export function LearnWorkspace() {
   const [knowledgeDoc, setKnowledgeDoc] = useState(null);
   const [docLoading, setDocLoading] = useState(false);
   const [docError, setDocError] = useState("");
+  const [workspaceMode, setWorkspaceMode] = useState("reading");
+  const [trainingUnlocked, setTrainingUnlocked] = useState(false);
   const deferredSession = useDeferredValue(session);
   const visibleView = buildVisibleSessionView(deferredSession || {});
   const chatTimeline = visibleView.chatTimeline || [];
@@ -403,6 +499,39 @@ export function LearnWorkspace() {
   const activeDocPath = searchParams.get("doc") || currentSource?.path || "";
   const autostart = searchParams.get("autostart") === "1";
   const desiredConceptId = searchParams.get("concept") || "";
+  const knowledgeTrail = useMemo(
+    () => buildKnowledgeTrail({ activeDocPath, knowledgeDoc, currentConcept }),
+    [activeDocPath, knowledgeDoc, currentConcept]
+  );
+  const docConcepts = useMemo(
+    () => (session?.concepts || []).filter((concept) =>
+      (concept.javaGuideSources || []).some((source) => source.path === activeDocPath)
+    ),
+    [session, activeDocPath]
+  );
+  const docQuestionCount = docConcepts.length;
+  const docQuestionIndex = docQuestionCount
+    ? Math.max(1, docConcepts.findIndex((concept) => concept.id === currentConcept?.id) + 1 || 1)
+    : 0;
+  const docCompletedCount = useMemo(
+    () => docConcepts.filter((concept) => session?.conceptStates?.[concept.id]?.completed).length,
+    [docConcepts, session]
+  );
+  const docProgressPercent = docQuestionCount
+    ? Math.round((docCompletedCount / docQuestionCount) * 100)
+    : Math.round(
+        average(
+          docConcepts.map((concept) => scoreStateForProgress(session?.conceptStates?.[concept.id]?.judge?.state))
+        )
+      );
+  const conceptAnchorMap = useMemo(() => (
+    new Map(
+      docConcepts
+        .map((concept) => [concept.id, findBestHeadingAnchor(concept, knowledgeDoc)])
+        .filter((entry) => entry[1])
+    )
+  ), [docConcepts, knowledgeDoc]);
+  const currentDocAnchor = currentConcept ? conceptAnchorMap.get(currentConcept.id) || null : null;
 
   function scrollQaToBottom(behavior = "auto") {
     if (!qaScrollRef.current) {
@@ -461,6 +590,11 @@ export function LearnWorkspace() {
   }, [outlineOpen]);
 
   useEffect(() => {
+    setWorkspaceMode("reading");
+    setTrainingUnlocked(false);
+  }, [activeDocPath]);
+
+  useEffect(() => {
     if (!activeDocPath) {
       setKnowledgeDoc(null);
       setDocError("");
@@ -513,6 +647,16 @@ export function LearnWorkspace() {
     return () => window.cancelAnimationFrame(frame);
   }, [knowledgeDoc?.path, knowledgeDoc?.markdown]);
 
+  useEffect(() => {
+    if (workspaceMode !== "training" || !currentDocAnchor?.id) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(currentDocAnchor.id)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [workspaceMode, currentDocAnchor?.id, currentConcept?.id, session?.currentProbe]);
+
   async function refreshProfile() {
     if (!profile?.user?.id) {
       return;
@@ -521,9 +665,16 @@ export function LearnWorkspace() {
     setProfile(data);
   }
 
+  function scrollToDocAnchor(anchorId) {
+    if (!anchorId) {
+      return;
+    }
+    document.getElementById(anchorId)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
   async function startSession() {
     if (!profile?.user?.id || !targetBaselineId) {
-      return;
+      return null;
     }
     try {
       setIsStarting(true);
@@ -536,11 +687,25 @@ export function LearnWorkspace() {
       setSession(nextSession);
       setStoredTargetBaselineId(targetBaselineId);
       await refreshProfile();
+      return nextSession;
     } catch (nextError) {
       setError(nextError.message);
+      return null;
     } finally {
       setIsStarting(false);
     }
+  }
+
+  async function unlockTraining() {
+    let nextSession = session;
+    if (!nextSession) {
+      nextSession = await startSession();
+    }
+    if (!nextSession) {
+      return;
+    }
+    setTrainingUnlocked(true);
+    setWorkspaceMode("training");
   }
 
   async function submitAnswer({ nextAnswer = answer, intent = "" } = {}) {
@@ -654,18 +819,40 @@ export function LearnWorkspace() {
     <main className="learn-shell">
       {error ? <section className="feedback-banner error-banner narrow-banner">{error}</section> : null}
 
-      <section className="study-main">
+      <section className={`study-main study-mode-${workspaceMode}`}>
         <section className="reader-panel">
           <header className="reader-header">
             <div className="reader-header-main">
               <Link className="back-link header-back-link" href="/">‹</Link>
               <div className="reader-heading">
-                <h1>{knowledgeDoc?.title || currentSource?.title || selectedBaseline?.title || "开始学习"}</h1>
-                <p>{activeDocPath ? `来自 JavaGuide / ${activeDocPath.replace(/^docs\//, "")}` : "进入学习后，这里会直接展示当前关联的原始文档。"}
+                <h1>{knowledgeTrail.length ? knowledgeTrail.join(" › ") : (knowledgeDoc?.title || currentSource?.title || selectedBaseline?.title || "开始学习")}</h1>
+                <p>
+                  {currentDocAnchor?.text
+                    ? `当前问题锚定到：${currentDocAnchor.text}`
+                    : activeDocPath
+                      ? `文档：${activeDocPath.replace(/^docs\//, "")}`
+                      : "进入学习后，这里会直接展示当前关联的原始文档。"}
                 </p>
               </div>
             </div>
             <div className="reader-tools">
+              <div className="workspace-tabs">
+                <button
+                  type="button"
+                  className={workspaceMode === "reading" ? "workspace-tab active" : "workspace-tab"}
+                  onClick={() => setWorkspaceMode("reading")}
+                >
+                  阅读
+                </button>
+                <button
+                  type="button"
+                  className={workspaceMode === "training" ? "workspace-tab active" : "workspace-tab locked"}
+                  onClick={() => trainingUnlocked && setWorkspaceMode("training")}
+                  disabled={!trainingUnlocked}
+                >
+                  训练
+                </button>
+              </div>
               <button
                 type="button"
                 className={outlineOpen ? "reader-tool-button active" : "reader-tool-button"}
@@ -758,27 +945,68 @@ export function LearnWorkspace() {
           </div>
         </section>
 
-        <aside className="qa-panel">
+        <aside className={`qa-panel qa-panel-${workspaceMode}`}>
           <header className="qa-header">
-            <strong>AI 学习问答</strong>
+            <div className="qa-title-group">
+              <strong>{workspaceMode === "training" ? "训练模式" : "阅读模式"}</strong>
+              <span className="qa-subtitle">
+                {workspaceMode === "training"
+                  ? `本文档共设计 ${docQuestionCount || 0} 道训练题，当前第 ${docQuestionIndex} 题。`
+                  : "现在可以直接提问、追问原文细节，读完后再进入训练。"}
+              </span>
+            </div>
             <span className="qa-header-spacer" />
             <div className="qa-header-controls">
               <select className="qa-header-select" value={burdenSignal} onChange={(event) => setBurdenSignal(event.target.value)}>
                 <option value="normal">正常负荷</option>
                 <option value="high">高负荷</option>
               </select>
-              <span className="progress-pill">掌握度 {session?.targetMatch?.percentage || 0}%</span>
-              <span className="memory-status-inline">记忆模式已开启</span>
+              <div className="progress-cluster">
+                <span className="progress-label">训练进度 {docCompletedCount}/{docQuestionCount || 0}</span>
+                <div className="training-progress-track" aria-hidden="true">
+                  <div className="training-progress-fill" style={{ width: `${Math.max(0, Math.min(100, docProgressPercent || 0))}%` }} />
+                </div>
+              </div>
             </div>
           </header>
 
           <div className="qa-scroll" ref={qaScrollRef}>
             <section className="chat-stack">
+              {!trainingUnlocked ? (
+                <article className="mode-lock-card">
+                  <div className="mode-lock-kicker">训练尚未解锁</div>
+                  <h3>先把文档读完，再进入题目训练</h3>
+                  <p>右侧现在可以随时问我原文里的定义、机制、边界和例子；确认读完后，再切到训练模式集中做题。</p>
+                  <button type="button" className="primary-pill lock-cta" disabled={isStarting} onClick={() => unlockTraining()}>
+                    {isStarting ? "正在准备训练..." : "我已阅读完成，开始训练"}
+                  </button>
+                </article>
+              ) : workspaceMode === "training" ? (
+                <article className="training-hero-card">
+                  <div className="training-hero-title">训练已开启</div>
+                  <p>本文档共设计 {docQuestionCount || 0} 道训练题。你可以先直接回答，也可以点“查看解析”先拿到引导，再继续作答。</p>
+                  {currentDocAnchor?.text ? (
+                    <button type="button" className="anchor-pill" onClick={() => scrollToDocAnchor(currentDocAnchor.id)}>
+                      对应文档位置：{currentDocAnchor.text}
+                    </button>
+                  ) : null}
+                </article>
+              ) : null}
+
               {chatTimeline.map((entry) => (
                 entry.type === "event" ? (
                   <div className="chat-event-row" key={entry.id}>{entry.label}</div>
                 ) : (
                   <article className={entry.role === "assistant" ? "message-card assistant" : "message-card learner"} key={entry.id}>
+                    {entry.role === "assistant" && conceptAnchorMap.get(entry.conceptId) ? (
+                      <button
+                        type="button"
+                        className="message-anchor"
+                        onClick={() => scrollToDocAnchor(conceptAnchorMap.get(entry.conceptId).id)}
+                      >
+                        锚定文档：{conceptAnchorMap.get(entry.conceptId).text}
+                      </button>
+                    ) : null}
                     <div className={`message-body ${entry.role === "assistant" ? "markdown-content" : ""}`}>
                       {entry.role === "assistant"
                         ? renderMarkdownContent(
@@ -799,6 +1027,11 @@ export function LearnWorkspace() {
                     <div className="message-body"><p>{streamingTurn.answer}</p></div>
                   </article>
                   <article className="message-card assistant">
+                    {currentDocAnchor?.text ? (
+                      <button type="button" className="message-anchor" onClick={() => scrollToDocAnchor(currentDocAnchor.id)}>
+                        锚定文档：{currentDocAnchor.text}
+                      </button>
+                    ) : null}
                     <div className="message-body markdown-content">
                       {renderMarkdownContent(
                         splitTextBlocks(streamingTurn.assistantText).length
@@ -824,16 +1057,13 @@ export function LearnWorkspace() {
               rows="1"
               value={answer}
               onChange={(event) => setAnswer(event.target.value)}
-              placeholder={session ? "写下你的理解、例子或反问。" : "开始学习后再输入回答。"}
+              placeholder={session ? "直接提问、回答、追问边界，或者引用文档中的一段内容。" : "开始学习后再输入回答。"}
             />
 
             <div className="question-input-row">
               <div className="suggested-actions">
-                <button type="button" className="secondary-pill" disabled={!session || isAnswering} onClick={() => submitAnswer({ nextAnswer: "讲一下", intent: "teach" })}>
-                  讲一下
-                </button>
-                <button type="button" className="secondary-pill" disabled={!session || isAnswering} onClick={() => submitAnswer({ nextAnswer: "下一题", intent: "advance" })}>
-                  下一题
+                <button type="button" className="secondary-pill" disabled={!session || isAnswering} onClick={() => submitAnswer({ nextAnswer: "查看解析", intent: "teach" })}>
+                  查看解析
                 </button>
               </div>
               <button type="submit" className="send-button" disabled={!session || isAnswering || !answer.trim()}>

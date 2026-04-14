@@ -45,6 +45,7 @@ function buildAssistantEntry(turn, index) {
     id: createEntryId(turn, index),
     type: "message",
     role: "assistant",
+    conceptId: turn.conceptId || "",
     conceptTitle: turn.conceptTitle || "",
     body: bodyParts[0] || "",
     bodyParts,
@@ -71,6 +72,7 @@ export function buildChatTimeline(turns = [], { limit = 24 } = {}) {
       timeline.push({
         id: createEntryId(turn, index),
         type: "event",
+        conceptId: turn.conceptId || "",
         label: buildWorkspaceLabel(turn),
         conceptTitle: turn.conceptTitle || "",
         timestamp: turn.timestamp || index
@@ -83,6 +85,7 @@ export function buildChatTimeline(turns = [], { limit = 24 } = {}) {
         id: createEntryId(turn, index),
         type: "message",
         role: "user",
+        conceptId: turn.conceptId || "",
         conceptTitle: turn.conceptTitle || "",
         body: turn.content || "",
         intentLabel: buildUserIntentLabel(turn),
