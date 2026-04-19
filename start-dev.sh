@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-exec bash "$(cd "$(dirname "$0")" && pwd)/start-services.sh"
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec node "$ROOT_DIR/scripts/start-services.mjs" "$@"

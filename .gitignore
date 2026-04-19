@@ -1,6 +1,7 @@
 
 
 .omx/
+.tools/
 .codex/
 .env
 .env.local

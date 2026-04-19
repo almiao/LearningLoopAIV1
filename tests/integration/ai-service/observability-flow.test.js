@@ -4,6 +4,16 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import {
+  loadRuntimeEnv,
+  resolveNodeRuntime,
+  resolvePythonCommand,
+  rootDir
+} from "../../../scripts/service-runtime.mjs";
+
+const runtimeEnv = loadRuntimeEnv();
+const nodeRuntime = resolveNodeRuntime(runtimeEnv);
+const pythonRuntime = resolvePythonCommand(runtimeEnv);
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -71,7 +81,7 @@ async function postJson(url, payload) {
 }
 
 test("ai-service observability flow emits traceable logs and snapshot bundles", async (t) => {
-  const repoRoot = "/Users/lee/IdeaProjects/LearningLoopAIV1";
+  const repoRoot = rootDir;
   const snapshotRoot = path.join(repoRoot, ".omx/tmp-test-snapshots");
   fs.rmSync(snapshotRoot, { recursive: true, force: true });
 
@@ -147,12 +157,12 @@ test("ai-service observability flow emits traceable logs and snapshot bundles", 
   const bffPort = 14210;
 
   const ai = startProcess(
-    "python3",
-    ["-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
+    pythonRuntime.command,
+    [...pythonRuntime.prefixArgs, "-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
     {
       cwd: repoRoot,
       env: {
-        ...process.env,
+        ...runtimeEnv,
         APP_ENV: "test",
         LLAI_LLM_ENABLED: "true",
         LLAI_LLM_PROVIDER: "DEEPSEEK",
@@ -165,12 +175,12 @@ test("ai-service observability flow emits traceable logs and snapshot bundles", 
   );
 
   const bff = startProcess(
-    "node",
+    nodeRuntime.command,
     ["bff/src/server.js"],
     {
       cwd: repoRoot,
       env: {
-        ...process.env,
+        ...runtimeEnv,
         PORT: String(bffPort),
         AI_SERVICE_URL: `http://127.0.0.1:${aiPort}`
       }
@@ -259,7 +269,7 @@ test("ai-service observability flow emits traceable logs and snapshot bundles", 
 });
 
 test("ai-service normalizes provider aliases for state and signal before orchestration", async (t) => {
-  const repoRoot = "/Users/lee/IdeaProjects/LearningLoopAIV1";
+  const repoRoot = rootDir;
   const mockProvider = http.createServer((request, response) => {
     if (request.method === "POST" && request.url === "/chat/completions") {
       response.writeHead(200, { "content-type": "application/json" });
@@ -318,12 +328,12 @@ test("ai-service normalizes provider aliases for state and signal before orchest
   const bffPort = 14211;
 
   const ai = startProcess(
-    "python3",
-    ["-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
+    pythonRuntime.command,
+    [...pythonRuntime.prefixArgs, "-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
     {
       cwd: repoRoot,
       env: {
-        ...process.env,
+        ...runtimeEnv,
         APP_ENV: "test",
         LLAI_LLM_ENABLED: "true",
         LLAI_LLM_PROVIDER: "DEEPSEEK",
@@ -335,12 +345,12 @@ test("ai-service normalizes provider aliases for state and signal before orchest
   );
 
   const bff = startProcess(
-    "node",
+    nodeRuntime.command,
     ["bff/src/server.js"],
     {
       cwd: repoRoot,
       env: {
-        ...process.env,
+        ...runtimeEnv,
         PORT: String(bffPort),
         AI_SERVICE_URL: `http://127.0.0.1:${aiPort}`
       }
