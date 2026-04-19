@@ -890,6 +890,17 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
         if not reply_text:
             raise RuntimeError("AI reply_stream returned empty text.")
         tutor_move = turn_envelope_to_tutor_move(decision_envelope, concept, reply_text=reply_text)
+        if (
+            session.get("interactionPreference") == "explain-first"
+            and tutor_move["signal"] != "positive"
+            and tutor_move["moveType"] in {"check", "repair"}
+        ):
+            tutor_move["moveType"] = "teach"
+            tutor_move["nextMove"] = {
+                **(tutor_move.get("nextMove") or {}),
+                "ui_mode": "teach",
+                "follow_up_question": get_move_follow_up_question(tutor_move) or concept.get("checkQuestion") or concept.get("retryQuestion") or concept.get("diagnosticQuestion") or "",
+            }
         tutor_move["runtimeMap"] = merge_runtime_maps(session["runtimeMaps"].get(concept["id"]), tutor_move["runtimeMap"], concept["id"])
         session["runtimeMaps"][concept["id"]] = tutor_move["runtimeMap"]
 

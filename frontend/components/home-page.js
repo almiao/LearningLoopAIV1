@@ -273,6 +273,9 @@ export function HomePage() {
         </div>
         {profile ? (
           <div className="topbar-actions">
+            <Link className="secondary-pill" href="/interview-assist">
+              真实面试辅助
+            </Link>
             <Link className="secondary-pill profile-entry-pill" href="/profile">
               <span className="status-dot" />
               <span>{profile.user.handle}</span>
@@ -291,7 +294,10 @@ export function HomePage() {
             </button>
           </div>
         ) : (
-          <a className="primary-pill" href="#login-panel">开始使用</a>
+          <div className="topbar-actions">
+            <Link className="secondary-pill" href="/interview-assist">真实面试辅助</Link>
+            <a className="primary-pill" href="#login-panel">开始使用</a>
+          </div>
         )}
       </section>
 
@@ -362,7 +368,7 @@ export function HomePage() {
           <div className="learning-header-copy">
             <span className="learning-header-kicker">Java 面试 · JavaGuide</span>
             <h2>{activeTarget?.title || heroTrack.title}</h2>
-            <p>{activeTarget ? "下面是你当前的学习路径。主入口在上方推荐区，模块卡片是次级入口。" : heroTrack.description}</p>
+            <p>{activeTarget ? "从推荐入口继续学习，模块卡片用于切换专题。" : heroTrack.description}</p>
           </div>
           <div className="learning-header-side">
             <div className="progress-summary">

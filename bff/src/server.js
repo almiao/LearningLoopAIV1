@@ -9,6 +9,7 @@ import {
   readJavaGuideAsset,
   readJavaGuideDocument
 } from "../../src/knowledge/java-guide-doc-service.js";
+import { buildReminderCandidate } from "../../src/superapp/reminder-candidate.js";
 import { createMemoryProfileStore } from "../../src/tutor/memory-profile-store.js";
 import { createUserProfileStore } from "../../src/user/user-profile-store.js";
 import { buildUserProfileView } from "../../src/user/profile-aggregator.js";
@@ -17,6 +18,8 @@ const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
 const port = Number(process.env.PORT || 4000);
 const memoryProfileStore = createMemoryProfileStore();
 const userProfileStore = createUserProfileStore();
+const superappDemoHandle = process.env.SUPERAPP_DEMO_HANDLE || "learningloop_superapp_demo";
+const superappDemoPin = process.env.SUPERAPP_DEMO_PIN || "1234";
 
 function withCorsHeaders(response, statusCode, extraHeaders = {}) {
   response.writeHead(statusCode, {
@@ -176,6 +179,33 @@ async function handleAnswer(body) {
   };
 }
 
+async function handleReminderCandidate(userId) {
+  if (!userId) {
+    throw new Error("userId is required.");
+  }
+  const user = await getUserProfile(userId);
+  const memoryProfile = await getMemoryProfile(user.memoryProfileId);
+  const candidate = buildReminderCandidate({ user, memoryProfile });
+  if (!candidate) {
+    throw new Error("No reminder candidate available.");
+  }
+  return candidate;
+}
+
+async function ensureSuperappDemoUser() {
+  const { user, created } = await userProfileStore.loginOrCreate({
+    handle: superappDemoHandle,
+    pin: superappDemoPin,
+  });
+  const profile = await buildProfilePayload(user);
+  return {
+    userId: user.id,
+    handle: user.handle,
+    created,
+    profile,
+  };
+}
+
 function parseSseEvent(rawEvent) {
   const lines = String(rawEvent || "").split(/\r?\n/);
   let event = "message";
@@ -312,6 +342,23 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/baselines") {
       sendJson(response, 200, { baselines: listBaselinePacks() });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname.startsWith("/api/superapp/reminder-candidate/")) {
+      const userId = url.pathname.split("/").at(-1);
+      sendJson(response, 200, await handleReminderCandidate(userId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/superapp/demo-user") {
+      sendJson(response, 200, await ensureSuperappDemoUser());
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/superapp/reminder-outcome") {
+      const body = await readJsonBody(request);
+      sendJson(response, 200, { ok: true, recordedAt: new Date().toISOString(), ...body });
       return;
     }
 

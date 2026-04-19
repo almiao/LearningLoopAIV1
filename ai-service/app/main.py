@@ -27,6 +27,12 @@ from app.engine.session_engine import (
     SESSIONS,
 )
 from app.infra.llm.snapshot import SnapshotStore
+from app.interview_assist import (
+    ack_first_screen_rendered,
+    create_assist_session,
+    describe_interview_assist,
+    stream_assist_answer,
+)
 from app.observability import events
 from app.observability.logger import logger
 from app.engine.tutor_intelligence import describe_tutor_intelligence
@@ -95,6 +101,42 @@ class FocusConceptRequest(BaseModel):
     conceptId: str
 
 
+class SuperappTaskRequest(BaseModel):
+    userId: str = ""
+    task: Dict[str, Any]
+
+
+class SuperappContinueRequest(BaseModel):
+    conversationId: str
+    userId: str = ""
+    questionId: str = ""
+    question: str = ""
+    answer: str
+
+
+class SuperappKnowledgeQuestionRequest(BaseModel):
+    userId: str = ""
+    question: str
+    context: str = ""
+
+
+class InterviewAssistSessionRequest(BaseModel):
+    targetRole: str = "java-backend"
+    sessionMode: str = "realtime_interview_assist"
+
+
+class InterviewAssistFirstScreenRequest(BaseModel):
+    sessionId: str
+    questionText: str
+    questionEndedAt: Optional[int] = None
+
+
+class InterviewAssistRenderedRequest(BaseModel):
+    sessionId: str
+    turnId: str
+    renderedAt: Optional[int] = None
+
+
 app = FastAPI(title="Learning Loop AI Service")
 snapshot_store = SnapshotStore()
 
@@ -124,7 +166,137 @@ async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONRespons
 
 @app.get("/api/health")
 def health() -> Dict[str, Any]:
-    return {"ok": True, "tutorEngine": describe_tutor_intelligence()}
+    return {
+        "ok": True,
+        "tutorEngine": describe_tutor_intelligence(),
+        "interviewAssist": describe_interview_assist(),
+    }
+
+
+def _normalize_superapp_background(task: Dict[str, Any]) -> str:
+    return str(task.get("reason") or task.get("materialContext") or task.get("conceptSummary") or "").strip()
+
+
+def _normalize_superapp_question(task: Dict[str, Any]) -> str:
+    question = str(task.get("diagnosticQuestion") or "").strip()
+    if question:
+        return question
+    title = str(task.get("conceptTitle") or task.get("title") or "当前知识点").strip()
+    return f"你先用自己的话讲一下：{title} 的核心作用是什么？"
+
+
+@app.post("/api/superapp/generate-first-question")
+def generate_superapp_first_question(payload: SuperappTaskRequest) -> Dict[str, Any]:
+    task = payload.task or {}
+    return {
+        "questionId": f"{task.get('taskId', 'task')}:q1",
+        "content": _normalize_superapp_question(task),
+        "background": _normalize_superapp_background(task),
+    }
+
+
+@app.post("/api/superapp/continue-private-chat")
+def continue_superapp_private_chat(payload: SuperappContinueRequest) -> Dict[str, Any]:
+    answer = str(payload.answer or "").strip()
+    if len(answer) < 12:
+        return {
+            "resolution": "continue",
+            "mode": "micro_teach",
+            "content": "这句还太短，我先帮你补一个骨架：先说它解决什么问题，再说它靠什么机制做到。你按这个结构重讲一遍。",
+            "loopState": "first_reply_processed",
+        }
+    if len(answer) < 28:
+        return {
+            "resolution": "continue",
+            "mode": "gap_correction",
+            "content": "方向基本对，但还缺一个关键点。你再补一句：这个机制为什么能把用户真正拉回到学习动作，而不只是点开提醒？",
+            "loopState": "first_reply_processed",
+        }
+    return {
+        "resolution": "continue",
+        "mode": "acknowledge_and_probe",
+        "content": "这版已经抓到主线了。再往前推进一步：如果只能保留一个最小闭环动作，你会怎么解释“点击后必须直接看到一条可回复的问题”这个约束？",
+        "loopState": "first_loop_completed",
+    }
+
+
+@app.post("/api/superapp/answer-knowledge-question")
+def answer_superapp_knowledge_question(payload: SuperappKnowledgeQuestionRequest) -> Dict[str, Any]:
+    question = str(payload.question or "").strip()
+    context = str(payload.context or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="question is required.")
+
+    context_line = f"结合这段材料背景：{context}\n" if context else ""
+    return {
+        "mode": "knowledge_qa",
+        "content": (
+            f"{context_line}"
+            f"我先按最小学习闭环回答这个问题：{question}\n\n"
+            "核心思路是先抓定义，再讲机制，最后补一个边界。"
+            "如果你愿意，我们下一轮可以把这个点压成一道快答题。"
+        ),
+        "suggestedFollowUp": "把这个点出成一道快答题",
+    }
+
+
+@app.post("/api/interview-assist/session")
+def interview_assist_session(payload: InterviewAssistSessionRequest) -> Dict[str, Any]:
+    return create_assist_session(target_role=payload.targetRole)
+
+
+@app.post("/api/interview-assist/answer-stream")
+def interview_assist_answer_stream(payload: InterviewAssistFirstScreenRequest) -> StreamingResponse:
+    set_session_context(session_id=payload.sessionId, turn=0)
+
+    def generate():
+        event_queue: queue.Queue[tuple[str, Dict[str, Any]]] = queue.Queue()
+
+        def emit(event: str, data: Dict[str, Any]) -> None:
+            event_queue.put((event, data))
+
+        def worker():
+            try:
+                stream_assist_answer(
+                    session_id=payload.sessionId,
+                    question_text=payload.questionText,
+                    question_ended_at=payload.questionEndedAt,
+                    emit=emit,
+                )
+            except KeyError as exc:  # pragma: no cover - streamed back to client
+                event_queue.put(("error", {"error": str(exc)}))
+            except Exception as exc:  # pragma: no cover - streamed back to client
+                event_queue.put(("error", {"error": str(exc) or "Interview assist stream failed."}))
+            finally:
+                event_queue.put(("done", {}))
+
+        threading.Thread(target=worker, daemon=True).start()
+        yield sse_event("reply_status", {"status": "started"})
+
+        while True:
+            event, data = event_queue.get()
+            if event == "done":
+                yield sse_event("done", data)
+                break
+            yield sse_event(event, data)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/interview-assist/first-screen-rendered")
+def interview_assist_first_screen_rendered(payload: InterviewAssistRenderedRequest) -> Dict[str, Any]:
+    return ack_first_screen_rendered(
+        session_id=payload.sessionId,
+        turn_id=payload.turnId,
+        rendered_at=payload.renderedAt,
+    )
 
 
 @app.post("/api/interview/start-target")

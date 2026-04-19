@@ -450,6 +450,13 @@ def normalize_turn_envelope_payload(payload: Dict[str, Any], concept: Dict[str, 
     anchor_assessment = runtime_map.get("anchor_assessment") or {}
     next_move = (payload or {}).get("next_move") or {}
     suggestion = (payload or {}).get("writeback_suggestion") or {}
+    follow_up_question = ensure_string(next_move.get("follow_up_question") or next_move.get("followUpQuestion"))
+    ui_mode = next_move.get("ui_mode") if next_move.get("ui_mode") in {"probe", "teach", "verify", "advance", "revisit", "stop"} else "probe"
+    if ui_mode in {"probe", "teach", "verify"} and not follow_up_question:
+        follow_up_question = ensure_string(
+            concept.get("checkQuestion") or concept.get("retryQuestion") or concept.get("diagnosticQuestion"),
+            f"你先用自己的话讲一下：{concept.get('title', '这个点')} 的关键机制是什么？",
+        )
     return {
         "runtime_map": {
             "anchor_id": ensure_string(runtime_map.get("anchor_id"), concept.get("id", "")),
@@ -469,8 +476,8 @@ def normalize_turn_envelope_payload(payload: Dict[str, Any], concept: Dict[str, 
             "intent": ensure_string(next_move.get("intent"), "先继续收集一点信息，再决定要不要切到讲解。"),
             "reason": ensure_string(next_move.get("reason"), "当前还需要确认用户究竟卡在定义、机制还是边界上。"),
             "expected_gain": next_move.get("expected_gain") if next_move.get("expected_gain") in {"high", "medium", "low", "negligible"} else "medium",
-            "ui_mode": next_move.get("ui_mode") if next_move.get("ui_mode") in {"probe", "teach", "verify", "advance", "revisit", "stop"} else "probe",
-            "follow_up_question": ensure_string(next_move.get("follow_up_question") or next_move.get("followUpQuestion")),
+            "ui_mode": ui_mode,
+            "follow_up_question": follow_up_question,
         },
         "writeback_suggestion": {
             "should_write": suggestion.get("should_write") is not False,
@@ -1035,23 +1042,197 @@ class ProviderTutorIntelligence:
         return normalize_explain_concept_payload(payload, concept)
 
 
+class HeuristicTutorIntelligence:
+    def __init__(self):
+        self.provider = "HEURISTIC"
+        self.model = "heuristic-fallback"
+        self.kind = "heuristic-fallback"
+        self.client = TracedLLMClient()
+
+    @property
+    def configured(self) -> bool:
+        return True
+
+    def describe(self) -> TutorEngineInfo:
+        return TutorEngineInfo(
+            provider=self.provider,
+            model=self.model,
+            enabled=True,
+            configured=True,
+            reason="fallback_without_provider_credentials",
+        )
+
+    def _classify_signal(self, *, concept: Dict[str, Any], answer: str, forced_action: str | None = None) -> str:
+        text = ensure_string(answer)
+        lowered = text.lower()
+        if forced_action == "teach":
+            return "noise"
+        if not text:
+            return "noise"
+        if any(token in lowered for token in ("讲", "解释", "总结", "梳理")):
+            return "noise"
+        concept_tokens = [
+            ensure_string(concept.get("title")).lower(),
+            ensure_string(concept.get("summary")).lower()[:20],
+        ]
+        if any(token and token in lowered for token in concept_tokens):
+            return "positive"
+        return "positive" if len(text) >= 18 else "negative"
+
+    def _build_envelope(
+        self,
+        *,
+        concept: Dict[str, Any],
+        answer: str,
+        forced_action: str | None = None,
+    ) -> Dict[str, Any]:
+        signal = self._classify_signal(concept=concept, answer=answer, forced_action=forced_action)
+        text = ensure_string(answer)
+        lowered = text.lower()
+
+        if forced_action == "teach" or any(token in lowered for token in ("讲", "解释", "总结", "梳理")):
+            ui_mode = "teach"
+            state = "weak"
+            confidence_level = "medium"
+            follow_up_question = ensure_string(concept.get("checkQuestion") or concept.get("retryQuestion"))
+            reason = "用户显式要求讲解或当前更适合先补关键机制。"
+        elif any(token in lowered for token in ("下一题", "下一个", "跳过")):
+            ui_mode = "advance"
+            state = "partial"
+            confidence_level = "medium"
+            follow_up_question = ""
+            reason = "用户要求继续推进当前节奏。"
+        elif signal == "positive" and len(text) >= 40:
+            ui_mode = "verify"
+            state = "solid"
+            confidence_level = "high"
+            follow_up_question = ensure_string(concept.get("stretchQuestion") or concept.get("checkQuestion"))
+            reason = "用户已经碰到主链，适合再用一个问题确认边界。"
+        elif signal == "positive":
+            ui_mode = "verify"
+            state = "partial"
+            confidence_level = "medium"
+            follow_up_question = ensure_string(concept.get("checkQuestion") or concept.get("retryQuestion"))
+            reason = "方向基本对，但还需要继续确认是否真正讲稳。"
+        else:
+            ui_mode = "probe"
+            state = "weak"
+            confidence_level = "low"
+            follow_up_question = ensure_string(concept.get("retryQuestion") or concept.get("checkQuestion"))
+            reason = "当前回答还没有形成稳定机制链路。"
+
+        if ui_mode in {"probe", "teach", "verify"} and not follow_up_question:
+            follow_up_question = ensure_string(
+                concept.get("diagnosticQuestion")
+                or concept.get("checkQuestion")
+                or concept.get("retryQuestion"),
+                f"你先用自己的话再讲一下：{concept.get('title', '这个点')} 的关键机制是什么？",
+            )
+
+        return normalize_turn_envelope_payload(
+            {
+                "runtime_map": {
+                    "anchor_id": concept.get("id", ""),
+                    "turn_signal": signal,
+                    "anchor_assessment": {
+                        "state": state,
+                        "confidence_level": confidence_level,
+                        "reasons": [reason],
+                    },
+                    "hypotheses": [],
+                    "misunderstandings": [] if signal == "positive" else [{"label": concept.get("misconception") or concept.get("summary", "")}],
+                    "open_questions": [follow_up_question] if follow_up_question else [],
+                    "verification_targets": [],
+                    "info_gain_level": "medium" if ui_mode != "advance" else "low",
+                },
+                "next_move": {
+                    "intent": "先补最有价值的一步，再决定是否继续深挖。",
+                    "reason": reason,
+                    "expected_gain": "medium" if ui_mode != "advance" else "low",
+                    "ui_mode": ui_mode,
+                    "follow_up_question": follow_up_question,
+                },
+                "writeback_suggestion": {
+                    "should_write": True,
+                    "mode": "update",
+                    "reason": "heuristic_fallback_turn",
+                    "anchor_patch": {
+                        "state": state,
+                        "confidence_level": confidence_level,
+                        "derived_principle": concept.get("summary", ""),
+                    },
+                },
+            },
+            concept,
+        )
+
+    def generate_turn_envelope(
+        self,
+        *,
+        concept: Dict[str, Any],
+        context_packet: Dict[str, Any],
+        answer: str,
+        forced_action: str | None = None,
+    ) -> Dict[str, Any]:
+        return self._build_envelope(concept=concept, answer=answer, forced_action=forced_action)
+
+    def generate_reply_stream(
+        self,
+        *,
+        concept: Dict[str, Any],
+        context_packet: Dict[str, Any],
+        answer: str,
+    ) -> str:
+        lowered = ensure_string(answer).lower()
+        if any(token in lowered for token in ("讲", "解释", "总结", "梳理")):
+            return normalize_teaching_paragraph(f"我先把这一层讲清楚：{concept.get('summary', '')}")
+        if any(token in lowered for token in ("下一题", "下一个", "跳过")):
+            return "这个点我先帮你记下来，我们继续往下推进。"
+        if len(ensure_string(answer)) >= 24:
+            return f"你的主线方向基本对。接下来最好再把“{concept.get('title', '')}”的关键机制和边界补完整。"
+        return f"你的回答还没把“{concept.get('title', '')}”讲成完整链路，我先帮你补一层：{concept.get('summary', '')}"
+
+    def generate_reply_stream_events(
+        self,
+        *,
+        concept: Dict[str, Any],
+        context_packet: Dict[str, Any],
+        answer: str,
+    ) -> Iterator[str]:
+        text = self.generate_reply_stream(concept=concept, context_packet=context_packet, answer=answer)
+        if text:
+            yield text
+
+    def explain_concept(self, *, session: Dict[str, Any], concept: Dict[str, Any], context_packet: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        payload = {
+            "visibleReply": concept.get("summary", ""),
+            "teachingParagraphs": [concept.get("summary", "")],
+            "checkQuestion": concept.get("checkQuestion") or concept.get("retryQuestion") or "",
+            "takeaway": concept.get("summary", ""),
+        }
+        validate_explain_concept_payload(payload)
+        return normalize_explain_concept_payload(payload, concept)
+
+
 def create_tutor_intelligence() -> ProviderTutorIntelligence | None:
     enabled = str(os.environ.get("LLAI_LLM_ENABLED", "true")).lower()
     if enabled in {"0", "false", "no", "off"}:
-        return None
+        return HeuristicTutorIntelligence()
     provider = str(os.environ.get("LLAI_LLM_PROVIDER", "OPENAI")).upper()
     if provider == "DEEPSEEK":
-        return ProviderTutorIntelligence(
+        intelligence = ProviderTutorIntelligence(
             provider="DEEPSEEK",
             model=os.environ.get("LLAI_DEEPSEEK_MODEL", DEFAULT_DEEPSEEK_MODEL),
             api_key=os.environ.get("LLAI_DEEPSEEK_API_KEY", ""),
             base_url=os.environ.get("LLAI_DEEPSEEK_BASE_URL", DEFAULT_DEEPSEEK_BASE_URL),
         )
-    return ProviderTutorIntelligence(
+        return intelligence if intelligence.configured else HeuristicTutorIntelligence()
+    intelligence = ProviderTutorIntelligence(
         provider="OPENAI",
         model=os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
         api_key=os.environ.get("OPENAI_API_KEY", ""),
     )
+    return intelligence if intelligence.configured else HeuristicTutorIntelligence()
 
 
 def describe_tutor_intelligence() -> Dict[str, Any]:

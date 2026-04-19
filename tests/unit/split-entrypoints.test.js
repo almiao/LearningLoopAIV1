@@ -10,7 +10,9 @@ test("root package scripts default to split entrypoints without legacy aliases",
   assert.equal(pkg.scripts.start, "bash start-services.sh");
   assert.equal(pkg.scripts.dev, "bash start-services.sh");
   assert.match(pkg.scripts.build, /bff\/src\/server\.js/);
+  assert.match(pkg.scripts.build, /superapp-service\/src\/server\.js/);
   assert.match(pkg.scripts.build, /frontend/);
+  assert.equal(pkg.scripts["dev:superapp"], "npm run dev --prefix superapp-service");
   assert.match(pkg.scripts.test, /split-services\.spec\.js/);
   assert.match(pkg.scripts.test, /parity-flow\.test\.js/);
   assert.equal("legacy:start" in pkg.scripts, false);

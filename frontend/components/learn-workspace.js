@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, postEventStream, postJson } from "../lib/api";
+import { createBaselinePackDecomposition, getBaselinePackById } from "../../src/baseline/baseline-packs";
 import {
   getStoredTargetBaselineId,
   getStoredUserId,
@@ -17,6 +18,13 @@ function splitTextBlocks(value) {
     .split(/\n{2,}/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function average(values = []) {
+  if (!values.length) {
+    return 0;
+  }
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
 }
 
 function slugifyHeading(text) {
@@ -346,6 +354,84 @@ function buildDomainMap(session) {
   }));
 }
 
+function createKnowledgeCatalog({ sources = [], concepts = [] }) {
+  const byPath = new Map();
+  for (const source of sources) {
+    if (!source?.path) {
+      continue;
+    }
+    if (!byPath.has(source.path)) {
+      byPath.set(source.path, {
+        path: source.path,
+        title: source.title || source.path.split("/").at(-1)?.replace(/\.md$/, "") || "未命名文档",
+        concepts: [],
+      });
+    }
+  }
+
+  for (const concept of concepts) {
+    for (const source of concept.javaGuideSources || []) {
+      if (!source?.path) {
+        continue;
+      }
+      if (!byPath.has(source.path)) {
+        byPath.set(source.path, {
+          path: source.path,
+          title: source.title || source.path.split("/").at(-1)?.replace(/\.md$/, "") || "未命名文档",
+          concepts: [],
+        });
+      }
+      byPath.get(source.path).concepts.push({
+        id: concept.id,
+        title: concept.title,
+      });
+    }
+  }
+
+  return [...byPath.values()]
+    .sort((left, right) => left.path.localeCompare(right.path))
+    .map((doc) => ({
+      ...doc,
+      concepts: doc.concepts.filter((item, index, items) => items.findIndex((entry) => entry.id === item.id) === index),
+    }));
+}
+
+function buildKnowledgeTree(documents = []) {
+  const root = [];
+
+  for (const document of documents) {
+    const relativePath = String(document.path || "").replace(/^docs\//, "");
+    const segments = relativePath.split("/");
+    const folderSegments = segments.slice(0, -1);
+    let level = root;
+
+    folderSegments.forEach((segment, index) => {
+      const key = folderSegments.slice(0, index + 1).join("/");
+      let node = level.find((item) => item.type === "folder" && item.key === key);
+      if (!node) {
+        node = {
+          type: "folder",
+          key,
+          label: formatPathSegment(segment),
+          children: [],
+        };
+        level.push(node);
+      }
+      level = node.children;
+    });
+
+    level.push({
+      type: "document",
+      key: document.path,
+      path: document.path,
+      label: document.title,
+      concepts: document.concepts || [],
+    });
+  }
+
+  return root;
+}
+
 const pathSegmentLabels = {
   "high-availability": "高可用",
   "high-performance": "高性能",
@@ -441,6 +527,7 @@ function findBestHeadingAnchor(concept, knowledgeDoc) {
 }
 
 export function LearnWorkspace() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const autostartRef = useRef(false);
   const conceptFocusRef = useRef("");
@@ -462,9 +549,20 @@ export function LearnWorkspace() {
   const [docError, setDocError] = useState("");
   const [workspaceMode, setWorkspaceMode] = useState("reading");
   const [trainingUnlocked, setTrainingUnlocked] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const deferredSession = useDeferredValue(session);
   const visibleView = buildVisibleSessionView(deferredSession || {});
   const chatTimeline = visibleView.chatTimeline || [];
+  const visibleChatTimeline = useMemo(() => {
+    if (trainingUnlocked) {
+      return chatTimeline;
+    }
+    const firstUserIndex = chatTimeline.findIndex((entry) => entry.role === "user");
+    if (firstUserIndex < 0) {
+      return [];
+    }
+    return chatTimeline.slice(firstUserIndex);
+  }, [chatTimeline, trainingUnlocked]);
 
   useEffect(() => {
     apiFetch("/api/baselines")
@@ -532,6 +630,23 @@ export function LearnWorkspace() {
     )
   ), [docConcepts, knowledgeDoc]);
   const currentDocAnchor = currentConcept ? conceptAnchorMap.get(currentConcept.id) || null : null;
+  const sourceCatalog = useMemo(() => {
+    if (session?.summary?.javaGuideSourceClusters?.length || session?.concepts?.length) {
+      return createKnowledgeCatalog({
+        sources: session?.summary?.javaGuideSourceClusters || [],
+        concepts: session?.concepts || [],
+      });
+    }
+    if (selectedBaseline?.id) {
+      const decomposition = createBaselinePackDecomposition(getBaselinePackById(selectedBaseline.id));
+      return createKnowledgeCatalog({
+        sources: decomposition.summary?.javaGuideSourceClusters || [],
+        concepts: decomposition.concepts || [],
+      });
+    }
+    return [];
+  }, [session, selectedBaseline?.id]);
+  const knowledgeTree = useMemo(() => buildKnowledgeTree(sourceCatalog), [sourceCatalog]);
 
   function scrollQaToBottom(behavior = "auto") {
     if (!qaScrollRef.current) {
@@ -802,6 +917,28 @@ export function LearnWorkspace() {
     }
   }
 
+  function openDocumentFromCatalog(documentPath, conceptId = "") {
+    const params = new URLSearchParams();
+    if (targetBaselineId) {
+      params.set("target", targetBaselineId);
+    }
+    if (documentPath) {
+      params.set("doc", documentPath);
+    }
+    if (autostart || session?.sessionId) {
+      params.set("autostart", "1");
+    }
+
+    if (conceptId && session?.sessionId) {
+      void focusConcept(conceptId);
+    } else if (conceptId) {
+      params.set("concept", conceptId);
+    }
+
+    router.replace(`/learn?${params.toString()}`);
+    setOutlineOpen(false);
+  }
+
   if (!profile) {
     return (
       <main className="learn-shell">
@@ -815,24 +952,55 @@ export function LearnWorkspace() {
     );
   }
 
+  function renderKnowledgeTree(nodes, depth = 0) {
+    return nodes.map((node) => (
+      node.type === "folder" ? (
+        <section className="outline-group" key={node.key}>
+          <div className={`outline-folder depth-${Math.min(depth, 2)}`}>{node.label}</div>
+          <div className="outline-items">
+            {renderKnowledgeTree(node.children || [], depth + 1)}
+          </div>
+        </section>
+      ) : (
+        <section className="outline-group" key={node.key}>
+          <button
+            type="button"
+            className={node.path === activeDocPath ? "outline-domain active" : "outline-domain"}
+            onClick={() => openDocumentFromCatalog(node.path, node.concepts?.[0]?.id || "")}
+          >
+            {node.label}
+          </button>
+          {node.concepts?.length ? (
+            <div className="outline-items">
+              {node.concepts.map((concept) => (
+                <button
+                  type="button"
+                  key={concept.id}
+                  className={concept.id === currentConcept?.id ? "outline-item active" : "outline-item"}
+                  onClick={() => openDocumentFromCatalog(node.path, concept.id)}
+                >
+                  {concept.title}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      )
+    ));
+  }
+
   return (
-    <main className="learn-shell">
+    <main className={focusMode ? "learn-shell focus-reader-mode" : "learn-shell"}>
       {error ? <section className="feedback-banner error-banner narrow-banner">{error}</section> : null}
 
-      <section className={`study-main study-mode-${workspaceMode}`}>
+      <section className={focusMode ? `study-main study-mode-${workspaceMode} focus-reader-layout` : `study-main study-mode-${workspaceMode}`}>
         <section className="reader-panel">
+          {focusMode ? <div className="focus-reader-hover-zone" aria-hidden="true" /> : null}
           <header className="reader-header">
             <div className="reader-header-main">
               <Link className="back-link header-back-link" href="/">‹</Link>
               <div className="reader-heading">
                 <h1>{knowledgeTrail.length ? knowledgeTrail.join(" › ") : (knowledgeDoc?.title || currentSource?.title || selectedBaseline?.title || "开始学习")}</h1>
-                <p>
-                  {currentDocAnchor?.text
-                    ? `当前问题锚定到：${currentDocAnchor.text}`
-                    : activeDocPath
-                      ? `文档：${activeDocPath.replace(/^docs\//, "")}`
-                      : "进入学习后，这里会直接展示当前关联的原始文档。"}
-                </p>
               </div>
             </div>
             <div className="reader-tools">
@@ -862,7 +1030,13 @@ export function LearnWorkspace() {
                 知识目录
               </button>
               <span>笔记</span>
-              <span>专注</span>
+              <button
+                type="button"
+                className={focusMode ? "reader-tool-button active" : "reader-tool-button"}
+                onClick={() => setFocusMode((value) => !value)}
+              >
+                {focusMode ? "退出专注" : "专注"}
+              </button>
             </div>
           </header>
 
@@ -922,22 +1096,37 @@ export function LearnWorkspace() {
                 </button>
               </div>
               <div className="outline-scroll">
-                {knowledgeDoc?.headings?.length ? knowledgeDoc.headings.map((heading) => (
-                  <section className="outline-group" key={heading.id}>
-                    <button
-                      type="button"
-                      className={heading.level <= 2 ? "outline-domain active" : "outline-item"}
-                      onClick={() => {
-                        setOutlineOpen(false);
-                        document.getElementById(heading.id)?.scrollIntoView({ block: "start", behavior: "smooth" });
-                      }}
-                    >
-                      {heading.text}
-                    </button>
-                  </section>
-                )) : (
+                {knowledgeTree.length ? (
+                  <>
+                    <section className="outline-section">
+                      <div className="outline-section-title">路线与文档</div>
+                      {renderKnowledgeTree(knowledgeTree)}
+                    </section>
+                    <section className="outline-section">
+                      <div className="outline-section-title">当前文档目录</div>
+                      {knowledgeDoc?.headings?.length ? knowledgeDoc.headings.map((heading) => (
+                        <section className="outline-group" key={heading.id}>
+                          <button
+                            type="button"
+                            className={heading.level <= 2 ? "outline-domain active" : "outline-item"}
+                            onClick={() => {
+                              setOutlineOpen(false);
+                              document.getElementById(heading.id)?.scrollIntoView({ block: "start", behavior: "smooth" });
+                            }}
+                          >
+                            {heading.text}
+                          </button>
+                        </section>
+                      )) : (
+                        <p className="empty-copy">
+                          {docLoading ? "正在整理文档目录..." : "当前文档还没有可展开的小节目录。"}
+                        </p>
+                      )}
+                    </section>
+                  </>
+                ) : (
                   <p className="empty-copy">
-                    {docLoading ? "正在整理文档目录..." : "当前文档还没有可展开的目录。"}
+                    {docLoading ? "正在整理知识目录..." : "当前路线还没有可展开的文档目录。"}
                   </p>
                 )}
               </div>
@@ -956,7 +1145,7 @@ export function LearnWorkspace() {
               </span>
             </div>
             <span className="qa-header-spacer" />
-            <div className="qa-header-controls">
+            <div className={`qa-header-controls ${!trainingUnlocked ? "qa-header-controls-locked" : ""}`}>
               <select className="qa-header-select" value={burdenSignal} onChange={(event) => setBurdenSignal(event.target.value)}>
                 <option value="normal">正常负荷</option>
                 <option value="high">高负荷</option>
@@ -967,21 +1156,18 @@ export function LearnWorkspace() {
                   <div className="training-progress-fill" style={{ width: `${Math.max(0, Math.min(100, docProgressPercent || 0))}%` }} />
                 </div>
               </div>
+              {!trainingUnlocked ? (
+                <button type="button" className="qa-header-lock" disabled={isStarting} onClick={() => unlockTraining()}>
+                  <span className="qa-header-lock-icon" aria-hidden="true">🔒</span>
+                  <span>{isStarting ? "准备中..." : "阅读完成后解锁训练"}</span>
+                </button>
+              ) : null}
             </div>
           </header>
 
           <div className="qa-scroll" ref={qaScrollRef}>
             <section className="chat-stack">
-              {!trainingUnlocked ? (
-                <article className="mode-lock-card">
-                  <div className="mode-lock-kicker">训练尚未解锁</div>
-                  <h3>先把文档读完，再进入题目训练</h3>
-                  <p>右侧现在可以随时问我原文里的定义、机制、边界和例子；确认读完后，再切到训练模式集中做题。</p>
-                  <button type="button" className="primary-pill lock-cta" disabled={isStarting} onClick={() => unlockTraining()}>
-                    {isStarting ? "正在准备训练..." : "我已阅读完成，开始训练"}
-                  </button>
-                </article>
-              ) : workspaceMode === "training" ? (
+              {workspaceMode === "training" ? (
                 <article className="training-hero-card">
                   <div className="training-hero-title">训练已开启</div>
                   <p>本文档共设计 {docQuestionCount || 0} 道训练题。你可以先直接回答，也可以点“查看解析”先拿到引导，再继续作答。</p>
@@ -993,7 +1179,7 @@ export function LearnWorkspace() {
                 </article>
               ) : null}
 
-              {chatTimeline.map((entry) => (
+              {visibleChatTimeline.map((entry) => (
                 entry.type === "event" ? (
                   <div className="chat-event-row" key={entry.id}>{entry.label}</div>
                 ) : (
@@ -1061,11 +1247,13 @@ export function LearnWorkspace() {
             />
 
             <div className="question-input-row">
-              <div className="suggested-actions">
-                <button type="button" className="secondary-pill" disabled={!session || isAnswering} onClick={() => submitAnswer({ nextAnswer: "查看解析", intent: "teach" })}>
-                  查看解析
-                </button>
-              </div>
+              {workspaceMode === "training" ? (
+                <div className="suggested-actions">
+                  <button type="button" className="secondary-pill" disabled={!session || isAnswering} onClick={() => submitAnswer({ nextAnswer: "查看解析", intent: "teach" })}>
+                    查看解析
+                  </button>
+                </div>
+              ) : <div className="suggested-actions" />}
               <button type="submit" className="send-button" disabled={!session || isAnswering || !answer.trim()}>
                 ↑
               </button>

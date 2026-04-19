@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { loadLocalEnv } from "./local-env.js";
+import { killExistingOnPort } from "./port-utils.js";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -53,15 +55,21 @@ export async function postJson(url, payload) {
 }
 
 export async function withSplitServices(t, fn, { aiPort, bffPort } = {}) {
-  const resolvedAiPort = aiPort || (18000 + Math.floor(Math.random() * 1000));
-  const resolvedBffPort = bffPort || (14000 + Math.floor(Math.random() * 1000));
+  const localEnv = loadLocalEnv(process.cwd());
+  const resolvedAiPort = aiPort || 18100;
+  const resolvedBffPort = bffPort || 14100;
+  killExistingOnPort(resolvedAiPort);
+  killExistingOnPort(resolvedBffPort);
 
   const ai = startProcess(
     "python3",
     ["-m", "uvicorn", "app.main:app", "--port", String(resolvedAiPort), "--app-dir", "ai-service"],
     {
       cwd: process.cwd(),
-      env: process.env
+      env: {
+        ...process.env,
+        ...localEnv
+      }
     }
   );
 
@@ -72,6 +80,7 @@ export async function withSplitServices(t, fn, { aiPort, bffPort } = {}) {
       cwd: process.cwd(),
       env: {
         ...process.env,
+        ...localEnv,
         PORT: String(resolvedBffPort),
         AI_SERVICE_URL: `http://127.0.0.1:${resolvedAiPort}`
       }
@@ -85,6 +94,12 @@ export async function withSplitServices(t, fn, { aiPort, bffPort } = {}) {
       aiBaseUrl: `http://127.0.0.1:${resolvedAiPort}`,
       bffBaseUrl: `http://127.0.0.1:${resolvedBffPort}`
     });
+  } catch (error) {
+    const aiStderr = ai.readStderr();
+    const bffStderr = bff.readStderr();
+    throw new Error(
+      `${error.message}\nAI STDERR:\n${aiStderr || "<empty>"}\nBFF STDERR:\n${bffStderr || "<empty>"}`
+    );
   } finally {
     bff.child.kill("SIGTERM");
     ai.child.kill("SIGTERM");
