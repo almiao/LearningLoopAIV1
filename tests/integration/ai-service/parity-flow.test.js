@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadLocalEnv } from "../../helpers/local-env.js";
 import { createAppService } from "../../../src/app-service.js";
 import { createHeuristicTutorIntelligence } from "../../../src/tutor/tutor-intelligence.js";
@@ -10,6 +12,8 @@ import {
   getBaselinePackById
 } from "../../../src/baseline/baseline-packs.js";
 import { createMemoryProfile } from "../../../src/tutor/capability-memory.js";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -53,14 +57,14 @@ async function postJson(url, payload) {
 }
 
 test("python ai-service preserves core session semantics for teach, advance, and domain-scoped continuation", async (t) => {
-  const localEnv = loadLocalEnv("/Users/lee/IdeaProjects/LearningLoopAIV1");
+  const localEnv = loadLocalEnv(root);
   const aiPort = 18100;
   const aiBaseUrl = `http://127.0.0.1:${aiPort}`;
   const ai = startProcess(
     "python3",
     ["-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
     {
-      cwd: "/Users/lee/IdeaProjects/LearningLoopAIV1",
+      cwd: root,
       env: {
         ...process.env,
         ...localEnv,
@@ -154,14 +158,14 @@ test("python ai-service preserves core session semantics for teach, advance, and
 });
 
 test("python ai-service matches explain-first and switch-suppression semantics on key turns", async (t) => {
-  const localEnv = loadLocalEnv("/Users/lee/IdeaProjects/LearningLoopAIV1");
+  const localEnv = loadLocalEnv(root);
   const aiPort = 18101;
   const aiBaseUrl = `http://127.0.0.1:${aiPort}`;
   const ai = startProcess(
     "python3",
     ["-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
     {
-      cwd: "/Users/lee/IdeaProjects/LearningLoopAIV1",
+      cwd: root,
       env: {
         ...process.env,
         ...localEnv,
@@ -242,14 +246,14 @@ test("python ai-service matches explain-first and switch-suppression semantics o
 });
 
 test("python ai-service honors explicit structured intent for control actions", async (t) => {
-  const localEnv = loadLocalEnv("/Users/lee/IdeaProjects/LearningLoopAIV1");
+  const localEnv = loadLocalEnv(root);
   const aiPort = 18102;
   const aiBaseUrl = `http://127.0.0.1:${aiPort}`;
   const ai = startProcess(
     "python3",
     ["-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
     {
-      cwd: "/Users/lee/IdeaProjects/LearningLoopAIV1",
+      cwd: root,
       env: {
         ...process.env,
         ...localEnv,
@@ -296,14 +300,14 @@ test("python ai-service honors explicit structured intent for control actions", 
 });
 
 test("python ai-service does not auto-revisit skipped concepts after a scoped domain is exhausted", async (t) => {
-  const localEnv = loadLocalEnv("/Users/lee/IdeaProjects/LearningLoopAIV1");
+  const localEnv = loadLocalEnv(root);
   const aiPort = 18103;
   const aiBaseUrl = `http://127.0.0.1:${aiPort}`;
   const ai = startProcess(
     "python3",
     ["-m", "uvicorn", "app.main:app", "--port", String(aiPort), "--app-dir", "ai-service"],
     {
-      cwd: "/Users/lee/IdeaProjects/LearningLoopAIV1",
+      cwd: root,
       env: {
         ...process.env,
         ...localEnv,

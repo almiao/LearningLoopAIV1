@@ -14,6 +14,15 @@ This directory contains the local self-hosted LiveKit development setup for the 
 
 The local LiveKit server is started in `--dev` mode and is not intended for production.
 
+## Repository Default Behavior
+
+The main project split-services launcher now auto-detects whether LiveKit is configured.
+
+- If `LIVEKIT_URL`/`LIVEKIT_WS_URL` plus `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` are already set, it uses that configured LiveKit deployment.
+- If not, it automatically downloads a local `livekit-server` binary into `.tools/livekit-runtime/`, starts it on `ws://127.0.0.1:7880`, and injects the local dev credentials at runtime.
+
+This means `./start-services.ps1` on Windows and the shared Node split-services entrypoint can bring up a local LiveKit-backed development stack without hand-editing `.env.local`.
+
 ## One-Time Setup
 
 Install the server binary:

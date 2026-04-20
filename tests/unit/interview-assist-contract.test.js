@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = "/Users/lee/IdeaProjects/LearningLoopAIV1";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 test("interview assist service stays independent from generic tutor session modules and old rule tables", async () => {
   const source = await readFile(`${root}/ai-service/app/interview_assist/service.py`, "utf8");

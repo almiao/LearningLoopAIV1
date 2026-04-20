@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
@@ -12,15 +12,23 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 export const rootDir = path.resolve(scriptDir, "..");
 export const frontendDir = path.join(rootDir, "frontend");
 export const aiServiceDir = path.join(rootDir, "ai-service");
+export const superappServiceDir = path.join(rootDir, "superapp-service");
+export const livekitAgentDir = path.join(rootDir, "livekit-agent");
 export const logDir = path.join(rootDir, ".omx", "logs", "split-services");
 export const pidDir = path.join(rootDir, ".omx", "state", "split-services");
 export const localNodeRuntimeDir = path.join(rootDir, ".tools", "node-runtime");
+export const localLivekitRuntimeDir = path.join(rootDir, ".tools", "livekit-runtime");
 
 const envFiles = [".env", ".env.local"].map((file) => path.join(rootDir, file));
-const trackedServices = ["ai-service", "bff", "frontend"];
+const trackedServices = ["livekit-server", "ai-service", "bff", "superapp-service", "livekit-agent", "frontend"];
 
 export const isWindows = process.platform === "win32";
 export const npmCommand = isWindows ? "npm.cmd" : "npm";
+export const localLivekitPort = 7880;
+export const localLivekitWsUrl = `ws://127.0.0.1:${localLivekitPort}`;
+export const localLivekitHttpUrl = `http://127.0.0.1:${localLivekitPort}`;
+export const localLivekitApiKey = "devkey";
+export const localLivekitApiSecret = "secret";
 
 function compareVersions(left, right) {
   const leftParts = String(left)
@@ -226,6 +234,7 @@ export function resolvePythonCommand(runtimeEnv = process.env) {
 export function ensureRuntimeDirs() {
   mkdirSync(logDir, { recursive: true });
   mkdirSync(pidDir, { recursive: true });
+  mkdirSync(localLivekitRuntimeDir, { recursive: true });
 }
 
 export function pidFileFor(name) {
@@ -234,6 +243,57 @@ export function pidFileFor(name) {
 
 export function logFileFor(name) {
   return path.join(logDir, `${name}.log`);
+}
+
+function livekitArchiveExtension() {
+  if (isWindows) {
+    return "zip";
+  }
+  return "tar.gz";
+}
+
+function livekitAssetNameForPlatform(tagName) {
+  if (process.platform === "win32" && process.arch === "x64") {
+    return `livekit_${tagName.replace(/^v/u, "")}_windows_amd64.zip`;
+  }
+  if (process.platform === "win32" && process.arch === "arm64") {
+    return `livekit_${tagName.replace(/^v/u, "")}_windows_arm64.zip`;
+  }
+  if (process.platform === "linux" && process.arch === "x64") {
+    return `livekit_${tagName.replace(/^v/u, "")}_linux_amd64.tar.gz`;
+  }
+  if (process.platform === "linux" && process.arch === "arm64") {
+    return `livekit_${tagName.replace(/^v/u, "")}_linux_arm64.tar.gz`;
+  }
+  if (process.platform === "linux" && process.arch === "arm") {
+    return `livekit_${tagName.replace(/^v/u, "")}_linux_armv7.tar.gz`;
+  }
+  return null;
+}
+
+function powershellLiteral(value) {
+  return `'${String(value).replace(/'/gu, "''")}'`;
+}
+
+function findFileRecursive(baseDir, fileName) {
+  if (!existsSync(baseDir)) {
+    return null;
+  }
+
+  for (const entry of readdirSync(baseDir, { withFileTypes: true })) {
+    const entryPath = path.join(baseDir, entry.name);
+    if (entry.isFile() && entry.name === fileName) {
+      return entryPath;
+    }
+    if (entry.isDirectory()) {
+      const nested = findFileRecursive(entryPath, fileName);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return null;
 }
 
 function formatCommand(command, args) {
@@ -268,6 +328,147 @@ export function runCommand(command, args, options = {}) {
   });
 }
 
+async function downloadToFile(url, destinationPath) {
+  if (isWindows) {
+    await runCommand("powershell", [
+      "-NoProfile",
+      "-Command",
+      `Invoke-WebRequest -UseBasicParsing -Uri ${powershellLiteral(url)} -OutFile ${powershellLiteral(destinationPath)}`,
+    ]);
+    return;
+  }
+
+  const response = await fetch(url, {
+    headers: {
+      "user-agent": "learning-loop-ai-dev-runtime",
+      accept: "application/octet-stream,application/json;q=0.9,*/*;q=0.8",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to download ${url}: HTTP ${response.status}.`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  writeFileSync(destinationPath, Buffer.from(arrayBuffer));
+}
+
+async function extractLivekitArchive(archivePath, destinationDir) {
+  rmSync(destinationDir, { recursive: true, force: true });
+  mkdirSync(destinationDir, { recursive: true });
+
+  if (isWindows) {
+    await runCommand("powershell", [
+      "-NoProfile",
+      "-Command",
+      `Expand-Archive -LiteralPath ${powershellLiteral(archivePath)} -DestinationPath ${powershellLiteral(destinationDir)} -Force`,
+    ]);
+    return;
+  }
+
+  await runCommand("tar", ["-xzf", archivePath, "-C", destinationDir]);
+}
+
+async function fetchLatestLivekitRelease() {
+  const response = await fetch("https://api.github.com/repos/livekit/livekit/releases/latest", {
+    headers: {
+      "user-agent": "learning-loop-ai-dev-runtime",
+      accept: "application/vnd.github+json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch latest LiveKit release metadata: HTTP ${response.status}.`);
+  }
+
+  return response.json();
+}
+
+export async function ensureLocalLivekitServerBinary() {
+  ensureRuntimeDirs();
+
+  if (commandWorks("livekit-server", ["--version"])) {
+    return "livekit-server";
+  }
+
+  const binaryName = isWindows ? "livekit-server.exe" : "livekit-server";
+  const currentBinary = findFileRecursive(localLivekitRuntimeDir, binaryName);
+  if (currentBinary && statSync(currentBinary).isFile()) {
+    return currentBinary;
+  }
+
+  const release = await fetchLatestLivekitRelease();
+  const assetName = livekitAssetNameForPlatform(release.tag_name);
+  if (!assetName) {
+    throw new Error(
+      `Automatic local LiveKit setup is not implemented for ${process.platform}/${process.arch}. ` +
+        "Configure LIVEKIT_URL/LIVEKIT_WS_URL manually."
+    );
+  }
+
+  const asset = (release.assets || []).find((item) => item.name === assetName);
+  if (!asset?.browser_download_url) {
+    throw new Error(`LiveKit release ${release.tag_name} does not include asset ${assetName}.`);
+  }
+
+  const downloadsDir = path.join(localLivekitRuntimeDir, "downloads");
+  const versionDir = path.join(localLivekitRuntimeDir, release.tag_name);
+  const archivePath = path.join(downloadsDir, assetName);
+  mkdirSync(downloadsDir, { recursive: true });
+
+  if (!existsSync(archivePath)) {
+    console.log(`Downloading LiveKit server ${release.tag_name}...`);
+    await downloadToFile(asset.browser_download_url, archivePath);
+  }
+
+  console.log(`Extracting LiveKit server ${release.tag_name}...`);
+  await extractLivekitArchive(archivePath, versionDir);
+
+  const extractedBinary = findFileRecursive(versionDir, binaryName);
+  if (!extractedBinary) {
+    throw new Error(`LiveKit archive ${assetName} did not contain ${binaryName}.`);
+  }
+
+  if (!isWindows) {
+    await runCommand("chmod", ["+x", extractedBinary]);
+  }
+
+  return extractedBinary;
+}
+
+export async function resolveLivekitRuntime(runtimeEnv = process.env) {
+  const wsUrl = runtimeEnv.LIVEKIT_WS_URL || runtimeEnv.LIVEKIT_URL || "";
+  const apiKey = runtimeEnv.LIVEKIT_API_KEY || "";
+  const apiSecret = runtimeEnv.LIVEKIT_API_SECRET || "";
+
+  if (wsUrl && apiKey && apiSecret) {
+    return {
+      mode: "configured",
+      managed: false,
+      env: runtimeEnv,
+      wsUrl,
+    };
+  }
+
+  const binary = await ensureLocalLivekitServerBinary();
+  return {
+    mode: "local-dev",
+    managed: true,
+    binary,
+    port: localLivekitPort,
+    wsUrl: localLivekitWsUrl,
+    httpUrl: localLivekitHttpUrl,
+    env: {
+      ...runtimeEnv,
+      LIVEKIT_URL: runtimeEnv.LIVEKIT_URL || localLivekitWsUrl,
+      LIVEKIT_WS_URL: runtimeEnv.LIVEKIT_WS_URL || localLivekitWsUrl,
+      LIVEKIT_API_HOST: runtimeEnv.LIVEKIT_API_HOST || localLivekitHttpUrl,
+      LIVEKIT_API_KEY: runtimeEnv.LIVEKIT_API_KEY || localLivekitApiKey,
+      LIVEKIT_API_SECRET: runtimeEnv.LIVEKIT_API_SECRET || localLivekitApiSecret,
+    },
+  };
+}
+
 export function runNodeCommand(nodeRuntime, args, options = {}) {
   return runCommand(nodeRuntime.command, args, {
     ...options,
@@ -279,6 +480,7 @@ export function runNpmCommand(nodeRuntime, args, options = {}) {
   const npmEntry = existsSync(nodeRuntime.npmPath) ? nodeRuntime.npmPath : npmCommand;
   return runCommand(npmEntry, args, {
     ...options,
+    shell: isWindows,
     env: withRuntimePath(options.env || process.env, nodeRuntime),
   });
 }
@@ -287,16 +489,80 @@ function runPythonSync(pythonSpec, args) {
   return spawnSyncQuiet(pythonSpec.command, [...pythonSpec.prefixArgs, ...args]);
 }
 
-export async function ensureFrontendDependencies(runtimeEnv, nodeRuntime) {
-  if (existsSync(path.join(frontendDir, "node_modules"))) {
+async function ensureNodePackageDependencies(packageDir, label, runtimeEnv, nodeRuntime) {
+  if (existsSync(path.join(packageDir, "node_modules"))) {
     return;
   }
 
-  console.log("Installing frontend dependencies...");
+  const packageJsonPath = path.join(packageDir, "package.json");
+  if (!existsSync(packageJsonPath)) {
+    return;
+  }
+
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+  const hasDependencies =
+    Object.keys(packageJson.dependencies || {}).length > 0 ||
+    Object.keys(packageJson.devDependencies || {}).length > 0 ||
+    existsSync(path.join(packageDir, "package-lock.json"));
+
+  if (!hasDependencies) {
+    return;
+  }
+
+  console.log(`Installing ${label} dependencies...`);
   await runNpmCommand(nodeRuntime, ["install"], {
-    cwd: frontendDir,
+    cwd: packageDir,
     env: runtimeEnv,
   });
+}
+
+export async function ensureFrontendDependencies(runtimeEnv, nodeRuntime) {
+  await ensureNodePackageDependencies(frontendDir, "frontend", runtimeEnv, nodeRuntime);
+}
+
+export async function ensureLivekitAgentDependencies(runtimeEnv, nodeRuntime) {
+  await ensureNodePackageDependencies(livekitAgentDir, "livekit-agent", runtimeEnv, nodeRuntime);
+}
+
+export async function ensureLivekitAgentModelFiles(runtimeEnv, nodeRuntime) {
+  const packageLockPath = path.join(livekitAgentDir, "package-lock.json");
+  const markerPath = path.join(localLivekitRuntimeDir, "livekit-agent-models.ready.json");
+  const signatureParts = ["livekit-agent-models-v1"];
+
+  if (existsSync(packageLockPath)) {
+    const packageLockStats = statSync(packageLockPath);
+    signatureParts.push(String(packageLockStats.size), String(packageLockStats.mtimeMs));
+  }
+
+  const signature = signatureParts.join(":");
+
+  if (existsSync(markerPath)) {
+    try {
+      const marker = JSON.parse(readFileSync(markerPath, "utf8"));
+      if (marker.signature === signature) {
+        return;
+      }
+    } catch {}
+  }
+
+  console.log("Downloading LiveKit agent model files...");
+  await runNodeCommand(nodeRuntime, [path.join(livekitAgentDir, "src", "worker.js"), "download-files"], {
+    cwd: rootDir,
+    env: runtimeEnv,
+  });
+
+  writeFileSync(
+    markerPath,
+    JSON.stringify(
+      {
+        signature,
+        completedAt: new Date().toISOString(),
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
 }
 
 export async function ensurePythonDependencies(runtimeEnv) {
@@ -328,13 +594,14 @@ export async function ensurePythonDependencies(runtimeEnv) {
   return pythonSpec;
 }
 
-export async function buildFrontend(runtimeEnv, bffPort, nodeRuntime) {
+export async function buildFrontend(runtimeEnv, bffPort, livekitAgentPort, nodeRuntime) {
   console.log("Building frontend production bundle...");
   await runNpmCommand(nodeRuntime, ["run", "build"], {
     cwd: frontendDir,
     env: {
       ...runtimeEnv,
       NEXT_PUBLIC_API_BASE_URL: `http://127.0.0.1:${bffPort}`,
+      NEXT_PUBLIC_INTERVIEW_ASSIST_API_BASE_URL: `http://127.0.0.1:${livekitAgentPort}`,
     },
   });
 }
@@ -454,6 +721,18 @@ export function findListeningPids(port) {
     .filter((pid) => Number.isInteger(pid) && pid > 0);
 }
 
+export async function waitForListeningPort(name, port, attempts = 60) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    if (findListeningPids(port).length) {
+      console.log(`${name} is listening on port ${port}`);
+      return;
+    }
+    await sleep(1_000);
+  }
+
+  throw new Error(`${name} failed to open port ${port}.`);
+}
+
 export function assertPortsAvailable(portEntries) {
   const conflicts = portEntries.flatMap(([serviceName, port]) => {
     const pids = findListeningPids(port);
@@ -468,7 +747,9 @@ export function assertPortsAvailable(portEntries) {
     .map(({ serviceName, port, pids }) => `${serviceName} port ${port} is already in use by PID ${pids.join(", ")}`)
     .join("; ");
 
-  throw new Error(`${details}. Stop the existing process or override FRONTEND_PORT/BFF_PORT/AI_PORT.`);
+  throw new Error(
+    `${details}. Stop the existing process or override FRONTEND_PORT/BFF_PORT/SUPERAPP_PORT/LIVEKIT_AGENT_PORT/AI_PORT.`
+  );
 }
 
 function sleep(ms) {

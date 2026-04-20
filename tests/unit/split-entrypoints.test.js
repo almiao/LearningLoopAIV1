@@ -1,10 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 test("root package scripts default to split entrypoints without legacy aliases", async () => {
   const pkg = JSON.parse(
-    await readFile("/Users/lee/IdeaProjects/LearningLoopAIV1/package.json", "utf8")
+    await readFile(path.join(root, "package.json"), "utf8")
   );
 
   assert.equal(pkg.scripts.start, "bash start-services.sh");
