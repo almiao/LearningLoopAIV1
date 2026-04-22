@@ -1,5 +1,6 @@
 import http from "node:http";
-import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
+import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
+import { ensureBridge, getBridgeDebug } from "./bridge.js";
 
 const port = Number(process.env.PORT || 4200);
 const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
@@ -183,7 +184,6 @@ async function createLivekitSession(aiSession) {
   const roomName = aiSession.roomName || `interview_assist_${aiSession.sessionId}`;
   const participantIdentity = `user_${aiSession.sessionId.slice(-8)}`;
   const roomClient = new RoomServiceClient(config.apiHost, livekitApiKey, livekitApiSecret);
-  const dispatchClient = new AgentDispatchClient(config.apiHost, livekitApiKey, livekitApiSecret);
 
   try {
     await roomClient.createRoom({
@@ -191,15 +191,6 @@ async function createLivekitSession(aiSession) {
       emptyTimeout: 5 * 60,
     });
   } catch {}
-
-  await dispatchClient.createDispatch(roomName, livekitAgentName, {
-    metadata: JSON.stringify({
-      aiSessionId: aiSession.sessionId,
-      targetRole: aiSession.targetRole,
-      roomName,
-      participantIdentity,
-    }),
-  });
 
   const token = new AccessToken(livekitApiKey, livekitApiSecret, {
     identity: participantIdentity,
@@ -218,6 +209,14 @@ async function createLivekitSession(aiSession) {
     canPublishData: true,
   });
 
+  await ensureBridge({
+    aiServiceUrl,
+    wsUrl: config.wsUrl,
+    roomName,
+    sessionId: aiSession.sessionId,
+    participantIdentity,
+  });
+
   return {
     ...aiSession,
     transportMode: "livekit",
@@ -227,6 +226,49 @@ async function createLivekitSession(aiSession) {
     roomName,
     participantIdentity,
     agentName: livekitAgentName,
+  };
+}
+
+async function getLivekitRoomDebug(roomName) {
+  const config = livekitConfig();
+  if (!config.configured) {
+    return {
+      livekitConfigured: false,
+      roomName,
+      participants: [],
+      dispatches: [],
+    };
+  }
+
+  const roomClient = new RoomServiceClient(config.apiHost, livekitApiKey, livekitApiSecret);
+  const participants = await roomClient.listParticipants(roomName).catch(() => []);
+  const bridge = getBridgeDebug(roomName);
+
+  return {
+    livekitConfigured: true,
+    roomName,
+    participants: participants.map((participant) => ({
+      identity: participant.identity,
+      name: participant.name,
+      state: participant.state,
+      metadata: participant.metadata,
+      tracks: (participant.tracks || []).map((track) => ({
+        sid: track.sid,
+        name: track.name,
+        source: track.source,
+        type: track.type,
+        muted: track.muted,
+      })),
+    })),
+    bridge,
+  };
+}
+
+function createTransportPayload(sessionId) {
+  return {
+    sessionId,
+    targetRole: "interview-assist",
+    roomName: `interview_assist_${sessionId}`,
   };
 }
 
@@ -256,6 +298,28 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "POST" && url.pathname === "/api/interview-assist/session") {
       const aiSession = await proxyJson("/api/interview-assist/session", await readJsonBody(request));
       const payload = await createLivekitSession(aiSession);
+      sendJson(response, 200, payload);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/interview-assist/livekit-transport") {
+      const body = await readJsonBody(request);
+      if (!body.sessionId) {
+        sendJson(response, 400, { error: "sessionId is required." });
+        return;
+      }
+      const payload = await createLivekitSession(createTransportPayload(body.sessionId));
+      sendJson(response, 200, payload);
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/interview-assist/livekit-room-debug") {
+      const roomName = url.searchParams.get("roomName") || "";
+      if (!roomName) {
+        sendJson(response, 400, { error: "roomName is required." });
+        return;
+      }
+      const payload = await getLivekitRoomDebug(roomName);
       sendJson(response, 200, payload);
       return;
     }

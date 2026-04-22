@@ -1,44 +1,15 @@
+import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import {
-  AutoSubscribe,
-  ServerOptions,
-  WorkerPermissions,
-  cli,
-  defineAgent,
-  inference,
-} from "@livekit/agents";
-import {
-  Agent,
-  AgentSession,
-  AgentSessionEventTypes,
-} from "../node_modules/@livekit/agents/dist/voice/index.js";
-import { turnDetector } from "@livekit/agents-plugin-livekit";
-import { VAD } from "@livekit/agents-plugin-silero";
+import path from "node:path";
+import { AutoSubscribe, ServerOptions, WorkerPermissions, cli, defineAgent } from "@livekit/agents";
+import { AudioStream, RoomEvent, TrackKind } from "@livekit/rtc-node";
 
 const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
 const livekitWsUrl = process.env.LIVEKIT_WS_URL || process.env.LIVEKIT_URL || "";
 const livekitApiKey = process.env.LIVEKIT_API_KEY || "";
 const livekitApiSecret = process.env.LIVEKIT_API_SECRET || "";
 const livekitAgentName = process.env.LIVEKIT_AGENT_NAME || "interview-assist-agent";
-const livekitSttModel = process.env.LIVEKIT_STT_MODEL || "deepgram/nova-3";
-const livekitInferenceBaseUrl =
-  process.env.LIVEKIT_INFERENCE_BASE_URL || process.env.LIVEKIT_INFERENCE_URL || "";
-
-function toHttpUrl(url) {
-  if (!url) {
-    return "";
-  }
-  if (url.startsWith("https://") || url.startsWith("http://")) {
-    return url;
-  }
-  if (url.startsWith("wss://")) {
-    return `https://${url.slice("wss://".length)}`;
-  }
-  if (url.startsWith("ws://")) {
-    return `http://${url.slice("ws://".length)}`;
-  }
-  return `https://${url}`;
-}
+const capturedAudioDir = process.env.INTERVIEW_ASSIST_CAPTURE_DIR || ".omx/interview-assist/captured-audio";
 
 function logAgent(event, payload = {}) {
   console.log(JSON.stringify({
@@ -46,6 +17,107 @@ function logAgent(event, payload = {}) {
     timestamp: Date.now(),
     ...payload,
   }));
+}
+
+function audioFrameStats(int16Samples) {
+  if (!int16Samples?.length) {
+    return {
+      sampleCount: 0,
+      peak: 0,
+      rms: 0,
+      nonZero: 0,
+    };
+  }
+
+  let peak = 0;
+  let sumSquares = 0;
+  let nonZero = 0;
+  for (let index = 0; index < int16Samples.length; index += 1) {
+    const value = int16Samples[index] || 0;
+    const absValue = Math.abs(value);
+    if (absValue > 0) {
+      nonZero += 1;
+    }
+    if (absValue > peak) {
+      peak = absValue;
+    }
+    sumSquares += value * value;
+  }
+
+  return {
+    sampleCount: int16Samples.length,
+    peak,
+    rms: Math.round(Math.sqrt(sumSquares / int16Samples.length)),
+    nonZero,
+  };
+}
+
+function int16ToLittleEndianBuffer(int16Samples) {
+  const buffer = Buffer.allocUnsafe(int16Samples.length * 2);
+  for (let index = 0; index < int16Samples.length; index += 1) {
+    buffer.writeInt16LE(int16Samples[index] || 0, index * 2);
+  }
+  return buffer;
+}
+
+function wavHeader({ dataSize, sampleRate, channels, bitsPerSample }) {
+  const header = Buffer.alloc(44);
+  const blockAlign = channels * bitsPerSample / 8;
+  const byteRate = sampleRate * blockAlign;
+  header.write("RIFF", 0, 4, "ascii");
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write("WAVE", 8, 4, "ascii");
+  header.write("fmt ", 12, 4, "ascii");
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write("data", 36, 4, "ascii");
+  header.writeUInt32LE(dataSize, 40);
+  return header;
+}
+
+async function persistCapturedAudioCase({ sessionId, pcmChunks }) {
+  if (!pcmChunks.length) {
+    return null;
+  }
+  await mkdir(capturedAudioDir, { recursive: true });
+  const pcmBuffer = Buffer.concat(pcmChunks);
+  const pcmPath = path.join(capturedAudioDir, `${sessionId}.pcm`);
+  const wavPath = path.join(capturedAudioDir, `${sessionId}.wav`);
+  const metaPath = path.join(capturedAudioDir, `${sessionId}.json`);
+  const wavBuffer = Buffer.concat([
+    wavHeader({
+      dataSize: pcmBuffer.byteLength,
+      sampleRate: 16000,
+      channels: 1,
+      bitsPerSample: 16,
+    }),
+    pcmBuffer,
+  ]);
+
+  await Promise.all([
+    writeFile(pcmPath, pcmBuffer),
+    writeFile(wavPath, wavBuffer),
+    writeFile(metaPath, JSON.stringify({
+      sessionId,
+      sampleRate: 16000,
+      channels: 1,
+      bitsPerSample: 16,
+      bytes: pcmBuffer.byteLength,
+      createdAt: new Date().toISOString(),
+    }, null, 2)),
+  ]);
+
+  return {
+    pcmPath,
+    wavPath,
+    metaPath,
+    bytes: pcmBuffer.byteLength,
+  };
 }
 
 async function publishEvent(participant, destinationIdentity, event, data, reliable = true) {
@@ -60,74 +132,256 @@ async function publishEvent(participant, destinationIdentity, event, data, relia
   });
 }
 
-function parseSseEvent(rawEvent) {
-  const lines = String(rawEvent || "").split(/\r?\n/);
-  let event = "message";
-  const dataLines = [];
-  for (const line of lines) {
-    if (line.startsWith("event:")) {
-      event = line.slice("event:".length).trim();
-    } else if (line.startsWith("data:")) {
-      dataLines.push(line.slice("data:".length).trimStart());
-    }
+function parseParticipantMetadata(participant) {
+  try {
+    return participant?.metadata ? JSON.parse(participant.metadata) : {};
+  } catch {
+    return {};
   }
-  return {
-    event,
-    dataText: dataLines.join("\n"),
-  };
 }
 
-async function relayAssistStream({ aiSessionId, questionText, destinationIdentity, room }) {
-  const response = await fetch(`${aiServiceUrl}/api/interview-assist/answer-stream`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      sessionId: aiSessionId,
-      questionText,
-      questionEndedAt: Date.now(),
-    }),
+function aiRealtimeWsUrl(sessionId) {
+  return `${aiServiceUrl.replace(/^http/, "ws")}/ws/interview-assist/${encodeURIComponent(sessionId)}`;
+}
+
+function decodeEventData(raw) {
+  if (typeof raw === "string") {
+    return raw;
+  }
+  if (raw instanceof ArrayBuffer) {
+    return Buffer.from(raw).toString("utf8");
+  }
+  if (ArrayBuffer.isView(raw)) {
+    return Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength).toString("utf8");
+  }
+  if (raw instanceof Blob) {
+    return raw.text();
+  }
+  return String(raw || "");
+}
+
+async function openAiRelay({ sessionId, room, destinationIdentity, relayState }) {
+  const ws = new WebSocket(aiRealtimeWsUrl(sessionId));
+  relayState.ws = ws;
+
+  ws.binaryType = "arraybuffer";
+
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Timed out connecting to AI realtime websocket.")), 10000);
+    ws.onopen = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      reject(new Error("Failed to connect to AI realtime websocket."));
+    };
   });
 
-  if (!response.ok || !response.body) {
-    let data = {};
+  ws.onmessage = async (message) => {
     try {
-      data = await response.json();
-    } catch {}
-    throw new Error(data.error || data.detail || "Interview assist stream failed.");
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) {
-      break;
-    }
-    buffer += decoder.decode(value, { stream: true });
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary >= 0) {
-      const rawEvent = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      const { event, dataText } = parseSseEvent(rawEvent);
-      const data = dataText ? JSON.parse(dataText) : {};
-      if (event !== "reply_status" && event !== "done") {
-        await publishEvent(room.localParticipant, destinationIdentity, event, data);
+      const raw = await decodeEventData(message.data);
+      const parsed = JSON.parse(raw);
+      logAgent("agent_ai_event", {
+        sessionId,
+        relayEvent: parsed.event,
+      });
+      if (parsed.event === "error") {
+        relayState.stopped = true;
       }
-      boundary = buffer.indexOf("\n\n");
+      await publishEvent(
+        room.localParticipant,
+        destinationIdentity,
+        parsed.event,
+        parsed.data || {},
+        parsed.event !== "transcript_partial",
+      );
+    } catch (error) {
+      logAgent("agent_ai_event_parse_error", {
+        sessionId,
+        error: error.message || String(error),
+      });
     }
+  };
+
+  ws.onclose = async () => {
+    relayState.closed = true;
+    logAgent("agent_ai_ws_closed", { sessionId });
+  };
+
+  ws.onerror = async () => {
+    logAgent("agent_ai_ws_error", { sessionId });
+    await publishEvent(room.localParticipant, destinationIdentity, "error", {
+      error: "AI realtime relay websocket disconnected.",
+    });
+  };
+
+  return ws;
+}
+
+async function stopAiRelay(relayState) {
+  relayState.stopped = true;
+  if (relayState.reader) {
+    try {
+      await relayState.reader.cancel();
+    } catch {}
+    relayState.reader = null;
+  }
+  if (relayState.ws && relayState.ws.readyState === WebSocket.OPEN) {
+    try {
+      relayState.ws.send(JSON.stringify({ event: "stop" }));
+    } catch {}
+    relayState.ws.close();
+  }
+  relayState.ws = null;
+}
+
+async function bridgeTrackToAi({ track, room, sessionId, destinationIdentity, relayState }) {
+  if (relayState.started) {
+    return;
+  }
+  relayState.started = true;
+  relayState.stopped = false;
+  const capturedPcmChunks = [];
+
+  logAgent("agent_audio_bridge_started", {
+    sessionId,
+    trackSid: track.sid,
+  });
+
+  try {
+    const ws = await openAiRelay({ sessionId, room, destinationIdentity, relayState });
+    const stream = new AudioStream(track, {
+      sampleRate: 16000,
+      numChannels: 1,
+      frameSizeMs: 20,
+    });
+    const reader = stream.getReader();
+    relayState.reader = reader;
+
+    let frameIndex = 0;
+    let pendingChunks = [];
+    let pendingFrameCount = 0;
+    let batchIndex = 0;
+
+    const flushPending = (force = false) => {
+      if (!pendingChunks.length) {
+        return null;
+      }
+      const totalBytes = pendingChunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+      if (!force && totalBytes < 1024) {
+        return null;
+      }
+      const payload = Buffer.concat(pendingChunks, totalBytes);
+      pendingChunks = [];
+      pendingFrameCount = 0;
+      return payload;
+    };
+
+    while (!relayState.stopped) {
+      const { done, value } = await reader.read();
+      if (done || !value) {
+        break;
+      }
+      if (ws.readyState !== WebSocket.OPEN || relayState.stopped) {
+        break;
+      }
+
+      const pcmBytes = int16ToLittleEndianBuffer(value.data);
+      if (!pcmBytes.byteLength) {
+        continue;
+      }
+      frameIndex += 1;
+      pendingChunks.push(pcmBytes);
+      pendingFrameCount += 1;
+      if (frameIndex <= 5 || frameIndex % 50 === 0) {
+        const stats = audioFrameStats(value.data);
+        logAgent("agent_audio_frame_forwarded", {
+          sessionId,
+          frameIndex,
+          bytes: pcmBytes.byteLength,
+          sampleRate: value.sampleRate,
+          channels: value.channels,
+          samplesPerChannel: value.samplesPerChannel,
+          peak: stats.peak,
+          rms: stats.rms,
+          nonZero: stats.nonZero,
+        });
+      }
+      if (pendingFrameCount >= 5) {
+        const payload = flushPending();
+        if (payload) {
+          batchIndex += 1;
+          capturedPcmChunks.push(payload);
+          logAgent("agent_audio_batch_sent", {
+            sessionId,
+            batchIndex,
+            bytes: payload.byteLength,
+            frameCount: 5,
+          });
+          ws.send(payload);
+        }
+      }
+    }
+
+    const finalPayload = flushPending(true);
+    if (finalPayload && ws.readyState === WebSocket.OPEN && !relayState.stopped) {
+      batchIndex += 1;
+      capturedPcmChunks.push(finalPayload);
+      logAgent("agent_audio_batch_sent", {
+        sessionId,
+        batchIndex,
+        bytes: finalPayload.byteLength,
+        frameCount: pendingFrameCount || undefined,
+        final: true,
+      });
+      ws.send(finalPayload);
+    }
+
+    const persistedCase = await persistCapturedAudioCase({
+      sessionId,
+      pcmChunks: capturedPcmChunks,
+    });
+    if (persistedCase) {
+      logAgent("agent_audio_case_saved", {
+        sessionId,
+        pcmPath: persistedCase.pcmPath,
+        wavPath: persistedCase.wavPath,
+        bytes: persistedCase.bytes,
+      });
+    }
+  } catch (error) {
+      logAgent("agent_audio_bridge_error", {
+        sessionId,
+        error: error.message || String(error),
+      });
+    await publishEvent(room.localParticipant, destinationIdentity, "error", {
+      error: error.message || "LiveKit audio relay failed.",
+    });
+  } finally {
+    const persistedCase = await persistCapturedAudioCase({
+      sessionId,
+      pcmChunks: capturedPcmChunks,
+    }).catch((error) => {
+      logAgent("agent_audio_case_save_error", {
+        sessionId,
+        error: error.message || String(error),
+      });
+      return null;
+    });
+    if (persistedCase) {
+      logAgent("agent_audio_case_saved", {
+        sessionId,
+        pcmPath: persistedCase.pcmPath,
+        wavPath: persistedCase.wavPath,
+        bytes: persistedCase.bytes,
+      });
+    }
+    await stopAiRelay(relayState);
   }
 }
 
 const worker = defineAgent({
-  prewarm: async (proc) => {
-    logAgent("agent_prewarm_started");
-    proc.userData.vad = await VAD.load();
-    logAgent("agent_prewarm_completed");
-  },
   entry: async (ctx) => {
     logAgent("agent_job_started", {
       jobId: ctx.job?.id,
@@ -140,163 +394,141 @@ const worker = defineAgent({
       localIdentity: ctx.room.localParticipant?.identity,
     });
 
+    ctx.room.on(RoomEvent.ParticipantConnected, (remoteParticipant) => {
+      logAgent("agent_participant_connected", {
+        roomName: ctx.room.name,
+        participantIdentity: remoteParticipant.identity,
+        metadata: remoteParticipant.metadata || "",
+        publicationCount: remoteParticipant.trackPublications.size,
+      });
+    });
+
+    ctx.room.on(RoomEvent.TrackPublished, (publication, remoteParticipant) => {
+      logAgent("agent_track_published", {
+        participantIdentity: remoteParticipant.identity,
+        trackSid: publication?.sid,
+        source: publication?.source,
+        kind: publication?.kind,
+        subscribed: publication?.subscribed,
+      });
+      if (publication?.kind === TrackKind.KIND_AUDIO && !publication?.subscribed) {
+        publication.setSubscribed(true);
+        logAgent("agent_track_subscribe_requested", {
+          participantIdentity: remoteParticipant.identity,
+          trackSid: publication?.sid,
+          reason: "track_published",
+        });
+      }
+    });
+
+    ctx.room.on(RoomEvent.TrackSubscribed, (track, publication, remoteParticipant) => {
+      logAgent("agent_track_subscribed", {
+        participantIdentity: remoteParticipant.identity,
+        trackSid: publication?.sid,
+        source: publication?.source,
+        kind: publication?.kind,
+      });
+    });
+
+    ctx.room.on(RoomEvent.TrackSubscriptionFailed, (trackSid, remoteParticipant, reason) => {
+      logAgent("agent_track_subscription_failed", {
+        participantIdentity: remoteParticipant.identity,
+        trackSid,
+        reason: reason || "",
+      });
+    });
+
     const participant = await ctx.waitForParticipant();
-    const metadata = (() => {
-      try {
-        return participant.metadata ? JSON.parse(participant.metadata) : {};
-      } catch {
-        return {};
-      }
-    })();
-    const aiSessionId = metadata.aiSessionId || "";
+    const metadata = parseParticipantMetadata(participant);
+    const sessionId = metadata.aiSessionId || "";
     const destinationIdentity = participant.identity;
-    const sttBaseURL = livekitInferenceBaseUrl || toHttpUrl(livekitWsUrl);
-
-    logAgent("agent_participant_linked", {
-      aiSessionId,
-      destinationIdentity,
-      participantSid: participant.sid,
-      trackPublications: Array.from(participant.trackPublications.values()).map((publication) => ({
-        sid: publication.sid,
-        kind: publication.kind,
-        source: publication.source,
-        subscribed: publication.isSubscribed,
-        mimeType: publication.mimeType,
-      })),
+    logAgent("agent_participant_ready", {
+      participantIdentity: participant.identity,
+      metadata,
+      publicationCount: participant.trackPublications.size,
     });
+    const relayState = {
+      started: false,
+      stopped: false,
+      closed: false,
+      ws: null,
+      reader: null,
+    };
 
-    logAgent("agent_stt_config", {
-      provider: "livekit-inference",
-      model: livekitSttModel,
-      baseURL: sttBaseURL,
-      hasApiKey: Boolean(livekitApiKey),
-      localLiveKitServer: /^https?:\/\/127\.0\.0\.1|^https?:\/\/localhost/.test(sttBaseURL),
-      note: "Local livekit-server provides WebRTC rooms but not cloud STT inference. Configure LIVEKIT_INFERENCE_BASE_URL or a supported STT provider for transcription.",
-    });
-
-    const session = new AgentSession({
-      vad: ctx.proc.userData.vad,
-      stt: new inference.STT({
-        model: livekitSttModel,
-        baseURL: sttBaseURL,
-        apiKey: livekitApiKey,
-        apiSecret: livekitApiSecret,
-      }),
-      turnDetection: new turnDetector.MultilingualModel(),
-    });
-
-    let inFlight = false;
-
-    session.on(AgentSessionEventTypes.UserInputTranscribed, async (ev) => {
-      logAgent("agent_transcript", {
-        aiSessionId,
-        isFinal: ev.isFinal,
-        transcriptChars: ev.transcript.length,
-        language: ev.language,
+    const maybeBridgeTrack = async (track, publication, remoteParticipant) => {
+      logAgent("agent_bridge_track_seen", {
+        sessionId,
+        participantIdentity: remoteParticipant.identity,
+        publicationSid: publication?.sid,
+        kind: publication?.kind ?? track?.kind,
+        source: publication?.source,
+        hasTrack: Boolean(track),
       });
-      await publishEvent(
-        ctx.room.localParticipant,
+      if (remoteParticipant.identity !== destinationIdentity) {
+        return;
+      }
+      const kind = publication?.kind ?? track?.kind;
+      if (kind !== TrackKind.KIND_AUDIO) {
+        logAgent("agent_bridge_track_skipped_non_audio", {
+          sessionId,
+          participantIdentity: remoteParticipant.identity,
+          kind,
+        });
+        return;
+      }
+      await bridgeTrackToAi({
+        track,
+        room: ctx.room,
+        sessionId,
         destinationIdentity,
-        ev.isFinal ? "transcript_final" : "transcript_partial",
-        {
-          transcript: ev.transcript,
-          isFinal: ev.isFinal,
-          createdAt: ev.createdAt,
-        },
-        !ev.isFinal
-      );
+        relayState,
+      });
+    };
+
+    ctx.room.on(RoomEvent.TrackSubscribed, maybeBridgeTrack);
+
+    for (const publication of participant.trackPublications.values()) {
+      logAgent("agent_existing_publication", {
+        participantIdentity: participant.identity,
+        publicationSid: publication.sid,
+        source: publication.source,
+        kind: publication.kind,
+        hasTrack: Boolean(publication.track),
+      });
+      if (publication.kind === TrackKind.KIND_AUDIO && !publication.subscribed) {
+        publication.setSubscribed(true);
+        logAgent("agent_track_subscribe_requested", {
+          participantIdentity: participant.identity,
+          trackSid: publication.sid,
+          reason: "existing_publication",
+        });
+      }
+      if (publication.track) {
+        void maybeBridgeTrack(publication.track, publication, participant);
+      }
+    }
+
+    let resolveDone;
+    const donePromise = new Promise((resolve) => {
+      resolveDone = resolve;
     });
 
-    session.on(AgentSessionEventTypes.ConversationItemAdded, async (ev) => {
-      if (ev.item.role !== "user") {
-        return;
+    ctx.room.on(RoomEvent.ParticipantDisconnected, (remoteParticipant) => {
+      if (remoteParticipant.identity === destinationIdentity) {
+        resolveDone();
       }
-      const questionText = ev.item.textContent?.trim();
-      logAgent("agent_conversation_item_added", {
-        aiSessionId,
-        role: ev.item.role,
-        textChars: questionText?.length || 0,
-      });
-      if (!questionText || !aiSessionId || inFlight) {
-        return;
-      }
-      inFlight = true;
-      try {
-        logAgent("agent_turn_committed", {
-          aiSessionId,
-          questionChars: questionText.length,
-        });
-        await publishEvent(ctx.room.localParticipant, destinationIdentity, "turn_committed", {
-          questionText,
-          createdAt: ev.createdAt,
-        });
-        await relayAssistStream({
-          aiSessionId,
-          questionText,
-          destinationIdentity,
-          room: ctx.room,
-        });
-      } catch (error) {
-        logAgent("agent_relay_error", {
-          aiSessionId,
-          error: error.message || String(error),
-        });
-        await publishEvent(ctx.room.localParticipant, destinationIdentity, "error", {
-          error: error.message || "LiveKit agent relay failed.",
-        });
-      } finally {
-        inFlight = false;
-      }
-    });
-
-    session.on(AgentSessionEventTypes.Error, async (ev) => {
-      const message = ev.error?.message || String(ev.error || "LiveKit Agent session error.");
-      logAgent("agent_session_error", {
-        aiSessionId,
-        source: ev.source?.constructor?.name || "",
-        error: message,
-      });
-      await publishEvent(ctx.room.localParticipant, destinationIdentity, "error", {
-        error: `LiveKit Agent STT/turn detection error: ${message}`,
-        source: ev.source?.constructor?.name || "",
-      });
-    });
-
-    const agent = new Agent({
-      instructions: "You are a silent voice capture agent. Do not speak. Only detect completed user turns.",
     });
 
     ctx.addShutdownCallback(async () => {
-      await session.close();
+      await stopAiRelay(relayState);
+      resolveDone();
     });
 
-    await publishEvent(ctx.room.localParticipant, destinationIdentity, "agent_ready", {
-      aiSessionId,
-      participantIdentity: destinationIdentity,
-      sttModel: livekitSttModel,
-    });
-    logAgent("agent_ready_published", {
-      aiSessionId,
-      destinationIdentity,
-    });
-
-    await session.start({
-      room: ctx.room,
-      agent,
-      inputOptions: {
-        participantIdentity: destinationIdentity,
-        audioEnabled: true,
-        textEnabled: false,
-      },
-      outputOptions: {
-        audioEnabled: false,
-        transcriptionEnabled: false,
-      },
-    });
+    await donePromise;
   },
 });
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv.includes("start")) {
   cli.runApp(
     new ServerOptions({
       agent: fileURLToPath(import.meta.url),
@@ -305,7 +537,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       apiKey: livekitApiKey,
       apiSecret: livekitApiSecret,
       permissions: new WorkerPermissions(false, true, true, false),
-    })
+    }),
   );
 }
 

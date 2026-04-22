@@ -1,8 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-const defaultJavaGuideRoot = process.env.LLAI_JAVAGUIDE_ROOT || "/Users/lee/IdeaProjects/JavaGuide";
-const javaGuideDocsRoot = path.resolve(defaultJavaGuideRoot, "docs");
+const defaultKnowledgeRoot = process.env.LLAI_KNOWLEDGE_BASE_ROOT || path.resolve(process.cwd(), "data/javaguide");
+const knowledgeRoot = path.resolve(defaultKnowledgeRoot);
+const docsRoot = path.join(knowledgeRoot, "docs");
+const assetsRoot = path.join(knowledgeRoot, "assets");
+const manifestPath = path.join(knowledgeRoot, "manifest.json");
 
 const assetMimeTypes = {
   ".avif": "image/avif",
@@ -13,6 +16,8 @@ const assetMimeTypes = {
   ".svg": "image/svg+xml",
   ".webp": "image/webp",
 };
+
+let manifestCache = null;
 
 function normalizeSlashes(value = "") {
   return String(value || "").replace(/\\/g, "/");
@@ -27,37 +32,44 @@ function ensureDocsRelativePath(inputPath = "") {
     return "README.md";
   }
   if (normalized === ".." || normalized.startsWith("../")) {
-    throw new Error("JavaGuide path is outside docs root.");
+    throw new Error("Knowledge path is outside docs root.");
   }
   return normalized;
 }
 
-function buildAbsoluteDocsPath(relativePath) {
-  const absolutePath = path.resolve(javaGuideDocsRoot, relativePath);
-  if (absolutePath !== javaGuideDocsRoot && !absolutePath.startsWith(`${javaGuideDocsRoot}${path.sep}`)) {
-    throw new Error("JavaGuide path is outside docs root.");
+function normalizeDocPath(inputPath = "") {
+  return `docs/${ensureDocsRelativePath(inputPath)}`;
+}
+
+function buildSafePath(root, relativePath) {
+  const absolutePath = path.resolve(root, relativePath);
+  if (absolutePath !== root && !absolutePath.startsWith(`${root}${path.sep}`)) {
+    throw new Error("Knowledge path is outside root.");
   }
   return absolutePath;
 }
 
-function readFrontmatterTitle(raw = "") {
-  const match = String(raw || "").match(/^---\r?\n[\s\S]*?^\s*title:\s*(.+?)\s*$[\s\S]*?^---\s*$/m);
-  return match ? String(match[1]).trim().replace(/^['"]|['"]$/g, "") : "";
+export async function readKnowledgeManifest() {
+  if (!manifestCache) {
+    manifestCache = JSON.parse(await readFile(manifestPath, "utf8"));
+  }
+  return manifestCache;
 }
 
-function stripFrontmatter(raw = "") {
-  return String(raw || "").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+export async function listKnowledgeDocuments() {
+  const manifest = await readKnowledgeManifest();
+  return manifest.docs || [];
 }
 
-function stripMarkdownNoise(raw = "") {
-  return stripFrontmatter(raw)
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/\r/g, "")
-    .trim();
-}
-
-function splitFenceSegments(markdown = "") {
-  return String(markdown || "").split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g);
+function splitHash(target = "") {
+  const hashIndex = target.indexOf("#");
+  if (hashIndex < 0) {
+    return { pathname: target, hash: "" };
+  }
+  return {
+    pathname: target.slice(0, hashIndex),
+    hash: target.slice(hashIndex + 1),
+  };
 }
 
 function extractLinkTarget(rawTarget = "") {
@@ -72,24 +84,8 @@ function extractLinkTarget(rawTarget = "") {
   return match ? match[1] : trimmed;
 }
 
-function splitHash(target = "") {
-  const hashIndex = target.indexOf("#");
-  if (hashIndex < 0) {
-    return { pathname: target, hash: "" };
-  }
-  return {
-    pathname: target.slice(0, hashIndex),
-    hash: target.slice(hashIndex + 1),
-  };
-}
-
 function isExternalUrl(target = "") {
   return /^https?:\/\//i.test(target);
-}
-
-function normalizeLearnDocPath(targetPath = "") {
-  const relativePath = ensureDocsRelativePath(targetPath);
-  return `docs/${relativePath}`;
 }
 
 function resolveRelativePath(currentDocPath, targetPath, { treatAsMarkdown = true } = {}) {
@@ -104,7 +100,7 @@ function resolveRelativePath(currentDocPath, targetPath, { treatAsMarkdown = tru
     resolved = currentRelative;
   }
   if (resolved === ".." || resolved.startsWith("../")) {
-    throw new Error("Resolved JavaGuide path is outside docs root.");
+    throw new Error("Resolved knowledge path is outside docs root.");
   }
   if (treatAsMarkdown) {
     if (resolved.endsWith("/")) {
@@ -113,7 +109,7 @@ function resolveRelativePath(currentDocPath, targetPath, { treatAsMarkdown = tru
       resolved = `${resolved}.md`;
     }
   }
-  return normalizeLearnDocPath(resolved);
+  return `docs/${resolved}`;
 }
 
 function rewriteLinkTarget(rawTarget, currentDocPath, serviceBaseUrl) {
@@ -151,6 +147,10 @@ function rewriteImageTarget(rawTarget, currentDocPath, serviceBaseUrl) {
   return `${serviceBaseUrl}/api/knowledge/asset?path=${encodeURIComponent(resolvedAssetPath)}`;
 }
 
+function splitFenceSegments(markdown = "") {
+  return String(markdown || "").split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g);
+}
+
 function rewriteMarkdownSegment(segment, currentDocPath, serviceBaseUrl) {
   const rewrittenImages = segment.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, rawTarget) => (
     `![${alt}](${rewriteImageTarget(rawTarget, currentDocPath, serviceBaseUrl)})`
@@ -171,72 +171,32 @@ function rewriteMarkdownLinks(markdown, currentDocPath, serviceBaseUrl) {
     .join("");
 }
 
-export function slugifyHeading(text = "") {
-  const slug = String(text || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[`*_~[\]()]/g, "")
-    .replace(/[^\p{L}\p{N}]+/gu, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug || "section";
-}
-
-export function extractMarkdownHeadings(markdown = "") {
-  const headings = [];
-  const lines = String(markdown || "").replace(/\r/g, "").split("\n");
-  let inFence = false;
-
-  lines.forEach((line) => {
-    const trimmed = line.trim();
-    if (/^(```|~~~)/.test(trimmed)) {
-      inFence = !inFence;
-      return;
-    }
-    if (inFence) {
-      return;
-    }
-
-    const match = trimmed.match(/^(#{2,4})\s+(.+)$/);
-    if (!match) {
-      return;
-    }
-
-    const text = match[2].trim();
-    headings.push({
-      id: slugifyHeading(text),
-      level: match[1].length,
-      text,
-    });
-  });
-
-  return headings;
-}
-
 export function getAssetMimeType(assetPath = "") {
-  return assetMimeTypes[path.extname(String(assetPath || "")).toLowerCase()] || "application/octet-stream";
+  return assetMimeTypes[path.extname(String(assetPath || "").toLowerCase())] || "application/octet-stream";
 }
 
 export async function readJavaGuideDocument(docPath, { serviceBaseUrl = "" } = {}) {
-  const normalizedDocPath = normalizeLearnDocPath(docPath);
-  const absolutePath = buildAbsoluteDocsPath(ensureDocsRelativePath(normalizedDocPath));
-  const raw = await readFile(absolutePath, "utf8");
-  const titleFromFrontmatter = readFrontmatterTitle(raw);
-  const strippedMarkdown = stripMarkdownNoise(raw);
-  const headings = extractMarkdownHeadings(strippedMarkdown);
+  const normalizedDocPath = normalizeDocPath(docPath);
+  const manifest = await readKnowledgeManifest();
+  const metadata = (manifest.docs || []).find((doc) => doc.path === normalizedDocPath);
+  if (!metadata) {
+    throw new Error("Knowledge document not found.");
+  }
+
+  const relativePath = ensureDocsRelativePath(normalizedDocPath);
+  const rawMarkdown = await readFile(buildSafePath(docsRoot, relativePath), "utf8");
 
   return {
-    path: normalizedDocPath,
-    title: titleFromFrontmatter || headings[0]?.text || path.posix.basename(normalizedDocPath, ".md"),
+    ...metadata,
     markdown: serviceBaseUrl
-      ? rewriteMarkdownLinks(strippedMarkdown, normalizedDocPath, serviceBaseUrl)
-      : strippedMarkdown,
-    headings,
+      ? rewriteMarkdownLinks(rawMarkdown, normalizedDocPath, serviceBaseUrl)
+      : rawMarkdown,
   };
 }
 
 export async function readJavaGuideAsset(assetPath) {
   const relativePath = ensureDocsRelativePath(assetPath);
-  const absolutePath = buildAbsoluteDocsPath(relativePath);
+  const absolutePath = buildSafePath(assetsRoot, relativePath);
   return {
     absolutePath,
     mimeType: getAssetMimeType(relativePath),

@@ -15,7 +15,6 @@ from app.domain.interview.validators import (
     validate_turn_envelope_payload,
 )
 from app.engine.context_packet import normalize_whitespace, trim_text
-from app.engine.java_guide_source_reader import load_java_guide_source_snippets
 from app.infra.llm.client import TracedLLMClient
 from app.core.config import versions
 
@@ -616,7 +615,6 @@ def build_turn_envelope_prompt(
     forced_action: str | None = None,
     concept: Dict[str, Any] | None = None,
 ) -> str:
-    guide_snippets = load_java_guide_source_snippets((concept or {}).get("javaGuideSources") or []) if forced_action == "teach" and concept else []
     sections = [
         "You are the main decision engine for one AI tutor turn. Return json only.",
         "Do not write the learner-facing reply here.",
@@ -656,7 +654,7 @@ def build_turn_envelope_prompt(
         sections.extend(
             [
                 "",
-                "TEACHING MATERIAL:",
+                "TEACHING CONTEXT:",
                 json.dumps(
                     {
                         "concept_title": concept.get("title", ""),
@@ -665,12 +663,11 @@ def build_turn_envelope_prompt(
                         "misconception": concept.get("misconception", ""),
                         "remediation_hint": concept.get("remediationHint", ""),
                         "check_question": concept.get("checkQuestion") or concept.get("retryQuestion") or "",
+                        "sources": concept.get("javaGuideSources", []),
                     },
                     ensure_ascii=False,
                     indent=2,
                 ),
-                "GUIDE_SNIPPETS_JSON:",
-                json.dumps(guide_snippets, ensure_ascii=False, indent=2),
                 "",
                 "When FORCED_ACTION is teach, do not probe before helping.",
                 "Keep the follow_up_question focused on one teach-back question after the explanation stage.",

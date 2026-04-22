@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, postEventStream, postJson } from "../lib/api";
-import { createBaselinePackDecomposition, getBaselinePackById } from "../../src/baseline/baseline-packs";
 import {
   getStoredTargetBaselineId,
   getStoredUserId,
@@ -354,48 +353,6 @@ function buildDomainMap(session) {
   }));
 }
 
-function createKnowledgeCatalog({ sources = [], concepts = [] }) {
-  const byPath = new Map();
-  for (const source of sources) {
-    if (!source?.path) {
-      continue;
-    }
-    if (!byPath.has(source.path)) {
-      byPath.set(source.path, {
-        path: source.path,
-        title: source.title || source.path.split("/").at(-1)?.replace(/\.md$/, "") || "未命名文档",
-        concepts: [],
-      });
-    }
-  }
-
-  for (const concept of concepts) {
-    for (const source of concept.javaGuideSources || []) {
-      if (!source?.path) {
-        continue;
-      }
-      if (!byPath.has(source.path)) {
-        byPath.set(source.path, {
-          path: source.path,
-          title: source.title || source.path.split("/").at(-1)?.replace(/\.md$/, "") || "未命名文档",
-          concepts: [],
-        });
-      }
-      byPath.get(source.path).concepts.push({
-        id: concept.id,
-        title: concept.title,
-      });
-    }
-  }
-
-  return [...byPath.values()]
-    .sort((left, right) => left.path.localeCompare(right.path))
-    .map((doc) => ({
-      ...doc,
-      concepts: doc.concepts.filter((item, index, items) => items.findIndex((entry) => entry.id === item.id) === index),
-    }));
-}
-
 function buildKnowledgeTree(documents = []) {
   const root = [];
 
@@ -412,7 +369,7 @@ function buildKnowledgeTree(documents = []) {
         node = {
           type: "folder",
           key,
-          label: formatPathSegment(segment),
+          label: document.folderLabels?.[index] || segment,
           children: [],
         };
         level.push(node);
@@ -425,56 +382,10 @@ function buildKnowledgeTree(documents = []) {
       key: document.path,
       path: document.path,
       label: document.title,
-      concepts: document.concepts || [],
     });
   }
 
   return root;
-}
-
-const pathSegmentLabels = {
-  "high-availability": "高可用",
-  "high-performance": "高性能",
-  "distributed-system": "分布式",
-  "database": "数据库",
-  "mysql": "MySQL",
-  "redis": "Redis",
-  "java": "Java",
-  "concurrent": "并发",
-  "jvm": "JVM",
-  "system-design": "系统设计",
-  "framework": "框架",
-  "spring": "Spring",
-  "cs-basics": "计算机基础",
-  "network": "网络",
-  "message-queue": "消息队列",
-};
-
-function formatPathSegment(segment = "") {
-  return pathSegmentLabels[segment] || String(segment || "")
-    .replace(/-/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function buildKnowledgeTrail({ activeDocPath, knowledgeDoc, currentConcept }) {
-  const relativePath = String(activeDocPath || "").replace(/^docs\//, "");
-  if (!relativePath) {
-    return [];
-  }
-
-  const segments = relativePath.split("/");
-  const folderLabels = segments
-    .slice(0, -1)
-    .map((segment) => formatPathSegment(segment))
-    .filter(Boolean);
-  const docTitle = knowledgeDoc?.title || currentConcept?.javaGuideSources?.[0]?.title || "";
-  const conceptTitle = currentConcept?.title || "";
-  const trail = [...folderLabels, docTitle];
-
-  if (conceptTitle && conceptTitle !== docTitle) {
-    trail.push(conceptTitle);
-  }
-  return trail.filter(Boolean);
 }
 
 function scoreStateForProgress(state = "") {
@@ -490,42 +401,6 @@ function scoreStateForProgress(state = "") {
   return 0;
 }
 
-function findBestHeadingAnchor(concept, knowledgeDoc) {
-  if (!concept || !knowledgeDoc?.headings?.length) {
-    return null;
-  }
-
-  const title = String(concept.title || "").toLowerCase();
-  const summary = String(concept.summary || concept.excerpt || "").toLowerCase();
-  const keywords = (concept.keywords || []).map((item) => String(item || "").toLowerCase()).filter(Boolean);
-  const anchors = (concept.sourceAnchors || []).map((item) => String(item || "").toLowerCase()).filter(Boolean);
-
-  let best = null;
-  for (const heading of knowledgeDoc.headings) {
-    const text = String(heading.text || "").toLowerCase();
-    let score = 0;
-
-    if (!text) {
-      continue;
-    }
-    if (title && (title.includes(text) || text.includes(title))) {
-      score += 12;
-    }
-    if (summary && (summary.includes(text) || text.includes(summary))) {
-      score += 8;
-    }
-    score += keywords.filter((keyword) => keyword && text.includes(keyword)).length * 2;
-    score += anchors.filter((anchor) => anchor && anchor.includes(text)).length * 2;
-    score += heading.level === 2 ? 1.5 : 0.5;
-
-    if (!best || score > best.score) {
-      best = { ...heading, score };
-    }
-  }
-
-  return best?.score > 0 ? best : null;
-}
-
 export function LearnWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -534,6 +409,7 @@ export function LearnWorkspace() {
   const qaScrollRef = useRef(null);
   const [profile, setProfile] = useState(null);
   const [baselines, setBaselines] = useState([]);
+  const [knowledgeDocuments, setKnowledgeDocuments] = useState([]);
   const [targetBaselineId, setTargetBaselineId] = useState("");
   const [interactionPreference, setInteractionPreference] = useState("balanced");
   const [session, setSession] = useState(null);
@@ -579,6 +455,12 @@ export function LearnWorkspace() {
   }, [searchParams]);
 
   useEffect(() => {
+    apiFetch("/api/knowledge/docs")
+      .then((data) => setKnowledgeDocuments(data.documents || []))
+      .catch((nextError) => setError(nextError.message));
+  }, []);
+
+  useEffect(() => {
     const userId = getStoredUserId();
     if (!userId) {
       return;
@@ -594,13 +476,9 @@ export function LearnWorkspace() {
   );
   const currentSource = currentConcept?.javaGuideSources?.[0] || session?.summary?.javaGuideSourceClusters?.[0] || null;
   const selectedBaseline = baselines.find((baseline) => baseline.id === targetBaselineId) || baselines[0] || null;
-  const activeDocPath = searchParams.get("doc") || currentSource?.path || "";
+  const activeDocPath = searchParams.get("doc") || currentSource?.path || knowledgeDocuments[0]?.path || "";
   const autostart = searchParams.get("autostart") === "1";
   const desiredConceptId = searchParams.get("concept") || "";
-  const knowledgeTrail = useMemo(
-    () => buildKnowledgeTrail({ activeDocPath, knowledgeDoc, currentConcept }),
-    [activeDocPath, knowledgeDoc, currentConcept]
-  );
   const docConcepts = useMemo(
     () => (session?.concepts || []).filter((concept) =>
       (concept.javaGuideSources || []).some((source) => source.path === activeDocPath)
@@ -622,31 +500,7 @@ export function LearnWorkspace() {
           docConcepts.map((concept) => scoreStateForProgress(session?.conceptStates?.[concept.id]?.judge?.state))
         )
       );
-  const conceptAnchorMap = useMemo(() => (
-    new Map(
-      docConcepts
-        .map((concept) => [concept.id, findBestHeadingAnchor(concept, knowledgeDoc)])
-        .filter((entry) => entry[1])
-    )
-  ), [docConcepts, knowledgeDoc]);
-  const currentDocAnchor = currentConcept ? conceptAnchorMap.get(currentConcept.id) || null : null;
-  const sourceCatalog = useMemo(() => {
-    if (session?.summary?.javaGuideSourceClusters?.length || session?.concepts?.length) {
-      return createKnowledgeCatalog({
-        sources: session?.summary?.javaGuideSourceClusters || [],
-        concepts: session?.concepts || [],
-      });
-    }
-    if (selectedBaseline?.id) {
-      const decomposition = createBaselinePackDecomposition(getBaselinePackById(selectedBaseline.id));
-      return createKnowledgeCatalog({
-        sources: decomposition.summary?.javaGuideSourceClusters || [],
-        concepts: decomposition.concepts || [],
-      });
-    }
-    return [];
-  }, [session, selectedBaseline?.id]);
-  const knowledgeTree = useMemo(() => buildKnowledgeTree(sourceCatalog), [sourceCatalog]);
+  const knowledgeTree = useMemo(() => buildKnowledgeTree(knowledgeDocuments), [knowledgeDocuments]);
 
   function scrollQaToBottom(behavior = "auto") {
     if (!qaScrollRef.current) {
@@ -762,29 +616,12 @@ export function LearnWorkspace() {
     return () => window.cancelAnimationFrame(frame);
   }, [knowledgeDoc?.path, knowledgeDoc?.markdown]);
 
-  useEffect(() => {
-    if (workspaceMode !== "training" || !currentDocAnchor?.id) {
-      return;
-    }
-    const frame = window.requestAnimationFrame(() => {
-      document.getElementById(currentDocAnchor.id)?.scrollIntoView({ block: "center", behavior: "smooth" });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [workspaceMode, currentDocAnchor?.id, currentConcept?.id, session?.currentProbe]);
-
   async function refreshProfile() {
     if (!profile?.user?.id) {
       return;
     }
     const data = await apiFetch(`/api/profile/${profile.user.id}`);
     setProfile(data);
-  }
-
-  function scrollToDocAnchor(anchorId) {
-    if (!anchorId) {
-      return;
-    }
-    document.getElementById(anchorId)?.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 
   async function startSession() {
@@ -1000,7 +837,7 @@ export function LearnWorkspace() {
             <div className="reader-header-main">
               <Link className="back-link header-back-link" href="/">‹</Link>
               <div className="reader-heading">
-                <h1>{knowledgeTrail.length ? knowledgeTrail.join(" › ") : (knowledgeDoc?.title || currentSource?.title || selectedBaseline?.title || "开始学习")}</h1>
+                <h1>{knowledgeDoc?.title || currentSource?.title || selectedBaseline?.title || "开始学习"}</h1>
               </div>
             </div>
             <div className="reader-tools">
@@ -1025,7 +862,7 @@ export function LearnWorkspace() {
                 type="button"
                 className={outlineOpen ? "reader-tool-button active" : "reader-tool-button"}
                 onClick={() => setOutlineOpen((value) => !value)}
-                disabled={!knowledgeDoc?.headings?.length}
+                disabled={!knowledgeTree.length}
               >
                 知识目录
               </button>
@@ -1097,33 +934,10 @@ export function LearnWorkspace() {
               </div>
               <div className="outline-scroll">
                 {knowledgeTree.length ? (
-                  <>
-                    <section className="outline-section">
-                      <div className="outline-section-title">路线与文档</div>
-                      {renderKnowledgeTree(knowledgeTree)}
-                    </section>
-                    <section className="outline-section">
-                      <div className="outline-section-title">当前文档目录</div>
-                      {knowledgeDoc?.headings?.length ? knowledgeDoc.headings.map((heading) => (
-                        <section className="outline-group" key={heading.id}>
-                          <button
-                            type="button"
-                            className={heading.level <= 2 ? "outline-domain active" : "outline-item"}
-                            onClick={() => {
-                              setOutlineOpen(false);
-                              document.getElementById(heading.id)?.scrollIntoView({ block: "start", behavior: "smooth" });
-                            }}
-                          >
-                            {heading.text}
-                          </button>
-                        </section>
-                      )) : (
-                        <p className="empty-copy">
-                          {docLoading ? "正在整理文档目录..." : "当前文档还没有可展开的小节目录。"}
-                        </p>
-                      )}
-                    </section>
-                  </>
+                  <section className="outline-section">
+                    <div className="outline-section-title">文档目录</div>
+                    {renderKnowledgeTree(knowledgeTree)}
+                  </section>
                 ) : (
                   <p className="empty-copy">
                     {docLoading ? "正在整理知识目录..." : "当前路线还没有可展开的文档目录。"}
@@ -1171,11 +985,6 @@ export function LearnWorkspace() {
                 <article className="training-hero-card">
                   <div className="training-hero-title">训练已开启</div>
                   <p>本文档共设计 {docQuestionCount || 0} 道训练题。你可以先直接回答，也可以点“查看解析”先拿到引导，再继续作答。</p>
-                  {currentDocAnchor?.text ? (
-                    <button type="button" className="anchor-pill" onClick={() => scrollToDocAnchor(currentDocAnchor.id)}>
-                      对应文档位置：{currentDocAnchor.text}
-                    </button>
-                  ) : null}
                 </article>
               ) : null}
 
@@ -1184,15 +993,6 @@ export function LearnWorkspace() {
                   <div className="chat-event-row" key={entry.id}>{entry.label}</div>
                 ) : (
                   <article className={entry.role === "assistant" ? "message-card assistant" : "message-card learner"} key={entry.id}>
-                    {entry.role === "assistant" && conceptAnchorMap.get(entry.conceptId) ? (
-                      <button
-                        type="button"
-                        className="message-anchor"
-                        onClick={() => scrollToDocAnchor(conceptAnchorMap.get(entry.conceptId).id)}
-                      >
-                        锚定文档：{conceptAnchorMap.get(entry.conceptId).text}
-                      </button>
-                    ) : null}
                     <div className={`message-body ${entry.role === "assistant" ? "markdown-content" : ""}`}>
                       {entry.role === "assistant"
                         ? renderMarkdownContent(
@@ -1213,11 +1013,6 @@ export function LearnWorkspace() {
                     <div className="message-body"><p>{streamingTurn.answer}</p></div>
                   </article>
                   <article className="message-card assistant">
-                    {currentDocAnchor?.text ? (
-                      <button type="button" className="message-anchor" onClick={() => scrollToDocAnchor(currentDocAnchor.id)}>
-                        锚定文档：{currentDocAnchor.text}
-                      </button>
-                    ) : null}
                     <div className="message-body markdown-content">
                       {renderMarkdownContent(
                         splitTextBlocks(streamingTurn.assistantText).length

@@ -1,0 +1,5821 @@
+{
+  "generatedAt": "2026-04-20T17:02:52.822Z",
+  "sourceRoot": "/Users/lee/IdeaProjects/JavaGuide/docs",
+  "documentCount": 304,
+  "assetCount": 134,
+  "folderLabels": {
+    "about-the-author": "作者相关",
+    "ai": "AI",
+    "books": "书籍",
+    "concurrent": "并发",
+    "cs-basics": "计算机基础",
+    "database": "数据库",
+    "distributed-system": "分布式系统",
+    "framework": "框架",
+    "high-availability": "高可用",
+    "high-performance": "高性能",
+    "interview-preparation": "面试准备",
+    "java": "Java",
+    "javaguide": "JavaGuide",
+    "jvm": "JVM",
+    "message-queue": "消息队列",
+    "mysql": "MySQL",
+    "network": "网络",
+    "open-source-project": "开源项目",
+    "redis": "Redis",
+    "spring": "Spring",
+    "system-design": "系统设计",
+    "tools": "工具",
+    "zhuanlan": "专栏"
+  },
+  "docs": [
+    {
+      "path": "docs/about-the-author/deprecated-java-technologies.md",
+      "title": "已经淘汰的 Java 技术，不要再学了！",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "about-the-author"
+      ],
+      "folderLabels": [
+        "作者相关"
+      ]
+    },
+    {
+      "path": "docs/about-the-author/dog-that-copies-other-people-essay.md",
+      "title": "抄袭狗，你冬天睡觉脚必冷！！！",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "about-the-author"
+      ],
+      "folderLabels": [
+        "作者相关"
+      ]
+    },
+    {
+      "path": "docs/about-the-author/feelings-after-one-month-of-induction-training.md",
+      "title": "入职培训一个月后的感受",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "about-the-author"
+      ],
+      "folderLabels": [
+        "作者相关"
+      ]
+    },
+    {
+      "path": "docs/about-the-author/feelings-of-half-a-year-from-graduation-to-entry.md",
+      "title": "从毕业到入职半年的感受",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "about-the-author"
+      ],
+      "folderLabels": [
+        "作者相关"
+      ]
+    },
+    {
+      "path": "docs/about-the-author/internet-addiction-teenager.md",
+      "title": "我曾经也是网瘾少年",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "about-the-author"
+      ],
+      "folderLabels": [
+        "作者相关"
+      ]
+    },
+    {
+      "path": "docs/about-the-author/javaguide-100k-star.md",
+      "title": "JavaGuide 开源项目 100K Star 了！",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "about-the-author"
+      ],
+      "folderLabels": [
+        "作者相关"
+      ]
+    },
+    {
+      "path": "docs/about-the-author/my-article-was-stolen-and-made-into-video-and-it-became-popular.md",
+      "title": "某培训机构盗我文章做成视频还上了B站热门",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "about-the-author"
+      ],
+      "folderLabels": [
+        "作者相关"
+      ]
+    },
+    {
+      "path": "docs/about-the-author/my-college-life.md",
+      "title": "害，毕业三年了！",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "about-the-author"
+      ],
+      "folderLabels": [
+        "作者相关"
+      ]
+    },
+    {
+      "path": "docs/about-the-author/README.md",
+      "title": "个人介绍 Q&A",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "about-the-author"
+      ],
+      "folderLabels": [
+        "作者相关"
+      ]
+    },
+    {
+      "path": "docs/about-the-author/writing-technology-blog-six-years.md",
+      "title": "坚持写技术博客六年了!",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "about-the-author"
+      ],
+      "folderLabels": [
+        "作者相关"
+      ]
+    },
+    {
+      "path": "docs/about-the-author/zhishixingqiu-two-years.md",
+      "title": "我的知识星球 6 岁了！",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "about-the-author"
+      ],
+      "folderLabels": [
+        "作者相关"
+      ]
+    },
+    {
+      "path": "docs/ai/agent/agent-basis.md",
+      "title": "一文搞懂 AI Agent 核心概念：Agent Loop、Context Engineering、Tools 注册",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "ai",
+        "agent"
+      ],
+      "folderLabels": [
+        "AI",
+        "Agent"
+      ]
+    },
+    {
+      "path": "docs/ai/agent/context-engineering.md",
+      "title": "Context Engineering",
+      "titleSource": "filename",
+      "folderSegments": [
+        "ai",
+        "agent"
+      ],
+      "folderLabels": [
+        "AI",
+        "Agent"
+      ]
+    },
+    {
+      "path": "docs/ai/agent/mcp.md",
+      "title": "万字拆解 MCP，附带工程实践",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "ai",
+        "agent"
+      ],
+      "folderLabels": [
+        "AI",
+        "Agent"
+      ]
+    },
+    {
+      "path": "docs/ai/agent/prompt-engineering.md",
+      "title": "Prompt Engineering",
+      "titleSource": "filename",
+      "folderSegments": [
+        "ai",
+        "agent"
+      ],
+      "folderLabels": [
+        "AI",
+        "Agent"
+      ]
+    },
+    {
+      "path": "docs/ai/agent/skills.md",
+      "title": "万字详解 Agent Skills：是什么？怎么用？和 Prompt、MCP 有什么区别？",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "ai",
+        "agent"
+      ],
+      "folderLabels": [
+        "AI",
+        "Agent"
+      ]
+    },
+    {
+      "path": "docs/ai/ai-coding/idea-qoder-plugin.md",
+      "title": "IDEA + Qoder 插件多场景实战：接口优化与代码重构",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "ai",
+        "ai-coding"
+      ],
+      "folderLabels": [
+        "AI",
+        "Ai Coding"
+      ]
+    },
+    {
+      "path": "docs/ai/ai-coding/trae-m2.7.md",
+      "title": "Trae + MiniMax 多场景实战：Redis 故障排查与跨语言重构",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "ai",
+        "ai-coding"
+      ],
+      "folderLabels": [
+        "AI",
+        "Ai Coding"
+      ]
+    },
+    {
+      "path": "docs/ai/llm-basis/ai-ide.md",
+      "title": "9 道 AI 编程相关的开放性面试问题",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "ai",
+        "llm-basis"
+      ],
+      "folderLabels": [
+        "AI",
+        "Llm Basis"
+      ]
+    },
+    {
+      "path": "docs/ai/llm-basis/llm-operation-mechanism.md",
+      "title": "万字拆解 LLM 运行机制：Token、上下文与采样参数",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "ai",
+        "llm-basis"
+      ],
+      "folderLabels": [
+        "AI",
+        "Llm Basis"
+      ]
+    },
+    {
+      "path": "docs/ai/rag/rag-basis.md",
+      "title": "万字详解 RAG 基础概念",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "ai",
+        "rag"
+      ],
+      "folderLabels": [
+        "AI",
+        "Rag"
+      ]
+    },
+    {
+      "path": "docs/ai/rag/rag-vector-store.md",
+      "title": "万字详解 RAG 向量索引算法和向量数据库",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "ai",
+        "rag"
+      ],
+      "folderLabels": [
+        "AI",
+        "Rag"
+      ]
+    },
+    {
+      "path": "docs/ai/README.md",
+      "title": "AI 应用开发面试指南",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "ai"
+      ],
+      "folderLabels": [
+        "AI"
+      ]
+    },
+    {
+      "path": "docs/books/cs-basics.md",
+      "title": "计算机基础必读经典书籍",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "books"
+      ],
+      "folderLabels": [
+        "书籍"
+      ]
+    },
+    {
+      "path": "docs/books/database.md",
+      "title": "数据库必读经典书籍",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "books"
+      ],
+      "folderLabels": [
+        "书籍"
+      ]
+    },
+    {
+      "path": "docs/books/distributed-system.md",
+      "title": "分布式必读经典书籍",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "books"
+      ],
+      "folderLabels": [
+        "书籍"
+      ]
+    },
+    {
+      "path": "docs/books/java.md",
+      "title": "Java 必读经典书籍",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "books"
+      ],
+      "folderLabels": [
+        "书籍"
+      ]
+    },
+    {
+      "path": "docs/books/README.md",
+      "title": "技术书籍精选",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "books"
+      ],
+      "folderLabels": [
+        "书籍"
+      ]
+    },
+    {
+      "path": "docs/books/search-engine.md",
+      "title": "搜索引擎必读经典书籍",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "books"
+      ],
+      "folderLabels": [
+        "书籍"
+      ]
+    },
+    {
+      "path": "docs/books/software-quality.md",
+      "title": "软件质量必读经典书籍",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "books"
+      ],
+      "folderLabels": [
+        "书籍"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/algorithms/10-classical-sorting-algorithms.md",
+      "title": "十大经典排序算法总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "algorithms"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Algorithms"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/algorithms/classical-algorithm-problems-recommendations.md",
+      "title": "经典算法思想总结（含LeetCode题目推荐）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "algorithms"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Algorithms"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/algorithms/common-data-structures-leetcode-recommendations.md",
+      "title": "常见数据结构经典LeetCode题目推荐",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "algorithms"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Algorithms"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/algorithms/linkedlist-algorithm-problems.md",
+      "title": "几道常见的链表算法题",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "algorithms"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Algorithms"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/algorithms/string-algorithm-problems.md",
+      "title": "几道常见的字符串算法题",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "algorithms"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Algorithms"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/algorithms/the-sword-refers-to-offer.md",
+      "title": "剑指offer部分编程题",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "algorithms"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Algorithms"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/bloom-filter.md",
+      "title": "布隆过滤器",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/graph.md",
+      "title": "图",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/heap.md",
+      "title": "堆",
+      "titleSource": "heading",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/linear-data-structure.md",
+      "title": "线性数据结构",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/red-black-tree.md",
+      "title": "红黑树",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/tree.md",
+      "title": "树",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/application-layer-protocol.md",
+      "title": "应用层常见协议总结（应用层）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/arp.md",
+      "title": "ARP 协议详解(网络层)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/computer-network-xiexiren-summary.md",
+      "title": "《计算机网络》（谢希仁）内容总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/dns.md",
+      "title": "DNS 域名系统详解（应用层）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/http-status-codes.md",
+      "title": "HTTP 常见状态码总结（应用层）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/http-vs-https.md",
+      "title": "HTTP vs HTTPS（应用层）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/http1.0-vs-http1.1.md",
+      "title": "HTTP 1.0 vs HTTP 1.1（应用层）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/nat.md",
+      "title": "NAT 协议详解（网络层）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/network-attack-means.md",
+      "title": "网络攻击常见手段总结（安全）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/osi-and-tcp-ip-model.md",
+      "title": "OSI 和 TCP/IP 网络分层模型详解（基础）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/other-network-questions.md",
+      "title": "计算机网络常见面试题总结(上)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/other-network-questions2.md",
+      "title": "计算机网络常见面试题总结(下)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/tcp-connection-and-disconnection.md",
+      "title": "TCP 三次握手和四次挥手（传输层）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/tcp-reliability-guarantee.md",
+      "title": "TCP 传输可靠性保障（传输层）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/the-whole-process-of-accessing-web-pages.md",
+      "title": "访问网页的全过程（知识串联）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "network"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/operating-system/linux-intro.md",
+      "title": "Linux 基础知识总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "operating-system"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Operating System"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/operating-system/operating-system-basic-questions-01.md",
+      "title": "操作系统常见面试题总结(上)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "operating-system"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Operating System"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/operating-system/operating-system-basic-questions-02.md",
+      "title": "操作系统常见面试题总结(下)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "operating-system"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Operating System"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/operating-system/shell-intro.md",
+      "title": "Shell 编程基础知识总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "cs-basics",
+        "operating-system"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Operating System"
+      ]
+    },
+    {
+      "path": "docs/database/basis.md",
+      "title": "数据库基础知识总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database"
+      ],
+      "folderLabels": [
+        "数据库"
+      ]
+    },
+    {
+      "path": "docs/database/character-set.md",
+      "title": "字符集详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database"
+      ],
+      "folderLabels": [
+        "数据库"
+      ]
+    },
+    {
+      "path": "docs/database/elasticsearch/elasticsearch-questions-01.md",
+      "title": "Elasticsearch常见面试题总结(付费)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "elasticsearch"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Elasticsearch"
+      ]
+    },
+    {
+      "path": "docs/database/mongodb/mongodb-questions-01.md",
+      "title": "MongoDB常见面试题总结（上）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mongodb"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Mongodb"
+      ]
+    },
+    {
+      "path": "docs/database/mongodb/mongodb-questions-02.md",
+      "title": "MongoDB常见面试题总结（下）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mongodb"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Mongodb"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/a-thousand-lines-of-mysql-study-notes.md",
+      "title": "一千行 MySQL 学习笔记",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mysql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/how-sql-executed-in-mysql.md",
+      "title": "SQL语句在MySQL中的执行过程",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mysql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/index-invalidation-caused-by-implicit-conversion.md",
+      "title": "MySQL隐式转换造成索引失效",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mysql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/innodb-implementation-of-mvcc.md",
+      "title": "InnoDB存储引擎对MVCC的实现",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mysql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/mysql-auto-increment-primary-key-continuous.md",
+      "title": "MySQL自增主键一定是连续的吗？",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mysql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/mysql-high-performance-optimization-specification-recommendations.md",
+      "title": "MySQL高性能优化规范建议总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mysql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/mysql-index-invalidation.md",
+      "title": "MySQL索引失效场景总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mysql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/mysql-index.md",
+      "title": "MySQL索引详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mysql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/mysql-logs.md",
+      "title": "MySQL三大日志(binlog、redo log和undo log)详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mysql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/mysql-query-cache.md",
+      "title": "MySQL查询缓存详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mysql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/mysql-query-execution-plan.md",
+      "title": "MySQL执行计划分析",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mysql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/mysql-questions-01.md",
+      "title": "MySQL常见面试题总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mysql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/some-thoughts-on-database-storage-time.md",
+      "title": "MySQL日期类型选择建议",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mysql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/transaction-isolation-level.md",
+      "title": "MySQL事务隔离级别详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "mysql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL"
+      ]
+    },
+    {
+      "path": "docs/database/nosql.md",
+      "title": "NoSQL基础知识总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database"
+      ],
+      "folderLabels": [
+        "数据库"
+      ]
+    },
+    {
+      "path": "docs/database/redis/3-commonly-used-cache-read-and-write-strategies.md",
+      "title": "3种常用的缓存读写策略详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "redis"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Redis"
+      ]
+    },
+    {
+      "path": "docs/database/redis/cache-basics.md",
+      "title": "缓存基础常见面试题总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "redis"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Redis"
+      ]
+    },
+    {
+      "path": "docs/database/redis/redis-cluster.md",
+      "title": "Redis集群详解(付费)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "redis"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Redis"
+      ]
+    },
+    {
+      "path": "docs/database/redis/redis-common-blocking-problems-summary.md",
+      "title": "Redis常见阻塞原因总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "redis"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Redis"
+      ]
+    },
+    {
+      "path": "docs/database/redis/redis-data-structures-01.md",
+      "title": "Redis 5 种基本数据类型详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "redis"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Redis"
+      ]
+    },
+    {
+      "path": "docs/database/redis/redis-data-structures-02.md",
+      "title": "Redis 3 种特殊数据类型详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "redis"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Redis"
+      ]
+    },
+    {
+      "path": "docs/database/redis/redis-delayed-task.md",
+      "title": "如何基于Redis实现延时任务？",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "redis"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Redis"
+      ]
+    },
+    {
+      "path": "docs/database/redis/redis-memory-fragmentation.md",
+      "title": "Redis内存碎片详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "redis"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Redis"
+      ]
+    },
+    {
+      "path": "docs/database/redis/redis-persistence.md",
+      "title": "Redis持久化机制详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "redis"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Redis"
+      ]
+    },
+    {
+      "path": "docs/database/redis/redis-questions-01.md",
+      "title": "Redis常见面试题总结(上)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "redis"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Redis"
+      ]
+    },
+    {
+      "path": "docs/database/redis/redis-questions-02.md",
+      "title": "Redis常见面试题总结(下)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "redis"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Redis"
+      ]
+    },
+    {
+      "path": "docs/database/redis/redis-skiplist.md",
+      "title": "Redis为什么用跳表实现有序集合",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "redis"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Redis"
+      ]
+    },
+    {
+      "path": "docs/database/redis/redis-stream-mq.md",
+      "title": "如何基于Redis实现消息队列？",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "redis"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Redis"
+      ]
+    },
+    {
+      "path": "docs/database/sql/sql-questions-01.md",
+      "title": "SQL常见面试题总结（1）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "sql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Sql"
+      ]
+    },
+    {
+      "path": "docs/database/sql/sql-questions-02.md",
+      "title": "SQL常见面试题总结（2）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "sql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Sql"
+      ]
+    },
+    {
+      "path": "docs/database/sql/sql-questions-03.md",
+      "title": "SQL常见面试题总结（3）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "sql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Sql"
+      ]
+    },
+    {
+      "path": "docs/database/sql/sql-questions-04.md",
+      "title": "SQL常见面试题总结（4）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "sql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Sql"
+      ]
+    },
+    {
+      "path": "docs/database/sql/sql-questions-05.md",
+      "title": "SQL常见面试题总结（5）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "sql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Sql"
+      ]
+    },
+    {
+      "path": "docs/database/sql/sql-syntax-summary.md",
+      "title": "SQL语法基础知识总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "database",
+        "sql"
+      ],
+      "folderLabels": [
+        "数据库",
+        "Sql"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/api-gateway.md",
+      "title": "API网关基础知识总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system"
+      ],
+      "folderLabels": [
+        "分布式系统"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/distributed-configuration-center.md",
+      "title": "分布式配置中心面试题总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system"
+      ],
+      "folderLabels": [
+        "分布式系统"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/distributed-id-design.md",
+      "title": "分布式ID设计实战指南",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system"
+      ],
+      "folderLabels": [
+        "分布式系统"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/distributed-id.md",
+      "title": "分布式ID生成方案总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system"
+      ],
+      "folderLabels": [
+        "分布式系统"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/distributed-lock-implementations.md",
+      "title": "分布式锁常见实现方案总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system"
+      ],
+      "folderLabels": [
+        "分布式系统"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/distributed-lock.md",
+      "title": "分布式锁入门介绍",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system"
+      ],
+      "folderLabels": [
+        "分布式系统"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/distributed-process-coordination/zookeeper/zookeeper-in-action.md",
+      "title": "ZooKeeper实战教程",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system",
+        "distributed-process-coordination",
+        "zookeeper"
+      ],
+      "folderLabels": [
+        "分布式系统",
+        "Distributed Process Coordination",
+        "Zookeeper"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/distributed-process-coordination/zookeeper/zookeeper-intro.md",
+      "title": "ZooKeeper入门指南",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system",
+        "distributed-process-coordination",
+        "zookeeper"
+      ],
+      "folderLabels": [
+        "分布式系统",
+        "Distributed Process Coordination",
+        "Zookeeper"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/distributed-process-coordination/zookeeper/zookeeper-plus.md",
+      "title": "ZooKeeper进阶详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system",
+        "distributed-process-coordination",
+        "zookeeper"
+      ],
+      "folderLabels": [
+        "分布式系统",
+        "Distributed Process Coordination",
+        "Zookeeper"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/distributed-transaction.md",
+      "title": "分布式事务解决方案总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system"
+      ],
+      "folderLabels": [
+        "分布式系统"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/protocol/cap-and-base-theorem.md",
+      "title": "CAP定理与BASE理论详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system",
+        "protocol"
+      ],
+      "folderLabels": [
+        "分布式系统",
+        "Protocol"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/protocol/consistent-hashing.md",
+      "title": "一致性哈希算法详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system",
+        "protocol"
+      ],
+      "folderLabels": [
+        "分布式系统",
+        "Protocol"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/protocol/gossip-protocol.md",
+      "title": "Gossip协议详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system",
+        "protocol"
+      ],
+      "folderLabels": [
+        "分布式系统",
+        "Protocol"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/protocol/paxos-algorithm.md",
+      "title": "Paxos算法详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system",
+        "protocol"
+      ],
+      "folderLabels": [
+        "分布式系统",
+        "Protocol"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/protocol/raft-algorithm.md",
+      "title": "Raft算法详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system",
+        "protocol"
+      ],
+      "folderLabels": [
+        "分布式系统",
+        "Protocol"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/protocol/zab.md",
+      "title": "ZAB协议详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system",
+        "protocol"
+      ],
+      "folderLabels": [
+        "分布式系统",
+        "Protocol"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/rpc/dubbo.md",
+      "title": "Dubbo面试题总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system",
+        "rpc"
+      ],
+      "folderLabels": [
+        "分布式系统",
+        "Rpc"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/rpc/http&rpc.md",
+      "title": "HTTP与RPC对比",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system",
+        "rpc"
+      ],
+      "folderLabels": [
+        "分布式系统",
+        "Rpc"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/rpc/rpc-intro.md",
+      "title": "RPC基础知识总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system",
+        "rpc"
+      ],
+      "folderLabels": [
+        "分布式系统",
+        "Rpc"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/spring-cloud-gateway-questions.md",
+      "title": "Spring Cloud Gateway面试题总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "distributed-system"
+      ],
+      "folderLabels": [
+        "分布式系统"
+      ]
+    },
+    {
+      "path": "docs/high-availability/fallback-and-circuit-breaker.md",
+      "title": "降级&熔断详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-availability"
+      ],
+      "folderLabels": [
+        "高可用"
+      ]
+    },
+    {
+      "path": "docs/high-availability/high-availability-system-design.md",
+      "title": "高可用系统设计指南",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-availability"
+      ],
+      "folderLabels": [
+        "高可用"
+      ]
+    },
+    {
+      "path": "docs/high-availability/idempotency.md",
+      "title": "接口幂等方案总结(付费)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-availability"
+      ],
+      "folderLabels": [
+        "高可用"
+      ]
+    },
+    {
+      "path": "docs/high-availability/limit-request.md",
+      "title": "服务限流详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-availability"
+      ],
+      "folderLabels": [
+        "高可用"
+      ]
+    },
+    {
+      "path": "docs/high-availability/performance-test.md",
+      "title": "性能测试入门",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-availability"
+      ],
+      "folderLabels": [
+        "高可用"
+      ]
+    },
+    {
+      "path": "docs/high-availability/redundancy.md",
+      "title": "冗余设计详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-availability"
+      ],
+      "folderLabels": [
+        "高可用"
+      ]
+    },
+    {
+      "path": "docs/high-availability/timeout-and-retry.md",
+      "title": "超时&重试详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-availability"
+      ],
+      "folderLabels": [
+        "高可用"
+      ]
+    },
+    {
+      "path": "docs/high-performance/cdn.md",
+      "title": "CDN工作原理详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-performance"
+      ],
+      "folderLabels": [
+        "高性能"
+      ]
+    },
+    {
+      "path": "docs/high-performance/data-cold-hot-separation.md",
+      "title": "数据冷热分离详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-performance"
+      ],
+      "folderLabels": [
+        "高性能"
+      ]
+    },
+    {
+      "path": "docs/high-performance/deep-pagination-optimization.md",
+      "title": "深度分页介绍及优化建议",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-performance"
+      ],
+      "folderLabels": [
+        "高性能"
+      ]
+    },
+    {
+      "path": "docs/high-performance/load-balancing.md",
+      "title": "负载均衡原理及算法详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-performance"
+      ],
+      "folderLabels": [
+        "高性能"
+      ]
+    },
+    {
+      "path": "docs/high-performance/message-queue/disruptor-questions.md",
+      "title": "Disruptor常见问题总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-performance",
+        "message-queue"
+      ],
+      "folderLabels": [
+        "高性能",
+        "消息队列"
+      ]
+    },
+    {
+      "path": "docs/high-performance/message-queue/kafka-questions-01.md",
+      "title": "Kafka常见问题总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-performance",
+        "message-queue"
+      ],
+      "folderLabels": [
+        "高性能",
+        "消息队列"
+      ]
+    },
+    {
+      "path": "docs/high-performance/message-queue/message-queue.md",
+      "title": "消息队列基础知识总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-performance",
+        "message-queue"
+      ],
+      "folderLabels": [
+        "高性能",
+        "消息队列"
+      ]
+    },
+    {
+      "path": "docs/high-performance/message-queue/rabbitmq-questions.md",
+      "title": "RabbitMQ常见问题总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-performance",
+        "message-queue"
+      ],
+      "folderLabels": [
+        "高性能",
+        "消息队列"
+      ]
+    },
+    {
+      "path": "docs/high-performance/message-queue/rocketmq-questions.md",
+      "title": "RocketMQ常见问题总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-performance",
+        "message-queue"
+      ],
+      "folderLabels": [
+        "高性能",
+        "消息队列"
+      ]
+    },
+    {
+      "path": "docs/high-performance/read-and-write-separation-and-library-subtable.md",
+      "title": "读写分离和分库分表详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-performance"
+      ],
+      "folderLabels": [
+        "高性能"
+      ]
+    },
+    {
+      "path": "docs/high-performance/sql-optimization.md",
+      "title": "常见SQL优化手段总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-performance"
+      ],
+      "folderLabels": [
+        "高性能"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/advanced-programmer/20-bad-habits-of-bad-programmers.md",
+      "title": "糟糕程序员的 20 个坏习惯",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "advanced-programmer"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Advanced Programmer"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/advanced-programmer/meituan-three-year-summary-lesson-10.md",
+      "title": "美团三年，总结的10条血泪教训",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "advanced-programmer"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Advanced Programmer"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/advanced-programmer/programmer-quickly-learn-new-technology.md",
+      "title": "程序员如何快速学习新技术",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "advanced-programmer"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Advanced Programmer"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/advanced-programmer/seven-tips-for-becoming-an-advanced-programmer.md",
+      "title": "给想成长为高级别开发同学的七条建议",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "advanced-programmer"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Advanced Programmer"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/advanced-programmer/ten-years-of-dachang-growth-road.md",
+      "title": "十年大厂成长之路",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "advanced-programmer"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Advanced Programmer"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/advanced-programmer/the-growth-strategy-of-the-technological-giant.md",
+      "title": "程序员的技术成长战略",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "advanced-programmer"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Advanced Programmer"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/advanced-programmer/thinking-about-technology-and-business-after-five-years-of-work.md",
+      "title": "工作五年之后，对技术和业务的思考",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "advanced-programmer"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Advanced Programmer"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/interview/how-to-examine-the-technical-ability-of-programmers-in-the-first-test-of-technology.md",
+      "title": "如何在技术初试中考察程序员的技术能力",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "interview"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Interview"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/interview/my-personal-experience-in-2021.md",
+      "title": "校招进入飞书的个人经验",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "interview"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Interview"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/interview/screen-candidates-for-packaging.md",
+      "title": "如何甄别应聘者的包装程度",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "interview"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Interview"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/interview/some-secrets-about-alibaba-interview.md",
+      "title": "阿里技术面试的一些秘密",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "interview"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Interview"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/interview/summary-of-spring-recruitment.md",
+      "title": "普通人的春招总结（阿里、腾讯offer）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "interview"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Interview"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/interview/technical-preliminary-preparation.md",
+      "title": "从面试官和候选者的角度谈如何准备技术初试",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "interview"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Interview"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/interview/the-experience-and-thinking-of-an-interview-experienced-by-an-older-programmer.md",
+      "title": "一位大龄程序员所经历的面试的历炼和思考",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "interview"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Interview"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/interview/the-experience-of-get-offer-from-over-20-big-companies.md",
+      "title": "斩获 20+ 大厂 offer 的面试经验分享",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "interview"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Interview"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/personal-experience/8-years-programmer-work-summary.md",
+      "title": "一个中科大差生的 8 年程序员工作总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "personal-experience"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Personal Experience"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/personal-experience/four-year-work-in-tencent-summary.md",
+      "title": "从校招入职腾讯的四年工作总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "personal-experience"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Personal Experience"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/personal-experience/huawei-od-275-days.md",
+      "title": "华为 OD 275 天后，我进了腾讯！",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "personal-experience"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Personal Experience"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/personal-experience/two-years-of-back-end-develop--experience-in-didi-and-toutiao.md",
+      "title": "滴滴和头条两年后端工作经验分享",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "personal-experience"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Personal Experience"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/programmer/efficient-book-publishing-and-practice-guide.md",
+      "title": "程序员高效出书避坑和实践指南",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "programmer"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Programmer"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/programmer/high-value-certifications-for-programmers.md",
+      "title": "程序员最该拿的几种高含金量证书",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "programmer"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Programmer"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/programmer/how-do-programmers-publish-a-technical-book.md",
+      "title": "程序员怎样出版一本技术书",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "programmer"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Programmer"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/README.md",
+      "title": "程序人生",
+      "titleSource": "heading",
+      "folderSegments": [
+        "high-quality-technical-articles"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/work/32-tips-improving-career.md",
+      "title": "32条总结教你提升职场经验",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "work"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Work"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/work/employee-performance.md",
+      "title": "聊聊大厂的绩效考核",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "work"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Work"
+      ]
+    },
+    {
+      "path": "docs/high-quality-technical-articles/work/get-into-work-mode-quickly-when-you-join-a-company.md",
+      "title": "新入职一家公司如何快速进入工作状态",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "high-quality-technical-articles",
+        "work"
+      ],
+      "folderLabels": [
+        "High Quality Technical Articles",
+        "Work"
+      ]
+    },
+    {
+      "path": "docs/home.md",
+      "title": "JavaGuide（Java 面试 & 后端通用面试指南）",
+      "titleSource": "frontmatter",
+      "folderSegments": [],
+      "folderLabels": []
+    },
+    {
+      "path": "docs/interview-preparation/backend-interview-plan.md",
+      "title": "Java 后端面试通关计划（涵盖后端通用体系）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "interview-preparation"
+      ],
+      "folderLabels": [
+        "面试准备"
+      ]
+    },
+    {
+      "path": "docs/interview-preparation/how-to-handle-interview-nerves.md",
+      "title": "面试太紧张怎么办？",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "interview-preparation"
+      ],
+      "folderLabels": [
+        "面试准备"
+      ]
+    },
+    {
+      "path": "docs/interview-preparation/internship-experience.md",
+      "title": "校招没有实习经历怎么办？实习经历怎么写？",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "interview-preparation"
+      ],
+      "folderLabels": [
+        "面试准备"
+      ]
+    },
+    {
+      "path": "docs/interview-preparation/interview-experience.md",
+      "title": "优质面经汇总(付费)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "interview-preparation"
+      ],
+      "folderLabels": [
+        "面试准备"
+      ]
+    },
+    {
+      "path": "docs/interview-preparation/java-roadmap.md",
+      "title": "Java 学习路线(最新版，4w+字)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "interview-preparation"
+      ],
+      "folderLabels": [
+        "面试准备"
+      ]
+    },
+    {
+      "path": "docs/interview-preparation/key-points-of-interview.md",
+      "title": "Java后端面试重点总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "interview-preparation"
+      ],
+      "folderLabels": [
+        "面试准备"
+      ]
+    },
+    {
+      "path": "docs/interview-preparation/pdf-interview-javaguide.md",
+      "title": "2026 最新后端面试 PDF 资料",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "interview-preparation"
+      ],
+      "folderLabels": [
+        "面试准备"
+      ]
+    },
+    {
+      "path": "docs/interview-preparation/project-experience-guide.md",
+      "title": "项目经验指南",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "interview-preparation"
+      ],
+      "folderLabels": [
+        "面试准备"
+      ]
+    },
+    {
+      "path": "docs/interview-preparation/resume-guide.md",
+      "title": "程序员简历编写指南",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "interview-preparation"
+      ],
+      "folderLabels": [
+        "面试准备"
+      ]
+    },
+    {
+      "path": "docs/interview-preparation/self-test-of-common-interview-questions.md",
+      "title": "常见面试题自测(付费)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "interview-preparation"
+      ],
+      "folderLabels": [
+        "面试准备"
+      ]
+    },
+    {
+      "path": "docs/interview-preparation/teach-you-how-to-prepare-for-the-interview-hand-in-hand.md",
+      "title": "如何高效准备Java面试？",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "interview-preparation"
+      ],
+      "folderLabels": [
+        "面试准备"
+      ]
+    },
+    {
+      "path": "docs/java/basis/bigdecimal.md",
+      "title": "BigDecimal 详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "basis"
+      ],
+      "folderLabels": [
+        "Java",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/java/basis/generics-and-wildcards.md",
+      "title": "泛型&通配符详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "basis"
+      ],
+      "folderLabels": [
+        "Java",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/java/basis/java-basic-questions-01.md",
+      "title": "Java基础常见面试题总结(上)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "basis"
+      ],
+      "folderLabels": [
+        "Java",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/java/basis/java-basic-questions-02.md",
+      "title": "Java基础常见面试题总结(中)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "basis"
+      ],
+      "folderLabels": [
+        "Java",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/java/basis/java-basic-questions-03.md",
+      "title": "Java基础常见面试题总结(下)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "basis"
+      ],
+      "folderLabels": [
+        "Java",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/java/basis/java-keyword-summary.md",
+      "title": "Java 关键字总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "basis"
+      ],
+      "folderLabels": [
+        "Java",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/java/basis/proxy.md",
+      "title": "Java 代理模式详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "basis"
+      ],
+      "folderLabels": [
+        "Java",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/java/basis/reflection.md",
+      "title": "Java 反射机制详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "basis"
+      ],
+      "folderLabels": [
+        "Java",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/java/basis/serialization.md",
+      "title": "Java 序列化详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "basis"
+      ],
+      "folderLabels": [
+        "Java",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/java/basis/spi.md",
+      "title": "Java SPI 机制详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "basis"
+      ],
+      "folderLabels": [
+        "Java",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/java/basis/syntactic-sugar.md",
+      "title": "Java 语法糖详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "basis"
+      ],
+      "folderLabels": [
+        "Java",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/java/basis/unsafe.md",
+      "title": "Java 魔法类 Unsafe 详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "basis"
+      ],
+      "folderLabels": [
+        "Java",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/java/basis/why-there-only-value-passing-in-java.md",
+      "title": "Java 值传递详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "basis"
+      ],
+      "folderLabels": [
+        "Java",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/java/collection/arrayblockingqueue-source-code.md",
+      "title": "ArrayBlockingQueue 源码分析",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "collection"
+      ],
+      "folderLabels": [
+        "Java",
+        "Collection"
+      ]
+    },
+    {
+      "path": "docs/java/collection/arraylist-source-code.md",
+      "title": "ArrayList 源码分析",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "collection"
+      ],
+      "folderLabels": [
+        "Java",
+        "Collection"
+      ]
+    },
+    {
+      "path": "docs/java/collection/concurrent-hash-map-source-code.md",
+      "title": "ConcurrentHashMap 源码分析",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "collection"
+      ],
+      "folderLabels": [
+        "Java",
+        "Collection"
+      ]
+    },
+    {
+      "path": "docs/java/collection/copyonwritearraylist-source-code.md",
+      "title": "CopyOnWriteArrayList 源码分析",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "collection"
+      ],
+      "folderLabels": [
+        "Java",
+        "Collection"
+      ]
+    },
+    {
+      "path": "docs/java/collection/delayqueue-source-code.md",
+      "title": "DelayQueue 源码分析",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "collection"
+      ],
+      "folderLabels": [
+        "Java",
+        "Collection"
+      ]
+    },
+    {
+      "path": "docs/java/collection/hashmap-source-code.md",
+      "title": "HashMap 源码分析",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "collection"
+      ],
+      "folderLabels": [
+        "Java",
+        "Collection"
+      ]
+    },
+    {
+      "path": "docs/java/collection/java-collection-precautions-for-use.md",
+      "title": "Java集合使用注意事项总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "collection"
+      ],
+      "folderLabels": [
+        "Java",
+        "Collection"
+      ]
+    },
+    {
+      "path": "docs/java/collection/java-collection-questions-01.md",
+      "title": "Java集合常见面试题总结(上)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "collection"
+      ],
+      "folderLabels": [
+        "Java",
+        "Collection"
+      ]
+    },
+    {
+      "path": "docs/java/collection/java-collection-questions-02.md",
+      "title": "Java集合常见面试题总结(下)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "collection"
+      ],
+      "folderLabels": [
+        "Java",
+        "Collection"
+      ]
+    },
+    {
+      "path": "docs/java/collection/linkedhashmap-source-code.md",
+      "title": "LinkedHashMap 源码分析",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "collection"
+      ],
+      "folderLabels": [
+        "Java",
+        "Collection"
+      ]
+    },
+    {
+      "path": "docs/java/collection/linkedlist-source-code.md",
+      "title": "LinkedList 源码分析",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "collection"
+      ],
+      "folderLabels": [
+        "Java",
+        "Collection"
+      ]
+    },
+    {
+      "path": "docs/java/collection/priorityqueue-source-code.md",
+      "title": "PriorityQueue 源码分析（付费）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "collection"
+      ],
+      "folderLabels": [
+        "Java",
+        "Collection"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/aqs.md",
+      "title": "AQS 详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/atomic-classes.md",
+      "title": "Atomic 原子类总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/cas.md",
+      "title": "CAS 详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/completablefuture-intro.md",
+      "title": "CompletableFuture 详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/java-concurrent-collections.md",
+      "title": "Java 常见并发容器总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/java-concurrent-questions-01.md",
+      "title": "Java并发常见面试题总结（上）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/java-concurrent-questions-02.md",
+      "title": "Java并发常见面试题总结（中）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/java-concurrent-questions-03.md",
+      "title": "Java并发常见面试题总结（下）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/java-thread-pool-best-practices.md",
+      "title": "Java 线程池最佳实践",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/java-thread-pool-summary.md",
+      "title": "Java 线程池详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/jmm.md",
+      "title": "JMM（Java 内存模型）详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/optimistic-lock-and-pessimistic-lock.md",
+      "title": "乐观锁和悲观锁详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/reentrantlock.md",
+      "title": "从ReentrantLock的实现看AQS的原理及应用",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/threadlocal.md",
+      "title": "ThreadLocal 详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/virtual-thread.md",
+      "title": "虚拟线程常见问题总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "concurrent"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发"
+      ]
+    },
+    {
+      "path": "docs/java/io/io-basis.md",
+      "title": "Java IO 基础知识总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "io"
+      ],
+      "folderLabels": [
+        "Java",
+        "Io"
+      ]
+    },
+    {
+      "path": "docs/java/io/io-design-patterns.md",
+      "title": "Java IO 设计模式总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "io"
+      ],
+      "folderLabels": [
+        "Java",
+        "Io"
+      ]
+    },
+    {
+      "path": "docs/java/io/io-model.md",
+      "title": "Java IO 模型详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "io"
+      ],
+      "folderLabels": [
+        "Java",
+        "Io"
+      ]
+    },
+    {
+      "path": "docs/java/io/nio-basis.md",
+      "title": "Java NIO 核心知识总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "io"
+      ],
+      "folderLabels": [
+        "Java",
+        "Io"
+      ]
+    },
+    {
+      "path": "docs/java/jvm/class-file-structure.md",
+      "title": "类文件结构详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "jvm"
+      ],
+      "folderLabels": [
+        "Java",
+        "JVM"
+      ]
+    },
+    {
+      "path": "docs/java/jvm/class-loading-process.md",
+      "title": "类加载过程详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "jvm"
+      ],
+      "folderLabels": [
+        "Java",
+        "JVM"
+      ]
+    },
+    {
+      "path": "docs/java/jvm/classloader.md",
+      "title": "类加载器详解（重点）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "jvm"
+      ],
+      "folderLabels": [
+        "Java",
+        "JVM"
+      ]
+    },
+    {
+      "path": "docs/java/jvm/jdk-monitoring-and-troubleshooting-tools.md",
+      "title": "JDK监控和故障处理工具总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "jvm"
+      ],
+      "folderLabels": [
+        "Java",
+        "JVM"
+      ]
+    },
+    {
+      "path": "docs/java/jvm/jvm-garbage-collection.md",
+      "title": "JVM垃圾回收详解（重点）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "jvm"
+      ],
+      "folderLabels": [
+        "Java",
+        "JVM"
+      ]
+    },
+    {
+      "path": "docs/java/jvm/jvm-in-action.md",
+      "title": "JVM线上问题排查和性能调优案例",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "jvm"
+      ],
+      "folderLabels": [
+        "Java",
+        "JVM"
+      ]
+    },
+    {
+      "path": "docs/java/jvm/jvm-intro.md",
+      "title": "大白话带你认识 JVM",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "jvm"
+      ],
+      "folderLabels": [
+        "Java",
+        "JVM"
+      ]
+    },
+    {
+      "path": "docs/java/jvm/jvm-parameters-intro.md",
+      "title": "最重要的JVM参数总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "jvm"
+      ],
+      "folderLabels": [
+        "Java",
+        "JVM"
+      ]
+    },
+    {
+      "path": "docs/java/jvm/memory-area.md",
+      "title": "Java内存区域详解（重点）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "jvm"
+      ],
+      "folderLabels": [
+        "Java",
+        "JVM"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java10.md",
+      "title": "Java 10 新特性概览",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java11.md",
+      "title": "Java 11 新特性概览（重要）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java12-13.md",
+      "title": "Java 12  & 13 新特性概览",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java14-15.md",
+      "title": "Java 14  & 15 新特性概览",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java16.md",
+      "title": "Java 16 新特性概览",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java17.md",
+      "title": "Java 17 新特性概览（重要）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java18.md",
+      "title": "Java 18 新特性概览",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java19.md",
+      "title": "Java 19 新特性概览",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java20.md",
+      "title": "Java 20 新特性概览",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java21.md",
+      "title": "Java 21 新特性概览(重要)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java22-23.md",
+      "title": "Java 22 & 23 新特性概览",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java24.md",
+      "title": "Java 24 新特性概览",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java25.md",
+      "title": "Java 25 新特性概览",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java26.md",
+      "title": "Java 26 新特性概览",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java8-common-new-features.md",
+      "title": "Java8 新特性实战",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java8-tutorial-translate.md",
+      "title": "《Java8 指南》中文翻译",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/java/new-features/java9.md",
+      "title": "Java 9 新特性概览",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "java",
+        "new-features"
+      ],
+      "folderLabels": [
+        "Java",
+        "New Features"
+      ]
+    },
+    {
+      "path": "docs/javaguide/contribution-guideline.md",
+      "title": "贡献指南",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "javaguide"
+      ],
+      "folderLabels": [
+        "JavaGuide"
+      ]
+    },
+    {
+      "path": "docs/javaguide/faq.md",
+      "title": "常见问题",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "javaguide"
+      ],
+      "folderLabels": [
+        "JavaGuide"
+      ]
+    },
+    {
+      "path": "docs/javaguide/history.md",
+      "title": "网站历史",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "javaguide"
+      ],
+      "folderLabels": [
+        "JavaGuide"
+      ]
+    },
+    {
+      "path": "docs/javaguide/intro.md",
+      "title": "项目介绍",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "javaguide"
+      ],
+      "folderLabels": [
+        "JavaGuide"
+      ]
+    },
+    {
+      "path": "docs/javaguide/use-suggestion.md",
+      "title": "使用建议",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "javaguide"
+      ],
+      "folderLabels": [
+        "JavaGuide"
+      ]
+    },
+    {
+      "path": "docs/open-source-project/big-data.md",
+      "title": "Java 优质开源大数据项目",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "open-source-project"
+      ],
+      "folderLabels": [
+        "开源项目"
+      ]
+    },
+    {
+      "path": "docs/open-source-project/machine-learning.md",
+      "title": "Java 优质开源 AI 项目",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "open-source-project"
+      ],
+      "folderLabels": [
+        "开源项目"
+      ]
+    },
+    {
+      "path": "docs/open-source-project/practical-project.md",
+      "title": "Java 优质开源实战项目",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "open-source-project"
+      ],
+      "folderLabels": [
+        "开源项目"
+      ]
+    },
+    {
+      "path": "docs/open-source-project/README.md",
+      "title": "Java 开源项目精选",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "open-source-project"
+      ],
+      "folderLabels": [
+        "开源项目"
+      ]
+    },
+    {
+      "path": "docs/open-source-project/system-design.md",
+      "title": "Java 优质开源系统设计项目",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "open-source-project"
+      ],
+      "folderLabels": [
+        "开源项目"
+      ]
+    },
+    {
+      "path": "docs/open-source-project/tool-library.md",
+      "title": "Java 优质开源工具类",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "open-source-project"
+      ],
+      "folderLabels": [
+        "开源项目"
+      ]
+    },
+    {
+      "path": "docs/open-source-project/tools.md",
+      "title": "Java 优质开源开发工具",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "open-source-project"
+      ],
+      "folderLabels": [
+        "开源项目"
+      ]
+    },
+    {
+      "path": "docs/open-source-project/tutorial.md",
+      "title": "Java 优质开源技术教程",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "open-source-project"
+      ],
+      "folderLabels": [
+        "开源项目"
+      ]
+    },
+    {
+      "path": "docs/README.md",
+      "title": "JavaGuide（Java 面试 & 后端通用面试指南）",
+      "titleSource": "frontmatter",
+      "folderSegments": [],
+      "folderLabels": []
+    },
+    {
+      "path": "docs/system-design/basis/naming.md",
+      "title": "代码命名指南",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "basis"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/system-design/basis/refactoring.md",
+      "title": "代码重构指南",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "basis"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/system-design/basis/RESTfulAPI.md",
+      "title": "RestFul API 简明教程",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "basis"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/system-design/basis/software-engineering.md",
+      "title": "软件工程简明教程",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "basis"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/system-design/basis/unit-test.md",
+      "title": "单元测试到底是什么？应该怎么做？",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "basis"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Basis"
+      ]
+    },
+    {
+      "path": "docs/system-design/design-pattern.md",
+      "title": "设计模式常见面试题总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design"
+      ],
+      "folderLabels": [
+        "系统设计"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/mybatis/mybatis-interview.md",
+      "title": "MyBatis常见面试题总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "framework",
+        "mybatis"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架",
+        "Mybatis"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/netty.md",
+      "title": "Netty常见面试题总结(付费)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "framework"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/spring/async.md",
+      "title": "Async 注解原理分析",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "framework",
+        "spring"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架",
+        "Spring"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/spring/ioc-and-aop.md",
+      "title": "IoC & AOP详解（快速搞懂）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "framework",
+        "spring"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架",
+        "Spring"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/spring/spring-boot-auto-assembly-principles.md",
+      "title": "SpringBoot 自动装配原理详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "framework",
+        "spring"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架",
+        "Spring"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/spring/spring-common-annotations.md",
+      "title": "Spring&SpringMVC&SpringBoot常用注解总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "framework",
+        "spring"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架",
+        "Spring"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/spring/spring-design-patterns-summary.md",
+      "title": "Spring 中的设计模式详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "framework",
+        "spring"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架",
+        "Spring"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/spring/spring-knowledge-and-questions-summary.md",
+      "title": "Spring常见面试题总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "framework",
+        "spring"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架",
+        "Spring"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/spring/spring-transaction.md",
+      "title": "Spring 事务详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "framework",
+        "spring"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架",
+        "Spring"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/spring/springboot-knowledge-and-questions-summary.md",
+      "title": "SpringBoot常见面试题总结(付费)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "framework",
+        "spring"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架",
+        "Spring"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/spring/springboot-source-code.md",
+      "title": "Spring Boot核心源码解读（付费）",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "framework",
+        "spring"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架",
+        "Spring"
+      ]
+    },
+    {
+      "path": "docs/system-design/J2EE基础知识.md",
+      "title": "J2EE 基础知识",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design"
+      ],
+      "folderLabels": [
+        "系统设计"
+      ]
+    },
+    {
+      "path": "docs/system-design/schedule-task.md",
+      "title": "Java 定时任务详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design"
+      ],
+      "folderLabels": [
+        "系统设计"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/advantages-and-disadvantages-of-jwt.md",
+      "title": "JWT 身份认证优缺点分析",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "security"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/basis-of-authority-certification.md",
+      "title": "认证授权基础概念详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "security"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/data-desensitization.md",
+      "title": "数据脱敏方案总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "security"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/data-validation.md",
+      "title": "为什么前后端都要做数据校验？",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "security"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/design-of-authority-system.md",
+      "title": "权限系统设计详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "security"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/encryption-algorithms.md",
+      "title": "常见加密算法总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "security"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/jwt-intro.md",
+      "title": "JWT 基础概念详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "security"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/sentive-words-filter.md",
+      "title": "敏感词过滤方案总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "security"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/sso-intro.md",
+      "title": "SSO 单点登录详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "security"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/why-password-reset-instead-of-retrieval.md",
+      "title": "为什么忘记密码时只能重置，不能告诉你原密码？",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design",
+        "security"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security"
+      ]
+    },
+    {
+      "path": "docs/system-design/system-design-questions.md",
+      "title": "系统设计常见面试题总结(付费)",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design"
+      ],
+      "folderLabels": [
+        "系统设计"
+      ]
+    },
+    {
+      "path": "docs/system-design/web-real-time-message-push.md",
+      "title": "Web 实时消息推送详解",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "system-design"
+      ],
+      "folderLabels": [
+        "系统设计"
+      ]
+    },
+    {
+      "path": "docs/tools/docker/docker-in-action.md",
+      "title": "Docker实战",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "tools",
+        "docker"
+      ],
+      "folderLabels": [
+        "工具",
+        "Docker"
+      ]
+    },
+    {
+      "path": "docs/tools/docker/docker-intro.md",
+      "title": "Docker核心概念总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "tools",
+        "docker"
+      ],
+      "folderLabels": [
+        "工具",
+        "Docker"
+      ]
+    },
+    {
+      "path": "docs/tools/git/git-intro.md",
+      "title": "Git核心概念总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "tools",
+        "git"
+      ],
+      "folderLabels": [
+        "工具",
+        "Git"
+      ]
+    },
+    {
+      "path": "docs/tools/git/github-tips.md",
+      "title": "Github实用小技巧总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "tools",
+        "git"
+      ],
+      "folderLabels": [
+        "工具",
+        "Git"
+      ]
+    },
+    {
+      "path": "docs/tools/gradle/gradle-core-concepts.md",
+      "title": "Gradle核心概念总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "tools",
+        "gradle"
+      ],
+      "folderLabels": [
+        "工具",
+        "Gradle"
+      ]
+    },
+    {
+      "path": "docs/tools/maven/maven-best-practices.md",
+      "title": "Maven最佳实践",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "tools",
+        "maven"
+      ],
+      "folderLabels": [
+        "工具",
+        "Maven"
+      ]
+    },
+    {
+      "path": "docs/tools/maven/maven-core-concepts.md",
+      "title": "Maven核心概念总结",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "tools",
+        "maven"
+      ],
+      "folderLabels": [
+        "工具",
+        "Maven"
+      ]
+    },
+    {
+      "path": "docs/zhuanlan/back-end-interview-high-frequency-system-design-and-scenario-questions.md",
+      "title": "《后端面试高频系统设计&场景题》",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "zhuanlan"
+      ],
+      "folderLabels": [
+        "专栏"
+      ]
+    },
+    {
+      "path": "docs/zhuanlan/handwritten-rpc-framework.md",
+      "title": "《手写 RPC 框架》",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "zhuanlan"
+      ],
+      "folderLabels": [
+        "专栏"
+      ]
+    },
+    {
+      "path": "docs/zhuanlan/interview-guide.md",
+      "title": "《SpringAI 智能面试平台+RAG 知识库》",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "zhuanlan"
+      ],
+      "folderLabels": [
+        "专栏"
+      ]
+    },
+    {
+      "path": "docs/zhuanlan/java-mian-shi-zhi-bei.md",
+      "title": "《Java 面试指北》",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "zhuanlan"
+      ],
+      "folderLabels": [
+        "专栏"
+      ]
+    },
+    {
+      "path": "docs/zhuanlan/README.md",
+      "title": "星球专属优质专栏概览",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "zhuanlan"
+      ],
+      "folderLabels": [
+        "专栏"
+      ]
+    },
+    {
+      "path": "docs/zhuanlan/source-code-reading.md",
+      "title": "《Java 必读源码系列》",
+      "titleSource": "frontmatter",
+      "folderSegments": [
+        "zhuanlan"
+      ],
+      "folderLabels": [
+        "专栏"
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/删除堆顶元素1.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/删除堆顶元素2.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/删除堆顶元素3.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/删除堆顶元素4.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/删除堆顶元素5.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/删除堆顶元素6.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/堆-插入元素1.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/堆-插入元素2.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/堆-插入元素3.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/堆1.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/堆2.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/堆排序1.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/堆排序2.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/堆排序3.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/堆排序4.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/堆排序5.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/堆排序6.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/堆的存储.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/建堆1.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/建堆2.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/建堆3.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/堆/建堆4.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "堆"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "堆"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/红黑树/红黑树1.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "红黑树"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "红黑树"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/红黑树/红黑树2.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "红黑树"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "红黑树"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/红黑树/红黑树3.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "红黑树"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "红黑树"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/红黑树/红黑树4.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "红黑树"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "红黑树"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/红黑树/红黑树5.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "红黑树"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "红黑树"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/红黑树/红黑树6.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "红黑树"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "红黑树"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/线性数据结构/单链表2.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "线性数据结构"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "线性数据结构"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/线性数据结构/双向循环链表.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "线性数据结构"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "线性数据结构"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/线性数据结构/双向链表.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "线性数据结构"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "线性数据结构"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/线性数据结构/循环队列-堆满.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "线性数据结构"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "线性数据结构"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/线性数据结构/数组.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "线性数据结构"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "线性数据结构"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/线性数据结构/栈.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "线性数据结构"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "线性数据结构"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/线性数据结构/栈实现浏览器倒退和前进.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "线性数据结构"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "线性数据结构"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/线性数据结构/队列.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "线性数据结构"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "线性数据结构"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/data-structure/pictures/线性数据结构/顺序队列假溢出.png",
+      "folderSegments": [
+        "cs-basics",
+        "data-structure",
+        "pictures",
+        "线性数据结构"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Data Structure",
+        "Pictures",
+        "线性数据结构"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/images/arp/arp_different_lan.png",
+      "folderSegments": [
+        "cs-basics",
+        "network",
+        "images",
+        "arp"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络",
+        "Images",
+        "Arp"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/images/arp/arp_same_lan.png",
+      "folderSegments": [
+        "cs-basics",
+        "network",
+        "images",
+        "arp"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络",
+        "Images",
+        "Arp"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/images/http-vs-https/attack1.png",
+      "folderSegments": [
+        "cs-basics",
+        "network",
+        "images",
+        "http-vs-https"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络",
+        "Images",
+        "Http Vs Https"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/images/http-vs-https/digital-signature.png",
+      "folderSegments": [
+        "cs-basics",
+        "network",
+        "images",
+        "http-vs-https"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络",
+        "Images",
+        "Http Vs Https"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/images/http-vs-https/HTTP1.0cache1.png",
+      "folderSegments": [
+        "cs-basics",
+        "network",
+        "images",
+        "http-vs-https"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络",
+        "Images",
+        "Http Vs Https"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/images/http-vs-https/HTTP1.0cache2.png",
+      "folderSegments": [
+        "cs-basics",
+        "network",
+        "images",
+        "http-vs-https"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络",
+        "Images",
+        "Http Vs Https"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/images/http-vs-https/HTTP1.1continue1.png",
+      "folderSegments": [
+        "cs-basics",
+        "network",
+        "images",
+        "http-vs-https"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络",
+        "Images",
+        "Http Vs Https"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/images/http-vs-https/HTTP1.1continue2.png",
+      "folderSegments": [
+        "cs-basics",
+        "network",
+        "images",
+        "http-vs-https"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络",
+        "Images",
+        "Http Vs Https"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/images/http-vs-https/OWF.png",
+      "folderSegments": [
+        "cs-basics",
+        "network",
+        "images",
+        "http-vs-https"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络",
+        "Images",
+        "Http Vs Https"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/images/http-vs-https/public-key-cryptography.png",
+      "folderSegments": [
+        "cs-basics",
+        "network",
+        "images",
+        "http-vs-https"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络",
+        "Images",
+        "Http Vs Https"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/images/http-vs-https/public-key-transmission.png",
+      "folderSegments": [
+        "cs-basics",
+        "network",
+        "images",
+        "http-vs-https"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络",
+        "Images",
+        "Http Vs Https"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/images/http-vs-https/symmetric-encryption.png",
+      "folderSegments": [
+        "cs-basics",
+        "network",
+        "images",
+        "http-vs-https"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络",
+        "Images",
+        "Http Vs Https"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/network/images/network-model/nerwork-layer-protocol.png",
+      "folderSegments": [
+        "cs-basics",
+        "network",
+        "images",
+        "network-model"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "网络",
+        "Images",
+        "Network Model"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/operating-system/images/Linux权限命令.png",
+      "folderSegments": [
+        "cs-basics",
+        "operating-system",
+        "images"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Operating System",
+        "Images"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/operating-system/images/Linux权限解读.png",
+      "folderSegments": [
+        "cs-basics",
+        "operating-system",
+        "images"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Operating System",
+        "Images"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/operating-system/images/Linux目录树.png",
+      "folderSegments": [
+        "cs-basics",
+        "operating-system",
+        "images"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Operating System",
+        "Images"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/operating-system/images/macos.png",
+      "folderSegments": [
+        "cs-basics",
+        "operating-system",
+        "images"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Operating System",
+        "Images"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/operating-system/images/unix.png",
+      "folderSegments": [
+        "cs-basics",
+        "operating-system",
+        "images"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Operating System",
+        "Images"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/operating-system/images/windows.png",
+      "folderSegments": [
+        "cs-basics",
+        "operating-system",
+        "images"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Operating System",
+        "Images"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/operating-system/images/修改文件权限.png",
+      "folderSegments": [
+        "cs-basics",
+        "operating-system",
+        "images"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Operating System",
+        "Images"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/operating-system/images/文件inode信息.png",
+      "folderSegments": [
+        "cs-basics",
+        "operating-system",
+        "images"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Operating System",
+        "Images"
+      ]
+    },
+    {
+      "path": "docs/cs-basics/operating-system/images/用户态与内核态.png",
+      "folderSegments": [
+        "cs-basics",
+        "operating-system",
+        "images"
+      ],
+      "folderLabels": [
+        "计算机基础",
+        "Operating System",
+        "Images"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/images/mvvc/0e906b95-c916-4f30-beda-9cb3e49746bf.png",
+      "folderSegments": [
+        "database",
+        "mysql",
+        "images",
+        "mvvc"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL",
+        "Images",
+        "Mvvc"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/images/mvvc/317e91e1-1ee1-42ad-9412-9098d5c6a9ad.png",
+      "folderSegments": [
+        "database",
+        "mysql",
+        "images",
+        "mvvc"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL",
+        "Images",
+        "Mvvc"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/images/mvvc/528559e9-dae8-4d14-b78d-a5b657c88391.png",
+      "folderSegments": [
+        "database",
+        "mysql",
+        "images",
+        "mvvc"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL",
+        "Images",
+        "Mvvc"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/images/mvvc/6a276e7a-b0da-4c7b-bdf7-c0c7b7b3b31c.png",
+      "folderSegments": [
+        "database",
+        "mysql",
+        "images",
+        "mvvc"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL",
+        "Images",
+        "Mvvc"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/images/mvvc/6f82703c-36a1-4458-90fe-d7f4edbac71a.png",
+      "folderSegments": [
+        "database",
+        "mysql",
+        "images",
+        "mvvc"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL",
+        "Images",
+        "Mvvc"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/images/mvvc/6fb2b9a1-5f14-4dec-a797-e4cf388ed413.png",
+      "folderSegments": [
+        "database",
+        "mysql",
+        "images",
+        "mvvc"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL",
+        "Images",
+        "Mvvc"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/images/mvvc/79ed6142-7664-4e0b-9023-cf546586aa39.png",
+      "folderSegments": [
+        "database",
+        "mysql",
+        "images",
+        "mvvc"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL",
+        "Images",
+        "Mvvc"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/images/mvvc/8778836b-34a8-480b-b8c7-654fe207a8c2.png",
+      "folderSegments": [
+        "database",
+        "mysql",
+        "images",
+        "mvvc"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL",
+        "Images",
+        "Mvvc"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/images/mvvc/a3fd1ec6-8f37-42fa-b090-7446d488fd04.png",
+      "folderSegments": [
+        "database",
+        "mysql",
+        "images",
+        "mvvc"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL",
+        "Images",
+        "Mvvc"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/images/mvvc/c52ff79f-10e6-46cb-b5d4-3c9cbcc1934a.png",
+      "folderSegments": [
+        "database",
+        "mysql",
+        "images",
+        "mvvc"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL",
+        "Images",
+        "Mvvc"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/images/mvvc/cbbedbc5-0e3c-4711-aafd-7f3d68a4ed4e.png",
+      "folderSegments": [
+        "database",
+        "mysql",
+        "images",
+        "mvvc"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL",
+        "Images",
+        "Mvvc"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/images/mvvc/trans_visible.png",
+      "folderSegments": [
+        "database",
+        "mysql",
+        "images",
+        "mvvc"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL",
+        "Images",
+        "Mvvc"
+      ]
+    },
+    {
+      "path": "docs/database/mysql/images/redo-log.png",
+      "folderSegments": [
+        "database",
+        "mysql",
+        "images"
+      ],
+      "folderLabels": [
+        "数据库",
+        "MySQL",
+        "Images"
+      ]
+    },
+    {
+      "path": "docs/distributed-system/images/api-gateway/api-gateway-overview.png",
+      "folderSegments": [
+        "distributed-system",
+        "images",
+        "api-gateway"
+      ],
+      "folderLabels": [
+        "分布式系统",
+        "Images",
+        "Api Gateway"
+      ]
+    },
+    {
+      "path": "docs/high-performance/images/read-and-write-separation-and-library-subtable/horizontal-slicing-database.png",
+      "folderSegments": [
+        "high-performance",
+        "images",
+        "read-and-write-separation-and-library-subtable"
+      ],
+      "folderLabels": [
+        "高性能",
+        "Images",
+        "Read And Write Separation And Library Subtable"
+      ]
+    },
+    {
+      "path": "docs/high-performance/images/read-and-write-separation-and-library-subtable/two-forms-of-sub-table.png",
+      "folderSegments": [
+        "high-performance",
+        "images",
+        "read-and-write-separation-and-library-subtable"
+      ],
+      "folderLabels": [
+        "高性能",
+        "Images",
+        "Read And Write Separation And Library Subtable"
+      ]
+    },
+    {
+      "path": "docs/high-performance/images/read-and-write-separation-and-library-subtable/vertical-slicing-database.png",
+      "folderSegments": [
+        "high-performance",
+        "images",
+        "read-and-write-separation-and-library-subtable"
+      ],
+      "folderLabels": [
+        "高性能",
+        "Images",
+        "Read And Write Separation And Library Subtable"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/java-thread-pool-summary/CachedThreadPool-execute.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "java-thread-pool-summary"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Java Thread Pool Summary"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/java-thread-pool-summary/Executor框架的使用示意图.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "java-thread-pool-summary"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Java Thread Pool Summary"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/java-thread-pool-summary/FixedThreadPool.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "java-thread-pool-summary"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Java Thread Pool Summary"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/java-thread-pool-summary/relationship-between-thread-pool-parameters.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "java-thread-pool-summary"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Java Thread Pool Summary"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/java-thread-pool-summary/ScheduledThreadPoolExecutor执行周期任务步骤.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "java-thread-pool-summary"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Java Thread Pool Summary"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/java-thread-pool-summary/ScheduledThreadPoolExecutor机制.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "java-thread-pool-summary"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Java Thread Pool Summary"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/java-thread-pool-summary/SingleThreadExecutor.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "java-thread-pool-summary"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Java Thread Pool Summary"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/1.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/10.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/11.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/12.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/13.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/14.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/15.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/16.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/17.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/18.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/19.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/2.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/20.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/21.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/22.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/23.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/24.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/25.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/26.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/27.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/28.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/29.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/3.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/30.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/31.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/4.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/5.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/6.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/7.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/8.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/concurrent/images/thread-local/9.png",
+      "folderSegments": [
+        "java",
+        "concurrent",
+        "images",
+        "thread-local"
+      ],
+      "folderLabels": [
+        "Java",
+        "并发",
+        "Images",
+        "Thread Local"
+      ]
+    },
+    {
+      "path": "docs/java/jvm/pictures/jdk监控和故障处理工具总结/1JConsole连接.png",
+      "folderSegments": [
+        "java",
+        "jvm",
+        "pictures",
+        "jdk监控和故障处理工具总结"
+      ],
+      "folderLabels": [
+        "Java",
+        "JVM",
+        "Pictures",
+        "Jdk监控和故障处理工具总结"
+      ]
+    },
+    {
+      "path": "docs/java/jvm/pictures/jdk监控和故障处理工具总结/2查看Java程序概况.png",
+      "folderSegments": [
+        "java",
+        "jvm",
+        "pictures",
+        "jdk监控和故障处理工具总结"
+      ],
+      "folderLabels": [
+        "Java",
+        "JVM",
+        "Pictures",
+        "Jdk监控和故障处理工具总结"
+      ]
+    },
+    {
+      "path": "docs/java/jvm/pictures/jdk监控和故障处理工具总结/3内存监控.png",
+      "folderSegments": [
+        "java",
+        "jvm",
+        "pictures",
+        "jdk监控和故障处理工具总结"
+      ],
+      "folderLabels": [
+        "Java",
+        "JVM",
+        "Pictures",
+        "Jdk监控和故障处理工具总结"
+      ]
+    },
+    {
+      "path": "docs/java/jvm/pictures/jdk监控和故障处理工具总结/4线程监控.png",
+      "folderSegments": [
+        "java",
+        "jvm",
+        "pictures",
+        "jdk监控和故障处理工具总结"
+      ],
+      "folderLabels": [
+        "Java",
+        "JVM",
+        "Pictures",
+        "Jdk监控和故障处理工具总结"
+      ]
+    },
+    {
+      "path": "docs/java/jvm/pictures/内存区域常见配置参数.png",
+      "folderSegments": [
+        "java",
+        "jvm",
+        "pictures"
+      ],
+      "folderLabels": [
+        "Java",
+        "JVM",
+        "Pictures"
+      ]
+    },
+    {
+      "path": "docs/system-design/basis/pictures/Codelf.png",
+      "folderSegments": [
+        "system-design",
+        "basis",
+        "pictures"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Basis",
+        "Pictures"
+      ]
+    },
+    {
+      "path": "docs/system-design/basis/pictures/dubbo-naming.png",
+      "folderSegments": [
+        "system-design",
+        "basis",
+        "pictures"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Basis",
+        "Pictures"
+      ]
+    },
+    {
+      "path": "docs/system-design/basis/pictures/marting-naming.png",
+      "folderSegments": [
+        "system-design",
+        "basis",
+        "pictures"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Basis",
+        "Pictures"
+      ]
+    },
+    {
+      "path": "docs/system-design/basis/pictures/naming-mindmap.png",
+      "folderSegments": [
+        "system-design",
+        "basis",
+        "pictures"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Basis",
+        "Pictures"
+      ]
+    },
+    {
+      "path": "docs/system-design/basis/pictures/vscode-codelf.png",
+      "folderSegments": [
+        "system-design",
+        "basis",
+        "pictures"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Basis",
+        "Pictures"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/spring/images/async/async.png",
+      "folderSegments": [
+        "system-design",
+        "framework",
+        "spring",
+        "images",
+        "async"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架",
+        "Spring",
+        "Images",
+        "Async"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/spring/images/spring-annotations/@RequestBody.png",
+      "folderSegments": [
+        "system-design",
+        "framework",
+        "spring",
+        "images",
+        "spring-annotations"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架",
+        "Spring",
+        "Images",
+        "Spring Annotations"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/spring/images/spring-transaction/PlatformTransactionManager.png",
+      "folderSegments": [
+        "system-design",
+        "framework",
+        "spring",
+        "images",
+        "spring-transaction"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架",
+        "Spring",
+        "Images",
+        "Spring Transaction"
+      ]
+    },
+    {
+      "path": "docs/system-design/framework/spring/images/spring-transaction/roollbackFor.png",
+      "folderSegments": [
+        "system-design",
+        "framework",
+        "spring",
+        "images",
+        "spring-transaction"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "框架",
+        "Spring",
+        "Images",
+        "Spring Transaction"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/images/design-of-authority-system/new-authority-system-design-access-flow-chart.png",
+      "folderSegments": [
+        "system-design",
+        "security",
+        "images",
+        "design-of-authority-system"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security",
+        "Images",
+        "Design Of Authority System"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/images/design-of-authority-system/new-authority-system-design.png",
+      "folderSegments": [
+        "system-design",
+        "security",
+        "images",
+        "design-of-authority-system"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security",
+        "Images",
+        "Design Of Authority System"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/images/design-of-authority-system/new-authority-system-management-interface.png",
+      "folderSegments": [
+        "system-design",
+        "security",
+        "images",
+        "design-of-authority-system"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security",
+        "Images",
+        "Design Of Authority System"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/images/design-of-authority-system/new-authority-system-menu-management-interface.png",
+      "folderSegments": [
+        "system-design",
+        "security",
+        "images",
+        "design-of-authority-system"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security",
+        "Images",
+        "Design Of Authority System"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/images/design-of-authority-system/new-authority-system-menu.png",
+      "folderSegments": [
+        "system-design",
+        "security",
+        "images",
+        "design-of-authority-system"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security",
+        "Images",
+        "Design Of Authority System"
+      ]
+    },
+    {
+      "path": "docs/system-design/security/images/design-of-authority-system/permission-application.png",
+      "folderSegments": [
+        "system-design",
+        "security",
+        "images",
+        "design-of-authority-system"
+      ],
+      "folderLabels": [
+        "系统设计",
+        "Security",
+        "Images",
+        "Design Of Authority System"
+      ]
+    }
+  ]
+}

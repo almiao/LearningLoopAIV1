@@ -11,20 +11,15 @@ test("node split-services entrypoint starts the same service surface needed by t
   const runtimeSource = await readFile(path.join(root, "scripts", "service-runtime.mjs"), "utf8");
 
   assert.match(startSource, /Starting superapp service/);
-  assert.match(startSource, /Starting LiveKit agent bridge/);
   assert.match(startSource, /NEXT_PUBLIC_INTERVIEW_ASSIST_API_BASE_URL/);
   assert.match(startSource, /superapp-service/);
-  assert.match(startSource, /livekit-agent/);
-  assert.match(startSource, /Starting local LiveKit server/);
-  assert.match(startSource, /Using auto-managed local LiveKit/);
-  assert.match(startSource, /ensureLivekitAgentModelFiles/);
+  assert.match(startSource, /Starting AI service/);
+  assert.match(startSource, /Starting frontend/);
+  assert.doesNotMatch(startSource, /livekit-agent/);
+  assert.doesNotMatch(startSource, /Starting local LiveKit server/);
   assert.match(runtimeSource, /"superapp-service"/);
-  assert.match(runtimeSource, /"livekit-agent"/);
-  assert.match(runtimeSource, /"livekit-server"/);
-  assert.match(runtimeSource, /resolveLivekitRuntime/);
-  assert.match(runtimeSource, /Downloading LiveKit agent model files/);
-  assert.match(runtimeSource, /devkey/);
-  assert.match(runtimeSource, /localLivekitPort = 7880/);
-  assert.match(runtimeSource, /localLivekitWsUrl/);
-  assert.match(runtimeSource, /ensureLivekitAgentDependencies/);
+  assert.match(runtimeSource, /"ai-service"/);
+  assert.match(runtimeSource, /NEXT_PUBLIC_INTERVIEW_ASSIST_API_BASE_URL/);
+  assert.match(runtimeSource, /AI_PORT/);
+  assert.doesNotMatch(runtimeSource, /"livekit-agent"/);
 });

@@ -1998,6 +1998,10 @@ button {
   gap: 26px;
 }
 
+.assist-settings-anchor {
+  position: relative;
+}
+
 .assist-status-pill,
 .assist-mini-pill,
 .assist-timer {
@@ -2050,23 +2054,90 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
+  min-width: 54px;
   height: 32px;
+  padding: 0 14px;
   border: 1px solid #e5e7eb;
   border-radius: 999px;
   background: #ffffff;
-  color: #9ca3af;
+  color: #4b5563;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
-.assist-settings-button input {
+.assist-settings-panel {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 8;
+  width: min(420px, calc(100vw - 40px));
+  padding: 14px;
+  border: 1px solid #dde3ea;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+}
+
+.assist-settings-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.assist-settings-panel-head strong,
+.assist-settings-group h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.assist-settings-panel-head p,
+.assist-settings-group p {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.assist-settings-close {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.assist-settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.assist-settings-group input[type="file"],
+.assist-settings-group textarea {
+  width: 100%;
+}
+
+.assist-settings-group textarea {
+  min-height: 88px;
+  resize: vertical;
+  border: 1px solid #dde3ea;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #111827;
+  background: #ffffff;
+  outline: none;
 }
 
 .assist-error-banner {
@@ -2222,6 +2293,61 @@ button {
   font-weight: 800;
 }
 
+.assist-transport-debug {
+  margin: 0;
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.assist-volume-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.assist-recording-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.assist-volume-row span,
+.assist-volume-row strong,
+.assist-recording-row span,
+.assist-recording-row strong {
+  color: #4b5563;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.assist-volume-row strong,
+.assist-recording-row strong {
+  min-width: 36px;
+}
+
+.assist-volume-meter {
+  flex: 1;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eef2f7;
+}
+
+.assist-volume-meter span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #22c55e 0%, #6c47ff 65%, #cc4b37 100%);
+  transition: width 80ms linear;
+}
+
+.assist-recording-row audio {
+  width: min(320px, 100%);
+  height: 30px;
+}
+
 .assist-manual-entry {
   position: absolute;
   left: 14px;
@@ -2369,5 +2495,10 @@ button {
 
   .assist-manual-body {
     grid-template-columns: 1fr;
+  }
+
+  .assist-settings-panel {
+    left: 0;
+    right: auto;
   }
 }

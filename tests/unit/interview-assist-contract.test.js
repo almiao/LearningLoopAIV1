@@ -20,14 +20,19 @@ test("interview assist service stays independent from generic tutor session modu
 test("frontend interview assist page targets the independent agent base URL and stream endpoint", async () => {
   const apiSource = await readFile(`${root}/frontend/lib/interview-assist-api.js`, "utf8");
   const workspaceSource = await readFile(`${root}/frontend/components/interview-assist-workspace.js`, "utf8");
-  const livekitServerSource = await readFile(`${root}/livekit-agent/src/server.js`, "utf8");
 
   assert.match(apiSource, /NEXT_PUBLIC_INTERVIEW_ASSIST_API_BASE_URL/);
+  assert.match(apiSource, /127\.0\.0\.1:8000/);
   assert.match(apiSource, /127\.0\.0\.1:4200/);
-  assert.match(apiSource, /\/api\/interview-assist\/answer-stream/);
-  assert.doesNotMatch(apiSource, /\/api\/interview-assist\/first-screen",/);
+  assert.match(apiSource, /\/api\/interview-assist\/realtime-session/);
+  assert.match(apiSource, /\/api\/interview-assist\/livekit-transport/);
+  assert.match(apiSource, /\/api\/interview-assist\/voice-demo/);
   assert.doesNotMatch(workspaceSource, /SpeechRecognition|webkitSpeechRecognition/);
-  assert.match(workspaceSource, /createLocalAudioTrack/);
-  assert.match(livekitServerSource, /livekit-server-sdk/);
-  assert.match(livekitServerSource, /AgentDispatchClient/);
+  assert.match(workspaceSource, /new Room\(\)/);
+  assert.match(workspaceSource, /RoomEvent\.DataReceived/);
+  assert.match(workspaceSource, /setMicrophoneEnabled\(true\)/);
+  assert.match(workspaceSource, /uploadVoiceDemo/);
+  assert.match(workspaceSource, /useState\("interviewer"\)/);
+  assert.match(workspaceSource, /useState\("assist_candidate"\)/);
+  assert.match(workspaceSource, /assist-settings-panel/);
 });

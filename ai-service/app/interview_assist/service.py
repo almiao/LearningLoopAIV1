@@ -26,6 +26,7 @@ DEFAULT_FRAMEWORK_POINT_COUNT = int(os.environ.get("INTERVIEW_ASSIST_FRAMEWORK_P
 DETAIL_TAG = "</detail>"
 FRAMEWORK_OPEN = "<framework>"
 FRAMEWORK_CLOSE = "</framework>"
+VOICE_DEMO_DIR = os.environ.get("INTERVIEW_ASSIST_VOICE_DEMO_DIR", ".omx/interview-assist/voice-demos")
 
 
 def _normalize(text: Any) -> str:
@@ -210,6 +211,54 @@ def create_assist_session(*, target_role: str) -> Dict[str, Any]:
         transport_mode=session["transportMode"],
     )
     return dict(session)
+
+
+def create_realtime_session(
+    *,
+    self_role: str,
+    mode: str,
+    resume_text: str = "",
+) -> Dict[str, Any]:
+    session_id = f"assist_{uuid4().hex[:12]}"
+    normalized_role = _normalize(self_role) or "candidate"
+    normalized_mode = _normalize(mode) or "assist_candidate"
+    session = {
+        "sessionId": session_id,
+        "selfRole": normalized_role,
+        "mode": normalized_mode,
+        "status": "created",
+        "createdAt": int(time.time() * 1000),
+        "voiceDemoUploaded": False,
+        "voiceDemoPath": "",
+        "resumeText": _normalize(resume_text),
+        "turns": [],
+        "turnCounter": 0,
+        "activeTurnIds": [],
+    }
+    ASSIST_SESSIONS[session_id] = session
+    ASSIST_SESSION_LOCKS[session_id] = threading.Lock()
+    set_session_context(session_id=session_id, turn=0)
+    return dict(session)
+
+
+def store_voice_demo(*, session_id: str, filename: str, body: bytes) -> Dict[str, Any]:
+    session = ASSIST_SESSIONS.get(session_id)
+    if not session:
+        raise KeyError("Unknown interview assist session.")
+    os.makedirs(VOICE_DEMO_DIR, exist_ok=True)
+    extension = os.path.splitext(filename or "")[1] or ".bin"
+    demo_path = os.path.join(VOICE_DEMO_DIR, f"{session_id}{extension}")
+    with open(demo_path, "wb") as output:
+        output.write(body)
+    session["voiceDemoUploaded"] = True
+    session["voiceDemoPath"] = demo_path
+    session["status"] = "ready"
+    return {
+        "sessionId": session_id,
+        "voiceDemoUploaded": True,
+        "voiceDemoPath": demo_path,
+        "status": session["status"],
+    }
 
 
 def _create_turn_metadata(*, session: Dict[str, Any], question_text: str, question_ended_at: int) -> Dict[str, Any]:
@@ -487,12 +536,18 @@ def describe_interview_assist() -> Dict[str, Any]:
         or os.environ.get("INTERVIEW_ASSIST_DEEPSEEK_API_KEY")
         or os.environ.get("LLAI_DEEPSEEK_API_KEY")
     )
+    realtime_asr_configured = bool(os.environ.get("DASHSCOPE_API_KEY"))
     return {
         "available": True,
-        "transportMode": "mock",
+        "transportMode": "aliyun-realtime-ws",
         "pureLlm": True,
         "provider": provider,
         "configured": configured,
         "streamStages": ["framework", "detail"],
         "contextWindowTurns": 2,
+        "realtimeAsr": {
+            "provider": "ALIYUN_DASHSCOPE",
+            "configured": realtime_asr_configured,
+            "speakerMode": "default_interviewer",
+        },
     }

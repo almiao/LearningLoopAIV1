@@ -120,12 +120,10 @@ export async function postEventStream(url, payload) {
   return events;
 }
 
-export async function withInterviewAssistServices(t, fn, { aiPort, agentPort } = {}) {
+export async function withInterviewAssistServices(t, fn, { aiPort } = {}) {
   const localEnv = loadLocalEnv(process.cwd());
   const resolvedAiPort = aiPort || 18200;
-  const resolvedAgentPort = agentPort || 14600;
   killExistingOnPort(resolvedAiPort);
-  killExistingOnPort(resolvedAgentPort);
 
   const ai = startProcess(
     "python3",
@@ -136,44 +134,30 @@ export async function withInterviewAssistServices(t, fn, { aiPort, agentPort } =
         ...process.env,
         ...localEnv,
         INTERVIEW_ASSIST_LLM_PROVIDER: "MOCK",
-      },
-    }
-  );
-
-  const agent = startProcess(
-    "node",
-    ["livekit-agent/src/server.js"],
-    {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        ...localEnv,
-        PORT: String(resolvedAgentPort),
-        AI_SERVICE_URL: `http://127.0.0.1:${resolvedAiPort}`,
+        DASHSCOPE_API_KEY: "",
+        ALIYUN_API_KEY: "",
+        ALIBABA_CLOUD_ACCESS_KEY_ID: "",
+        ALIBABA_CLOUD_ACCESS_KEY_SECRET: "",
       },
     }
   );
 
   try {
     await waitForJson(`http://127.0.0.1:${resolvedAiPort}/api/health`);
-    await waitForJson(`http://127.0.0.1:${resolvedAgentPort}/api/health`);
     await fn({
       aiBaseUrl: `http://127.0.0.1:${resolvedAiPort}`,
-      agentBaseUrl: `http://127.0.0.1:${resolvedAgentPort}`,
+      agentBaseUrl: `http://127.0.0.1:${resolvedAiPort}`,
     });
   } catch (error) {
     const aiStderr = ai.readStderr();
-    const agentStderr = agent.readStderr();
     throw new Error(
-      `${error.message}\nAI STDERR:\n${aiStderr || "<empty>"}\nAGENT STDERR:\n${agentStderr || "<empty>"}`
+      `${error.message}\nAI STDERR:\n${aiStderr || "<empty>"}`
     );
   } finally {
-    agent.child.kill("SIGTERM");
     ai.child.kill("SIGTERM");
   }
 
   if (t) {
-    t.assert?.doesNotMatch?.(agent.readStderr(), /Error:|Unhandled|Traceback/i);
     t.assert?.doesNotMatch?.(ai.readStderr(), /Error:|Unhandled|Traceback/i);
   }
 }

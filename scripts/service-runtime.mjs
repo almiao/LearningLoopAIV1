@@ -13,14 +13,13 @@ export const rootDir = path.resolve(scriptDir, "..");
 export const frontendDir = path.join(rootDir, "frontend");
 export const aiServiceDir = path.join(rootDir, "ai-service");
 export const superappServiceDir = path.join(rootDir, "superapp-service");
-export const livekitAgentDir = path.join(rootDir, "livekit-agent");
 export const logDir = path.join(rootDir, ".omx", "logs", "split-services");
 export const pidDir = path.join(rootDir, ".omx", "state", "split-services");
 export const localNodeRuntimeDir = path.join(rootDir, ".tools", "node-runtime");
 export const localLivekitRuntimeDir = path.join(rootDir, ".tools", "livekit-runtime");
 
 const envFiles = [".env", ".env.local"].map((file) => path.join(rootDir, file));
-const trackedServices = ["livekit-server", "ai-service", "bff", "superapp-service", "livekit-agent", "frontend"];
+const trackedServices = ["ai-service", "bff", "superapp-service", "frontend"];
 
 export const isWindows = process.platform === "win32";
 export const npmCommand = isWindows ? "npm.cmd" : "npm";
@@ -520,51 +519,6 @@ export async function ensureFrontendDependencies(runtimeEnv, nodeRuntime) {
   await ensureNodePackageDependencies(frontendDir, "frontend", runtimeEnv, nodeRuntime);
 }
 
-export async function ensureLivekitAgentDependencies(runtimeEnv, nodeRuntime) {
-  await ensureNodePackageDependencies(livekitAgentDir, "livekit-agent", runtimeEnv, nodeRuntime);
-}
-
-export async function ensureLivekitAgentModelFiles(runtimeEnv, nodeRuntime) {
-  const packageLockPath = path.join(livekitAgentDir, "package-lock.json");
-  const markerPath = path.join(localLivekitRuntimeDir, "livekit-agent-models.ready.json");
-  const signatureParts = ["livekit-agent-models-v1"];
-
-  if (existsSync(packageLockPath)) {
-    const packageLockStats = statSync(packageLockPath);
-    signatureParts.push(String(packageLockStats.size), String(packageLockStats.mtimeMs));
-  }
-
-  const signature = signatureParts.join(":");
-
-  if (existsSync(markerPath)) {
-    try {
-      const marker = JSON.parse(readFileSync(markerPath, "utf8"));
-      if (marker.signature === signature) {
-        return;
-      }
-    } catch {}
-  }
-
-  console.log("Downloading LiveKit agent model files...");
-  await runNodeCommand(nodeRuntime, [path.join(livekitAgentDir, "src", "worker.js"), "download-files"], {
-    cwd: rootDir,
-    env: runtimeEnv,
-  });
-
-  writeFileSync(
-    markerPath,
-    JSON.stringify(
-      {
-        signature,
-        completedAt: new Date().toISOString(),
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
-}
-
 export async function ensurePythonDependencies(runtimeEnv) {
   const pythonSpec = resolvePythonCommand(runtimeEnv);
   const importCheck = runPythonSync(pythonSpec, ["-c", "import fastapi, uvicorn"]);
@@ -594,14 +548,14 @@ export async function ensurePythonDependencies(runtimeEnv) {
   return pythonSpec;
 }
 
-export async function buildFrontend(runtimeEnv, bffPort, livekitAgentPort, nodeRuntime) {
+export async function buildFrontend(runtimeEnv, bffPort, aiPort, nodeRuntime) {
   console.log("Building frontend production bundle...");
   await runNpmCommand(nodeRuntime, ["run", "build"], {
     cwd: frontendDir,
     env: {
       ...runtimeEnv,
       NEXT_PUBLIC_API_BASE_URL: `http://127.0.0.1:${bffPort}`,
-      NEXT_PUBLIC_INTERVIEW_ASSIST_API_BASE_URL: `http://127.0.0.1:${livekitAgentPort}`,
+      NEXT_PUBLIC_INTERVIEW_ASSIST_API_BASE_URL: `http://127.0.0.1:${aiPort}`,
     },
   });
 }
@@ -748,7 +702,7 @@ export function assertPortsAvailable(portEntries) {
     .join("; ");
 
   throw new Error(
-    `${details}. Stop the existing process or override FRONTEND_PORT/BFF_PORT/SUPERAPP_PORT/LIVEKIT_AGENT_PORT/AI_PORT.`
+    `${details}. Stop the existing process or override FRONTEND_PORT/BFF_PORT/SUPERAPP_PORT/AI_PORT.`
   );
 }
 

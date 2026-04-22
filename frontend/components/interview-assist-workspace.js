@@ -1,13 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { createLocalAudioTrack, Room, RoomEvent } from "livekit-client";
+import { Room, RoomEvent } from "livekit-client";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ackFirstScreenRendered,
-  createAssistSession,
-  streamAssistAnswer,
+  createLivekitTransport,
+  createRealtimeSession,
+  getInterviewAssistBaseUrl,
+  getLivekitRoomDebug,
+  uploadVoiceDemo,
 } from "../lib/interview-assist-api";
+
+const statusLabels = {
+  idle: "待开始",
+  connecting: "连接中",
+  listening: "实时识别中",
+  paused: "已暂停",
+  generating_skeleton: "框架生成中",
+  first_screen_ready: "框架已就绪",
+  error: "异常",
+};
 
 const starterQuestions = [
   "AQS 是什么？",
@@ -15,16 +28,6 @@ const starterQuestions = [
   "高并发下接口超时怎么排查？",
   "介绍一下你最近做的项目。",
 ];
-
-const statusLabels = {
-  idle: "待开始",
-  connecting: "连接中",
-  listening: "正在监听",
-  paused: "已暂停",
-  generating_skeleton: "框架生成中",
-  first_screen_ready: "框架已就绪",
-  error: "异常",
-};
 
 function formatDuration(totalSeconds) {
   const minutes = Math.floor(totalSeconds / 60);
@@ -35,13 +38,9 @@ function formatDuration(totalSeconds) {
 function buildAnswerSections(answer) {
   const frameworkPoints = answer?.frameworkPoints || [];
   const detailBlocks = answer?.detailBlocks || [];
-  if (!frameworkPoints.length) {
-    return [];
-  }
-
   return frameworkPoints.map((point, index) => ({
     title: `${String(index + 1).padStart(2, "0")} | ${point}`,
-    detail: detailBlocks[index] || "框架已到位，细节正在继续展开。",
+    detail: detailBlocks[index] || "细节正在继续展开。",
   }));
 }
 
@@ -55,36 +54,143 @@ function createEmptyAnswer(questionText = "", sessionId = "") {
   };
 }
 
+function floatTo16BitPCM(float32Array) {
+  const pcmBuffer = new ArrayBuffer(float32Array.length * 2);
+  const view = new DataView(pcmBuffer);
+  let offset = 0;
+  for (let index = 0; index < float32Array.length; index += 1) {
+    const sample = Math.max(-1, Math.min(1, float32Array[index]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+  return pcmBuffer;
+}
+
+function downsampleBuffer(buffer, inputSampleRate, outputSampleRate) {
+  if (outputSampleRate >= inputSampleRate) {
+    return buffer;
+  }
+  const sampleRateRatio = inputSampleRate / outputSampleRate;
+  const newLength = Math.round(buffer.length / sampleRateRatio);
+  const result = new Float32Array(newLength);
+  let offsetResult = 0;
+  let offsetBuffer = 0;
+  while (offsetResult < result.length) {
+    const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+    let accum = 0;
+    let count = 0;
+    for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i += 1) {
+      accum += buffer[i];
+      count += 1;
+    }
+    result[offsetResult] = accum / count;
+    offsetResult += 1;
+    offsetBuffer = nextOffsetBuffer;
+  }
+  return result;
+}
+
 export function InterviewAssistWorkspace() {
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
+  const [session, setSession] = useState(null);
   const [questionText, setQuestionText] = useState("");
   const [transcriptPreview, setTranscriptPreview] = useState("");
-  const [session, setSession] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentAnswer, setCurrentAnswer] = useState(null);
   const [history, setHistory] = useState([]);
-  const [transportState, setTransportState] = useState("mock");
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isExpanding, setIsExpanding] = useState(false);
-  const [roomConnected, setRoomConnected] = useState(false);
-  const [micActive, setMicActive] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [selfRole, setSelfRole] = useState("interviewer");
+  const [mode, setMode] = useState("assist_candidate");
+  const [voiceDemoFile, setVoiceDemoFile] = useState(null);
+  const [resumeText, setResumeText] = useState("");
+  const [voiceDemoUploaded, setVoiceDemoUploaded] = useState(false);
+  const [isUploadingVoiceDemo, setIsUploadingVoiceDemo] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [transportState, setTransportState] = useState("idle");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [transportDebug, setTransportDebug] = useState("待开始");
+  const [roomDebugSnapshot, setRoomDebugSnapshot] = useState("");
+  const [volumeLevel, setVolumeLevel] = useState(0);
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState("");
+  const [recordingStatus, setRecordingStatus] = useState("未录音");
 
   const roomRef = useRef(null);
-  const roomConnectPromiseRef = useRef(null);
-  const localAudioTrackRef = useRef(null);
   const ackedTurnRef = useRef("");
+  const audioMonitorTimerRef = useRef(null);
+  const transcriptSeenRef = useRef(false);
+  const settingsPanelRef = useRef(null);
+  const monitorStreamRef = useRef(null);
+  const monitorAudioContextRef = useRef(null);
+  const monitorAnalyserRef = useRef(null);
+  const monitorAnimationRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
+
+  function cleanupTransport() {
+    if (audioMonitorTimerRef.current) {
+      window.clearTimeout(audioMonitorTimerRef.current);
+      audioMonitorTimerRef.current = null;
+    }
+    const room = roomRef.current;
+    roomRef.current = null;
+    if (room) {
+      room.localParticipant?.setMicrophoneEnabled?.(false).catch(() => {});
+      room.disconnect();
+    }
+    if (monitorAnimationRef.current) {
+      window.cancelAnimationFrame(monitorAnimationRef.current);
+      monitorAnimationRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    mediaRecorderRef.current = null;
+    monitorStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+    monitorStreamRef.current = null;
+    monitorAnalyserRef.current = null;
+    monitorAudioContextRef.current?.close?.().catch?.(() => {});
+    monitorAudioContextRef.current = null;
+    setVolumeLevel(0);
+    setTransportState("idle");
+    setTransportDebug("传输已清理");
+  }
 
   useEffect(() => {
     return () => {
-      const track = localAudioTrackRef.current;
-      localAudioTrackRef.current = null;
-      track?.stop?.();
-      roomRef.current?.disconnect?.();
-      roomRef.current = null;
-      roomConnectPromiseRef.current = null;
+      cleanupTransport();
+      if (recordedAudioUrl) {
+        URL.revokeObjectURL(recordedAudioUrl);
+      }
     };
-  }, []);
+  }, [recordedAudioUrl]);
+
+  useEffect(() => {
+    if (!isSettingsOpen) {
+      return undefined;
+    }
+
+    function handlePointerDown(event) {
+      if (settingsPanelRef.current?.contains(event.target)) {
+        return;
+      }
+      setIsSettingsOpen(false);
+    }
+
+    function handleEscape(event) {
+      if (event.key === "Escape") {
+        setIsSettingsOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isSettingsOpen]);
 
   useEffect(() => {
     if (!currentAnswer?.turnId || !(currentAnswer.frameworkPoints || []).length) {
@@ -105,7 +211,6 @@ export function InterviewAssistWorkspace() {
         })
         .catch(() => {});
     });
-
     return () => window.cancelAnimationFrame(frameId);
   }, [currentAnswer]);
 
@@ -113,298 +218,474 @@ export function InterviewAssistWorkspace() {
     if (!session?.sessionId || status === "idle" || status === "paused" || status === "error") {
       return undefined;
     }
-
     const timerId = window.setInterval(() => {
       setElapsedSeconds((value) => value + 1);
     }, 1000);
-
     return () => window.clearInterval(timerId);
   }, [session?.sessionId, status]);
 
-  async function ensureSession({ restart = false } = {}) {
-    if (!restart && session?.sessionId) {
-      return session;
+  const answerSections = useMemo(() => buildAnswerSections(currentAnswer), [currentAnswer]);
+
+  function applyAssistEvent(event, data) {
+    if (event === "agent_ready") {
+      setTransportState("connected");
+      setTransportDebug("服务端音频桥接已就绪");
+      setSocketConnected(true);
+      setStatus("listening");
+      return;
     }
-
-    if (restart && roomRef.current) {
-      roomRef.current.disconnect();
-      roomRef.current = null;
-      roomConnectPromiseRef.current = null;
-      setRoomConnected(false);
-      setMicActive(false);
-    }
-
-    setError("");
-    setStatus("connecting");
-    const nextSession = await createAssistSession({
-      targetRole: "java-backend",
-      sessionMode: "realtime_interview_assist",
-    });
-    setSession(nextSession);
-    setTransportState(nextSession.transportMode || "mock");
-    setElapsedSeconds(0);
-    setStatus("paused");
-    return nextSession;
-  }
-
-  function applyFrameworkDone(data) {
-    setCurrentAnswer((prev) => ({
-      ...(prev || createEmptyAnswer(data.questionText, data.sessionId)),
-      ...data,
-      detailBlocks: prev?.detailBlocks || new Array((data.frameworkPoints || []).length).fill(""),
-    }));
-    setStatus("first_screen_ready");
-  }
-
-  function applyAssistEvent(event, data, fallbackQuestion, fallbackSessionId) {
     if (event === "transcript_partial" || event === "transcript_final") {
+      transcriptSeenRef.current = true;
       setTranscriptPreview(data.transcript || "");
       return;
     }
-
     if (event === "turn_committed") {
       ackedTurnRef.current = "";
-      setCurrentAnswer(createEmptyAnswer(data.questionText || fallbackQuestion, fallbackSessionId));
+      setCurrentAnswer(createEmptyAnswer(data.questionText || "", session?.sessionId || ""));
       setStatus("generating_skeleton");
       setIsExpanding(false);
       return;
     }
-
     if (event === "framework_delta") {
       setCurrentAnswer((prev) => {
-        const base = prev || createEmptyAnswer(fallbackQuestion, fallbackSessionId);
+        const base = prev || createEmptyAnswer(data.questionText || transcriptPreview, session?.sessionId || "");
         const frameworkPoints = [...(base.frameworkPoints || [])];
         frameworkPoints[data.index] = data.point;
         const detailBlocks = [...(base.detailBlocks || [])];
         while (detailBlocks.length < frameworkPoints.length) {
           detailBlocks.push("");
         }
-        return {
-          ...base,
-          questionText: data.questionText || base.questionText,
-          frameworkPoints,
-          detailBlocks,
-        };
+        return { ...base, questionText: data.questionText || base.questionText, frameworkPoints, detailBlocks };
       });
       return;
     }
-
     if (event === "framework_done") {
-      applyFrameworkDone(data);
+      setCurrentAnswer((prev) => ({
+        ...(prev || createEmptyAnswer(data.questionText, data.sessionId)),
+        ...data,
+        detailBlocks: prev?.detailBlocks || new Array((data.frameworkPoints || []).length).fill(""),
+      }));
+      setStatus("first_screen_ready");
       return;
     }
-
     if (event === "detail_start") {
       setIsExpanding(true);
       return;
     }
-
     if (event === "detail_delta") {
       setCurrentAnswer((prev) => {
-        const base = prev || createEmptyAnswer(fallbackQuestion, fallbackSessionId);
+        const base = prev || createEmptyAnswer("", session?.sessionId || "");
         const detailBlocks = [...(base.detailBlocks || [])];
         detailBlocks[data.index] = `${detailBlocks[data.index] || ""}${data.delta || ""}`;
-        return {
-          ...base,
-          detailBlocks,
-        };
+        return { ...base, detailBlocks };
       });
       return;
     }
-
     if (event === "detail_done") {
       setCurrentAnswer((prev) => {
-        const base = prev || createEmptyAnswer(fallbackQuestion, fallbackSessionId);
+        const base = prev || createEmptyAnswer("", session?.sessionId || "");
         const detailBlocks = [...(base.detailBlocks || [])];
         detailBlocks[data.index] = data.detail || detailBlocks[data.index] || "";
-        return {
-          ...base,
-          detailBlocks,
-        };
+        return { ...base, detailBlocks };
       });
       return;
     }
-
     if (event === "answer_ready") {
       setCurrentAnswer(data);
       setHistory((items) => [data, ...items].slice(0, 3));
       setIsExpanding(false);
       return;
     }
-
-    if (event === "agent_ready") {
-      setError("");
-      setTranscriptPreview("Agent 已就绪，等待服务端 STT 返回识别文本。");
-      return;
-    }
-
     if (event === "error") {
-      setError(data.error || "LiveKit Agent 运行错误。");
+      const nextError = data.error || "实时识别失败。";
+      setError(nextError);
+      setTransportState("error");
+      if (String(nextError).includes("NO_VALID_AUDIO_ERROR")) {
+        setTransportDebug("LiveKit 音频已经送达，但阿里云判定音频无效，正在继续调格式。");
+      } else {
+        setTransportDebug(`服务端错误：${nextError}`);
+      }
       setStatus("error");
-      setIsExpanding(false);
     }
   }
 
-  function bindRoomEvents(room, activeSession) {
-    room.on(RoomEvent.DataReceived, (payload) => {
+  async function createSessionAndUploadVoiceDemo() {
+    setError("");
+    const nextSession = await createRealtimeSession({
+      selfRole,
+      mode,
+      resumeText: selfRole === "candidate" ? resumeText : "",
+    });
+    setSession(nextSession);
+
+    if (voiceDemoFile) {
+      setIsUploadingVoiceDemo(true);
       try {
-        const parsed = JSON.parse(new TextDecoder().decode(payload));
-        if (!parsed?.event) {
+        await uploadVoiceDemo({
+          sessionId: nextSession.sessionId,
+          file: voiceDemoFile,
+        });
+        setVoiceDemoUploaded(true);
+      } finally {
+        setIsUploadingVoiceDemo(false);
+      }
+    } else {
+      setVoiceDemoUploaded(false);
+    }
+    return nextSession;
+  }
+
+  async function startVolumeMonitor() {
+    if (monitorStreamRef.current) {
+      return;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    const audioContext = new AudioContextCtor();
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
+    }
+
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.82;
+
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+
+    const sampleBuffer = new Uint8Array(analyser.fftSize);
+    const updateLevel = () => {
+      analyser.getByteTimeDomainData(sampleBuffer);
+      let sumSquares = 0;
+      for (let index = 0; index < sampleBuffer.length; index += 1) {
+        const normalized = (sampleBuffer[index] - 128) / 128;
+        sumSquares += normalized * normalized;
+      }
+      const rms = Math.sqrt(sumSquares / sampleBuffer.length);
+      const nextLevel = Math.min(1, rms * 4.5);
+      setVolumeLevel(nextLevel);
+      monitorAnimationRef.current = window.requestAnimationFrame(updateLevel);
+    };
+
+    monitorStreamRef.current = stream;
+    monitorAudioContextRef.current = audioContext;
+    monitorAnalyserRef.current = analyser;
+    monitorAnimationRef.current = window.requestAnimationFrame(updateLevel);
+
+    if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm")) {
+      recordedChunksRef.current = [];
+      if (recordedAudioUrl) {
+        URL.revokeObjectURL(recordedAudioUrl);
+        setRecordedAudioUrl("");
+      }
+      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+      recorder.onstop = () => {
+        if (!recordedChunksRef.current.length) {
+          setRecordingStatus("未录到有效音频");
           return;
         }
-        applyAssistEvent(parsed.event, parsed.data || {}, transcriptPreview, activeSession.sessionId);
-      } catch {}
-    });
-
-    room.on(RoomEvent.Disconnected, () => {
-      setRoomConnected(false);
-      setMicActive(false);
-    });
-  }
-
-  async function ensureLiveKitRoom(activeSession) {
-    if (!activeSession?.livekitConfigured || !activeSession?.participantToken || !activeSession?.livekitUrl) {
-      throw new Error("LiveKit Agents 尚未配置，当前环境不能直接走产品级实时语音链路。");
-    }
-
-    if (roomRef.current) {
-      return roomRef.current;
-    }
-    if (roomConnectPromiseRef.current) {
-      return roomConnectPromiseRef.current;
-    }
-
-    const room = new Room();
-    roomRef.current = room;
-    bindRoomEvents(room, activeSession);
-    setTransportState("livekit");
-
-    roomConnectPromiseRef.current = room
-      .connect(activeSession.livekitUrl, activeSession.participantToken)
-      .then(() => {
-        setRoomConnected(true);
-        return room;
-      })
-      .catch((nextError) => {
-        roomRef.current = null;
-        setRoomConnected(false);
-        throw nextError;
-      })
-      .finally(() => {
-        roomConnectPromiseRef.current = null;
-      });
-
-    return roomConnectPromiseRef.current;
-  }
-
-  async function runAssistStream(nextQuestion = questionText, activeSession = session) {
-    const trimmedQuestion = String(nextQuestion || "").trim();
-    if (!trimmedQuestion) {
-      setError("请先输入问题。");
-      return;
-    }
-
-    try {
-      setError("");
-      setIsSubmitting(true);
-      setIsExpanding(false);
-      const readySession = activeSession?.sessionId ? activeSession : await ensureSession();
-      ackedTurnRef.current = "";
-      setCurrentAnswer(createEmptyAnswer(trimmedQuestion, readySession.sessionId));
-      setStatus("generating_skeleton");
-
-      await streamAssistAnswer(
-        {
-          sessionId: readySession.sessionId,
-          questionText: trimmedQuestion,
-          questionEndedAt: Date.now(),
-        },
-        async (event, data) => {
-          if (event === "error") {
-            throw new Error(data.error || "面试辅助流式生成失败。");
+        const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        const nextUrl = URL.createObjectURL(blob);
+        setRecordedAudioUrl((previousUrl) => {
+          if (previousUrl) {
+            URL.revokeObjectURL(previousUrl);
           }
-          applyAssistEvent(event, data, trimmedQuestion, readySession.sessionId);
-        }
-      );
-
-      setQuestionText("");
-      setTranscriptPreview(trimmedQuestion);
-    } catch (nextError) {
-      setError(nextError.message);
-      setStatus("error");
-      setIsExpanding(false);
-    } finally {
-      setIsSubmitting(false);
+          return nextUrl;
+        });
+        setRecordingStatus("已生成本地录音，可回放");
+      };
+      recorder.start(250);
+      mediaRecorderRef.current = recorder;
+      setRecordingStatus("录音中");
+    } else {
+      setRecordingStatus("当前环境不支持录音回放");
     }
   }
 
   async function startListening() {
     try {
-      const activeSession = await ensureSession();
-      const room = await ensureLiveKitRoom(activeSession);
-
-      if (localAudioTrackRef.current) {
-        setMicActive(true);
-        setStatus("listening");
-        return;
+      setError("");
+      setStatus("connecting");
+      setTransportState("connecting");
+      setTransportDebug("创建会话");
+      await startVolumeMonitor();
+      const activeSession = await createSessionAndUploadVoiceDemo();
+      setIsSettingsOpen(false);
+      setTransportDebug("申请 LiveKit 传输信息");
+      const transport = await createLivekitTransport({ sessionId: activeSession.sessionId });
+      if (!transport.livekitConfigured || !transport.participantToken || !transport.livekitUrl) {
+        throw new Error("LiveKit 传输层未配置完成。");
       }
 
-      const track = await createLocalAudioTrack();
-      await room.localParticipant.publishTrack(track);
-      localAudioTrackRef.current = track;
-      setMicActive(true);
-      setStatus("listening");
-      setError("");
+      const room = new Room();
+      roomRef.current = room;
+      transcriptSeenRef.current = false;
+      setRoomDebugSnapshot("");
+      setTransportDebug("准备连接 LiveKit 房间");
+
+      room.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
+        if (topic !== "interview-assist") {
+          return;
+        }
+        try {
+          const parsed = JSON.parse(new TextDecoder().decode(payload));
+          if (parsed?.event) {
+            applyAssistEvent(parsed.event, parsed.data || {});
+          }
+        } catch {}
+      });
+
+      room.on(RoomEvent.Connected, () => {
+        setTransportState("room-connected");
+        setTransportDebug("房间已连接，等待麦克风发布");
+      });
+
+      room.on(RoomEvent.ConnectionStateChanged, (nextState) => {
+        setTransportDebug(`连接状态：${String(nextState)}`);
+      });
+
+      room.on(RoomEvent.MediaDevicesError, (nextError) => {
+        setError(nextError?.message || "麦克风设备异常。");
+        setTransportState("error");
+        setTransportDebug(`设备错误：${nextError?.message || "unknown"}`);
+        setStatus("error");
+      });
+
+      room.on(RoomEvent.LocalTrackPublished, (publication) => {
+        setTransportState("track-published");
+        setTransportDebug(`本地音轨已发布：${publication?.source || publication?.kind || "audio"}`);
+      });
+
+      room.on(RoomEvent.Disconnected, () => {
+        setSocketConnected(false);
+        cleanupTransport();
+        setStatus((current) => (current === "error" ? current : "paused"));
+      });
+
+      await room.connect(transport.livekitUrl, transport.participantToken);
+      setSocketConnected(true);
+      setTransportState("room-connected");
+      setTransportDebug("正在打开麦克风");
+      await room.localParticipant.setMicrophoneEnabled(true);
+      setTransportState("track-published");
+      setTransportDebug("麦克风已启用，等待服务端转写");
+      setElapsedSeconds(0);
+      audioMonitorTimerRef.current = window.setTimeout(() => {
+        if (!transcriptSeenRef.current) {
+          setError("LiveKit 已连通，但 8 秒内仍未收到转写结果。正在检查服务端音频桥接。");
+          setTransportState("stalled");
+          setTransportDebug("8 秒内没有收到转写，正在核对房间音轨和 ASR 状态");
+          setStatus("error");
+          getLivekitRoomDebug(transport.roomName)
+            .then((snapshot) => {
+              const participants = snapshot.participants || [];
+              const summary = participants
+                .map((participant) => `${participant.identity}:${(participant.tracks || []).length} tracks`)
+                .join(" | ");
+              const hasPublishedTrack = participants.some((participant) => (participant.tracks || []).length > 0);
+              setRoomDebugSnapshot(
+                hasPublishedTrack
+                  ? `房间里已经看到了音轨，当前更像是 ASR 侧还没返回文本。${summary ? ` ${summary}` : ""}`.trim()
+                  : summary || "房间里还没有可见参与者/音轨。",
+              );
+            })
+            .catch((nextError) => {
+              setRoomDebugSnapshot(`拉取房间诊断失败：${nextError.message || "unknown"}`);
+            });
+        }
+      }, 8000);
     } catch (nextError) {
-      setError(nextError.message || "LiveKit 连接失败。");
+      cleanupTransport();
+      setError(nextError.message || "启动实时识别失败。");
+      setTransportState("error");
+      setTransportDebug(`启动失败：${nextError.message || "unknown"}`);
       setStatus("error");
-      setMicActive(false);
     }
   }
 
-  async function pauseListening() {
-    const track = localAudioTrackRef.current;
-    localAudioTrackRef.current = null;
-    if (track && roomRef.current?.localParticipant) {
-      try {
-        await roomRef.current.localParticipant.unpublishTrack(track);
-      } catch {}
-      track.stop();
-    }
-    setMicActive(false);
+  function pauseListening() {
+    cleanupTransport();
+    setSocketConnected(false);
     setStatus("paused");
   }
 
-  const answerSections = buildAnswerSections(currentAnswer);
+  async function runManualAssist() {
+    if (!questionText.trim()) {
+      setError("请先输入问题。");
+      return;
+    }
+    try {
+      setError("");
+      setIsSubmitting(true);
+      setStatus("generating_skeleton");
+      const baseUrl = getInterviewAssistBaseUrl();
+      const response = await fetch(`${baseUrl}/api/interview-assist/answer-stream`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sessionId: session?.sessionId || (await createRealtimeSession({ selfRole, mode, resumeText })).sessionId,
+          questionText,
+          questionEndedAt: Date.now(),
+        }),
+      });
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        let boundary = buffer.indexOf("\n\n");
+        while (boundary >= 0) {
+          const rawEvent = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          const lines = rawEvent.split(/\r?\n/);
+          const event = lines.find((line) => line.startsWith("event:"))?.slice(6).trim() || "message";
+          const dataText = lines.filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+          applyAssistEvent(event, dataText ? JSON.parse(dataText) : {});
+          boundary = buffer.indexOf("\n\n");
+        }
+      }
+    } catch (nextError) {
+      setError(nextError.message || "手动生成失败。");
+      setStatus("error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   const statusLabel = statusLabels[status] || status;
-  const questionLabel =
-    currentAnswer?.questionText || transcriptPreview || questionText || "等待完整问题后展示当前问题。";
   const frameworkSummary = currentAnswer?.frameworkPoints?.length
     ? currentAnswer.frameworkPoints.join("；")
-    : "等待 LiveKit Agent 判定完整问题后开始生成回答框架。";
-  const detailStatusText = currentAnswer?.frameworkPoints?.length
-    ? (isExpanding ? "框架已完整，正在逐点展开细节。" : "框架已就绪，可先按这 3 个点组织口头回答。")
-    : "现在由 LiveKit Agents 在服务端做 STT 和 turn detection，不再依赖浏览器本地识别。";
-  const voiceReady = Boolean(session?.livekitConfigured);
+    : "等待云端实时 ASR 返回完整问题。";
+  const questionLabel =
+    currentAnswer?.questionText || transcriptPreview || questionText || "等待实时识别返回文本。";
+  const settingsSummary = `${selfRole} · ${mode}${voiceDemoFile ? " · 有 demo" : ""}`;
+  const transportStateLabel = {
+    idle: "待连接",
+    connecting: "连接中",
+    "room-connected": "房间已连接",
+    "track-published": "麦克风已发布",
+    connected: "传输已连接",
+    stalled: "桥接超时",
+    error: "连接失败",
+  }[transportState] || "待连接";
+  const transportStateDot = {
+    idle: "connecting",
+    connecting: "connecting",
+    "room-connected": "connecting",
+    "track-published": "connecting",
+    connected: "listening",
+    stalled: "error",
+    error: "error",
+  }[transportState] || "connecting";
+  const volumePercent = Math.round(volumeLevel * 100);
 
   return (
     <main className="interview-assist-shell">
       <header className="interview-assist-topbar">
         <div className="assist-brand-block">
           <Link className="assist-brand-title" href="/">LoopAssist</Link>
-          <p>LiveKit Agents 负责服务端转写、turn detection 和实时事件回传</p>
+          <p>阿里云实时 ASR 负责转写，LLM 负责后续回答框架与细节生成</p>
         </div>
 
         <Link className="assist-page-name" href="/learn">最佳真实面试辅助</Link>
 
         <div className="assist-header-actions">
+          <div className="assist-settings-anchor" ref={settingsPanelRef}>
+            <button
+              type="button"
+              className="assist-settings-button"
+              onClick={() => setIsSettingsOpen((value) => !value)}
+              aria-expanded={isSettingsOpen}
+              aria-haspopup="dialog"
+            >
+              设置
+            </button>
+            {isSettingsOpen ? (
+              <section className="assist-settings-panel" role="dialog" aria-label="会前配置">
+                <div className="assist-settings-panel-head">
+                  <div>
+                    <strong>会前配置</strong>
+                    <p>默认 interviewer / assist_candidate，voice demo 可选。</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="assist-settings-close"
+                    onClick={() => setIsSettingsOpen(false)}
+                    aria-label="关闭设置"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="assist-settings-group">
+                  <h3>真实角色</h3>
+                  <div className="assist-chip-row">
+                    <button type="button" className={selfRole === "candidate" ? "topic-chip topic-chip-dark" : "topic-chip"} onClick={() => setSelfRole("candidate")}>candidate</button>
+                    <button type="button" className={selfRole === "interviewer" ? "topic-chip topic-chip-dark" : "topic-chip"} onClick={() => setSelfRole("interviewer")}>interviewer</button>
+                  </div>
+                </div>
+
+                <div className="assist-settings-group">
+                  <h3>服务模式</h3>
+                  <div className="assist-chip-row">
+                    <button type="button" className={mode === "assist_candidate" ? "topic-chip topic-chip-dark" : "topic-chip"} onClick={() => setMode("assist_candidate")}>assist_candidate</button>
+                    <button type="button" className={mode === "assist_interviewer" ? "topic-chip topic-chip-dark" : "topic-chip"} onClick={() => setMode("assist_interviewer")}>assist_interviewer</button>
+                  </div>
+                </div>
+
+                <div className="assist-settings-group">
+                  <h3>Voice Demo（可选）</h3>
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    onChange={(event) => {
+                      setVoiceDemoFile(event.target.files?.[0] || null);
+                      setVoiceDemoUploaded(false);
+                    }}
+                  />
+                  <p>{voiceDemoFile ? `已选择：${voiceDemoFile.name}` : "不上传也可以直接开始实时识别。"}</p>
+                </div>
+
+                {selfRole === "candidate" ? (
+                  <div className="assist-settings-group">
+                    <h3>简历文本（可选）</h3>
+                    <textarea
+                      value={resumeText}
+                      onChange={(event) => setResumeText(event.target.value)}
+                      placeholder="可直接粘贴简历文本，供后续 LLM 参考。"
+                    />
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+          </div>
+
           <div className="assist-status-pill" aria-live="polite">
             <span className={`assist-dot assist-dot-${status}`} />
             <span>{statusLabel}</span>
           </div>
           <div className="assist-status-pill">
-            <span className="assist-dot assist-dot-voice" />
-            <span>{transportState}</span>
+            <span className="assist-dot assist-dot-connecting" />
+            <span>{settingsSummary}</span>
+          </div>
+          <div className="assist-status-pill">
+            <span className={`assist-dot assist-dot-${transportStateDot}`} />
+            <span>{`LiveKit ${transportStateLabel}`}</span>
           </div>
         </div>
       </header>
@@ -426,7 +707,11 @@ export function InterviewAssistWorkspace() {
         </div>
 
         <p className="assist-opening-line">{frameworkSummary}</p>
-        <p className="assist-key-summary">{detailStatusText}</p>
+        <p className="assist-key-summary">
+          {currentAnswer?.frameworkPoints?.length
+            ? (isExpanding ? "框架已完整，正在逐点展开细节。" : "框架已就绪，可先按这 3 个点组织口头回答。")
+            : "云端实时 ASR 先产出问题文本，再触发后续 LLM 分析。"}
+        </p>
 
         <div className="assist-section-list">
           {answerSections.length ? (
@@ -439,12 +724,12 @@ export function InterviewAssistWorkspace() {
           ) : (
             <>
               <article className="assist-answer-section">
-                <h3>01 | 服务端收尾</h3>
-                <p>现在由 LiveKit Agent 在服务端监听音频、做 turn detection，再决定什么时候提交给大模型。</p>
+                <h3>01 | 实时转写</h3>
+                <p>浏览器持续上传 PCM 音频分片，阿里云实时 ASR 返回 partial/final 文本。</p>
               </article>
               <article className="assist-answer-section">
-                <h3>02 | 先框架后展开</h3>
-                <p>Agent 收到完整问句后，先回完整框架，再逐点把细节流式填充出来。</p>
+                <h3>02 | Turn 结束触发分析</h3>
+                <p>当前版本默认把识别到的完整句子视为面试官问题，并触发回答辅导链路。</p>
               </article>
             </>
           )}
@@ -456,21 +741,33 @@ export function InterviewAssistWorkspace() {
           <h2>实时识别</h2>
           <div className="assist-recognition-badges">
             <span className="assist-mini-pill">
-              <span className={`assist-dot assist-dot-${voiceReady ? "listening" : "error"}`} />
-              {voiceReady ? (roomConnected ? "房间已连接" : "等待入房") : "未配置 LiveKit"}
+              <span className={`assist-dot assist-dot-${voiceDemoUploaded ? "listening" : "connecting"}`} />
+              {voiceDemoUploaded ? "voice demo 已上传" : "voice demo 可选"}
             </span>
             <span className="assist-mini-pill">
               <span className="assist-dot assist-dot-voice" />
-              {micActive ? "麦克风已发布" : "麦克风未开启"}
+              {socketConnected ? "正在流式识别" : "等待连接"}
             </span>
           </div>
         </div>
 
         <div className="assist-transcript-stream">
-          <p>面试官：{transcriptPreview || currentAnswer?.questionText || "等待 LiveKit Agent 回传识别文本。"}</p>
+          <p>面试官：{transcriptPreview || "等待云端实时 ASR 返回识别内容。"}</p>
           <p>我：{frameworkSummary}</p>
-          {history[1]?.questionText ? <p>上一题：{history[1].questionText}</p> : null}
         </div>
+        <div className="assist-volume-row">
+          <span>音量</span>
+          <div className="assist-volume-meter" aria-label="实时音量">
+            <span style={{ width: `${volumePercent}%` }} />
+          </div>
+          <strong>{volumePercent}%</strong>
+        </div>
+        <div className="assist-recording-row">
+          <span>录音</span>
+          {recordedAudioUrl ? <audio controls src={recordedAudioUrl} /> : <strong>{recordingStatus}</strong>}
+        </div>
+        <p className="assist-transport-debug">链路：{transportDebug}</p>
+        {roomDebugSnapshot ? <p className="assist-transport-debug">房间诊断：{roomDebugSnapshot}</p> : null}
 
         <details className="assist-manual-entry">
           <summary>手动输入（开发兜底）</summary>
@@ -478,7 +775,7 @@ export function InterviewAssistWorkspace() {
             <textarea
               value={questionText}
               onChange={(event) => setQuestionText(event.target.value)}
-              placeholder="调试时可直接粘贴面试官问题。"
+              placeholder="调试时可直接粘贴识别后的面试官问题。"
             />
             <div className="assist-chip-row">
               {starterQuestions.map((item) => (
@@ -491,7 +788,7 @@ export function InterviewAssistWorkspace() {
               type="button"
               className="assist-control-button is-primary"
               disabled={isSubmitting}
-              onClick={() => runAssistStream(questionText)}
+              onClick={runManualAssist}
             >
               {isSubmitting ? "生成中" : "手动生成"}
             </button>
@@ -500,15 +797,12 @@ export function InterviewAssistWorkspace() {
       </section>
 
       <section className="assist-bottom-controls" aria-label="面试辅助控制">
-        <button type="button" className="assist-control-button is-listen" onClick={startListening}>
+        <button type="button" className="assist-control-button is-listen" onClick={startListening} disabled={isUploadingVoiceDemo}>
           <span className="assist-control-icon" aria-hidden="true" />
-          开始入房监听
+          {isUploadingVoiceDemo ? "上传 demo 中" : "开始实时识别"}
         </button>
         <button type="button" className="assist-control-button" onClick={pauseListening}>
-          暂停麦克风
-        </button>
-        <button type="button" className="assist-control-button" onClick={pauseListening}>
-          停止推流
+          停止识别
         </button>
         <div className="assist-timer">
           <span>稳定</span>

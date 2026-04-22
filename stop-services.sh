@@ -34,6 +34,13 @@ else
   echo "No PID directory found: $PID_DIR"
 fi
 
+for port in 4200 7880 8081 8000 4000 4100 3000 3002; do
+  pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+  if [[ -n "$pids" ]]; then
+    echo "$pids" | xargs kill >/dev/null 2>&1 || true
+  fi
+done
+
 if [[ "$STOP_SCREEN" == "1" ]] && command -v screen >/dev/null 2>&1; then
   SCREEN_LIST="$(screen -ls 2>/dev/null || true)"
   if printf '%s\n' "$SCREEN_LIST" | grep -Fq ".${SESSION_NAME}"; then

@@ -7,7 +7,8 @@ import {
 } from "../../src/baseline/baseline-packs.js";
 import {
   readJavaGuideAsset,
-  readJavaGuideDocument
+  readJavaGuideDocument,
+  listKnowledgeDocuments
 } from "../../src/knowledge/java-guide-doc-service.js";
 import { buildReminderCandidate } from "../../src/superapp/reminder-candidate.js";
 import { createMemoryProfileStore } from "../../src/tutor/memory-profile-store.js";
@@ -368,6 +369,11 @@ const server = http.createServer(async (request, response) => {
         serviceBaseUrl: buildServiceBaseUrl(request),
       });
       sendJson(response, 200, document);
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/knowledge/docs") {
+      sendJson(response, 200, { documents: await listKnowledgeDocuments() });
       return;
     }
 

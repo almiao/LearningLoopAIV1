@@ -5,7 +5,8 @@ import queue
 import threading
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -30,9 +31,12 @@ from app.infra.llm.snapshot import SnapshotStore
 from app.interview_assist import (
     ack_first_screen_rendered,
     create_assist_session,
+    create_realtime_session,
     describe_interview_assist,
+    store_voice_demo,
     stream_assist_answer,
 )
+from app.interview_assist.aliyun_realtime_asr import AliyunRealtimeRecognizer
 from app.observability import events
 from app.observability.logger import logger
 from app.engine.tutor_intelligence import describe_tutor_intelligence
@@ -125,6 +129,12 @@ class InterviewAssistSessionRequest(BaseModel):
     sessionMode: str = "realtime_interview_assist"
 
 
+class InterviewAssistRealtimeSessionRequest(BaseModel):
+    selfRole: str
+    mode: str
+    resumeText: str = ""
+
+
 class InterviewAssistFirstScreenRequest(BaseModel):
     sessionId: str
     questionText: str
@@ -139,6 +149,18 @@ class InterviewAssistRenderedRequest(BaseModel):
 
 app = FastAPI(title="Learning Loop AI Service")
 snapshot_store = SnapshotStore()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3002",
+        "http://localhost:3000",
+        "http://localhost:3002",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.middleware("http")
@@ -243,6 +265,163 @@ def answer_superapp_knowledge_question(payload: SuperappKnowledgeQuestionRequest
 @app.post("/api/interview-assist/session")
 def interview_assist_session(payload: InterviewAssistSessionRequest) -> Dict[str, Any]:
     return create_assist_session(target_role=payload.targetRole)
+
+
+@app.post("/api/interview-assist/realtime-session")
+def interview_assist_realtime_session(payload: InterviewAssistRealtimeSessionRequest) -> Dict[str, Any]:
+    if payload.selfRole not in {"candidate", "interviewer"}:
+        raise HTTPException(status_code=400, detail="selfRole must be candidate or interviewer.")
+    if payload.mode not in {"assist_interviewer", "assist_candidate"}:
+        raise HTTPException(status_code=400, detail="mode must be assist_interviewer or assist_candidate.")
+    return create_realtime_session(
+        self_role=payload.selfRole,
+        mode=payload.mode,
+        resume_text=payload.resumeText,
+    )
+
+
+@app.post("/api/interview-assist/voice-demo")
+async def interview_assist_voice_demo(
+    sessionId: str,
+    file: UploadFile = File(...),
+) -> Dict[str, Any]:
+    body = await file.read()
+    if not body:
+        raise HTTPException(status_code=400, detail="voice demo file is empty.")
+    try:
+        return store_voice_demo(session_id=sessionId, filename=file.filename or "", body=body)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.websocket("/ws/interview-assist/{session_id}")
+async def interview_assist_realtime_ws(websocket: WebSocket, session_id: str) -> None:
+    from app.interview_assist.service import ASSIST_SESSIONS
+
+    session = ASSIST_SESSIONS.get(session_id)
+    if not session:
+        await websocket.close(code=4404, reason="Unknown interview assist session.")
+        return
+
+    await websocket.accept()
+    logger.event("interview_assist_realtime_ws_opened", session_id=session_id, mode=session.get("mode"), self_role=session.get("selfRole"))
+    recognizer = AliyunRealtimeRecognizer()
+
+    if not recognizer.configured:
+        logger.event("interview_assist_realtime_ws_provider_unconfigured", session_id=session_id)
+        await websocket.send_json({
+            "event": "error",
+            "data": {
+                "error": "DASHSCOPE_API_KEY is not configured.",
+            },
+        })
+        await websocket.close(code=4500)
+        return
+
+    recognizer.start()
+    logger.event("interview_assist_realtime_recognizer_started", session_id=session_id)
+    await websocket.send_json({"event": "agent_ready", "data": {"sessionId": session_id}})
+
+    stop_event = threading.Event()
+    transcript_buffer = ""
+    binary_frames_received = 0
+
+    async def send_json_event(event: str, data: Dict[str, Any]) -> None:
+        await websocket.send_json({"event": event, "data": data})
+
+    async def drain_events() -> None:
+        nonlocal transcript_buffer
+        while not stop_event.is_set():
+            event = recognizer.poll_event(timeout=0.1)
+            if event is None:
+                continue
+
+            logger.event(
+                "interview_assist_realtime_asr_event",
+                session_id=session_id,
+                asr_event=event.event,
+                text_chars=len(str(event.data.get("text", ""))),
+                request_id=str(event.data.get("requestId", "")),
+                error_code=str(event.data.get("code", "")),
+            )
+
+            if event.event == "asr_partial":
+                transcript_buffer = event.data.get("text", transcript_buffer)
+                await send_json_event("transcript_partial", {
+                    "transcript": transcript_buffer,
+                    "isFinal": False,
+                })
+                continue
+
+            if event.event == "asr_final":
+                transcript_buffer = event.data.get("text", transcript_buffer)
+                await send_json_event("transcript_final", {
+                    "transcript": transcript_buffer,
+                    "isFinal": True,
+                })
+                await send_json_event("turn_committed", {
+                    "questionText": transcript_buffer,
+                    "role": "interviewer",
+                })
+                if session.get("mode") == "assist_candidate":
+                    try:
+                        stream_queue: queue.Queue[tuple[str, Dict[str, Any]]] = queue.Queue()
+                        stream_assist_answer(
+                            session_id=session_id,
+                            question_text=transcript_buffer,
+                            question_ended_at=None,
+                            emit=lambda ev, data: stream_queue.put((ev, data)),
+                        )
+                        while not stream_queue.empty():
+                            ev, data = stream_queue.get()
+                            await send_json_event(ev, data)
+                    except Exception as exc:
+                        await send_json_event("error", {"error": str(exc)})
+                transcript_buffer = ""
+                continue
+
+            if event.event == "asr_error":
+                await send_json_event("error", {
+                    "error": event.data.get("message", "Aliyun ASR error."),
+                    "code": event.data.get("code", ""),
+                })
+                continue
+
+    drain_task = None
+    try:
+        import asyncio
+
+        drain_task = asyncio.create_task(drain_events())
+
+        while True:
+            message = await websocket.receive()
+            if "bytes" in message and message["bytes"]:
+                binary_frames_received += 1
+                if binary_frames_received <= 3 or binary_frames_received % 20 == 0:
+                    logger.event(
+                        "interview_assist_realtime_audio_frame_received",
+                        session_id=session_id,
+                        frame_index=binary_frames_received,
+                        bytes_len=len(message["bytes"]),
+                    )
+                recognizer.send_audio(message["bytes"])
+            elif "text" in message and message["text"]:
+                payload = json.loads(message["text"])
+                if payload.get("event") == "stop":
+                    logger.event(
+                        "interview_assist_realtime_stop_requested",
+                        session_id=session_id,
+                        audio_frames=binary_frames_received,
+                    )
+                    break
+    except WebSocketDisconnect:
+        logger.event("interview_assist_realtime_ws_disconnected", session_id=session_id, audio_frames=binary_frames_received)
+    finally:
+        stop_event.set()
+        recognizer.stop()
+        logger.event("interview_assist_realtime_ws_closed", session_id=session_id, audio_frames=binary_frames_received)
+        if drain_task:
+            drain_task.cancel()
 
 
 @app.post("/api/interview-assist/answer-stream")

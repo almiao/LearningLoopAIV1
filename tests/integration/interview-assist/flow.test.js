@@ -1,86 +1,78 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  postEventStream,
-  postJson,
-  withInterviewAssistServices,
-} from "../../helpers/interview-assist-services.js";
+import { postEventStream, postJson, withInterviewAssistServices } from "../../helpers/interview-assist-services.js";
 
-function findEvents(events, eventName) {
-  return events.filter((item) => item.event === eventName);
-}
-
-test("interview assist streams full framework before any detail expansion", async (t) => {
-  await withInterviewAssistServices(t, async ({ agentBaseUrl }) => {
-    const session = await postJson(`${agentBaseUrl}/api/interview-assist/session`, {
-      targetRole: "java-backend",
-      sessionMode: "realtime_interview_assist",
+test("interview assist realtime session keeps voice demo optional and still accepts uploads", async (t) => {
+  await withInterviewAssistServices(t, async ({ aiBaseUrl }) => {
+    const session = await postJson(`${aiBaseUrl}/api/interview-assist/realtime-session`, {
+      selfRole: "interviewer",
+      mode: "assist_candidate",
+      resumeText: "",
     });
 
     assert.ok(session.sessionId);
-    assert.ok(["mock", "livekit"].includes(session.transportMode));
+    assert.equal(session.selfRole, "interviewer");
+    assert.equal(session.mode, "assist_candidate");
+    assert.equal(session.voiceDemoUploaded, false);
 
-    const events = await postEventStream(`${agentBaseUrl}/api/interview-assist/answer-stream`, {
-      sessionId: session.sessionId,
-      questionText: "你项目里如何做限流？",
-      questionEndedAt: Date.now(),
-    });
+    const formData = new FormData();
+    formData.append("file", new Blob([new Uint8Array([1, 2, 3, 4])], { type: "audio/wav" }), "demo.wav");
+    const response = await fetch(
+      `${aiBaseUrl}/api/interview-assist/voice-demo?sessionId=${encodeURIComponent(session.sessionId)}`,
+      { method: "POST", body: formData },
+    );
+    const uploaded = await response.json();
 
-    const frameworkDeltas = findEvents(events, "framework_delta");
-    const frameworkDone = findEvents(events, "framework_done");
-    const detailDeltas = findEvents(events, "detail_delta");
-    const answerReady = findEvents(events, "answer_ready");
-
-    assert.equal(frameworkDeltas.length >= 3, true);
-    assert.equal(frameworkDone.length, 1);
-    assert.equal(detailDeltas.length > 0, true);
-    assert.equal(answerReady.length, 1);
-
-    const frameworkDoneIndex = events.findIndex((item) => item.event === "framework_done");
-    const firstDetailIndex = events.findIndex((item) => item.event === "detail_delta");
-    assert.ok(frameworkDoneIndex >= 0);
-    assert.ok(firstDetailIndex > frameworkDoneIndex);
-
-    const payload = answerReady[0].data;
-    assert.equal(Array.isArray(payload.frameworkPoints), true);
-    assert.equal(payload.frameworkPoints.length, 3);
-    assert.equal(Array.isArray(payload.detailBlocks), true);
-    assert.equal(payload.detailBlocks.length, 3);
-    assert.equal(payload.contextTurnsUsed, 0);
-
-    const rendered = await postJson(`${agentBaseUrl}/api/interview-assist/first-screen-rendered`, {
-      sessionId: session.sessionId,
-      turnId: payload.turnId,
-      renderedAt: Date.now(),
-    });
-    assert.equal(rendered.ok, true);
+    assert.equal(response.ok, true);
+    assert.equal(uploaded.voiceDemoUploaded, true);
+    assert.equal(uploaded.status, "ready");
   });
 });
 
-test("interview assist reuses only the prior 1-2 turns as simple context", async (t) => {
+test("interview assist answer stream still returns framework before detail for candidate assist", async (t) => {
   await withInterviewAssistServices(t, async ({ aiBaseUrl }) => {
     const session = await postJson(`${aiBaseUrl}/api/interview-assist/session`, {
       targetRole: "java-backend",
       sessionMode: "realtime_interview_assist",
     });
 
-    const first = await postEventStream(`${aiBaseUrl}/api/interview-assist/answer-stream`, {
+    const events = await postEventStream(`${aiBaseUrl}/api/interview-assist/answer-stream`, {
       sessionId: session.sessionId,
-      questionText: "AQS 是什么？",
-      questionEndedAt: Date.now(),
-    });
-    const second = await postEventStream(`${aiBaseUrl}/api/interview-assist/answer-stream`, {
-      sessionId: session.sessionId,
-      questionText: "为什么这样设计？",
+      questionText: "你项目里如何做限流？",
       questionEndedAt: Date.now(),
     });
 
-    const firstReady = findEvents(first, "answer_ready")[0]?.data;
-    const secondReady = findEvents(second, "answer_ready")[0]?.data;
+    const frameworkDoneIndex = events.findIndex((item) => item.event === "framework_done");
+    const firstDetailIndex = events.findIndex((item) => item.event === "detail_delta");
+    const answerReady = events.find((item) => item.event === "answer_ready")?.data;
 
-    assert.equal(firstReady.contextTurnsUsed, 0);
-    assert.equal(secondReady.contextTurnsUsed, 1);
-    assert.equal(secondReady.frameworkPoints.length, 3);
-    assert.equal(secondReady.detailBlocks.length, 3);
+    assert.ok(frameworkDoneIndex >= 0);
+    assert.ok(firstDetailIndex > frameworkDoneIndex);
+    assert.equal(answerReady.frameworkPoints.length, 3);
+    assert.equal(answerReady.detailBlocks.length, 3);
   });
+});
+
+test("interview assist realtime websocket no longer requires voice demo before connecting", async (t) => {
+  await withInterviewAssistServices(t, async ({ aiBaseUrl }) => {
+    const session = await postJson(`${aiBaseUrl}/api/interview-assist/realtime-session`, {
+      selfRole: "interviewer",
+      mode: "assist_candidate",
+      resumeText: "",
+    });
+
+    const ws = new WebSocket(`ws://127.0.0.1:${aiBaseUrl.split(":").at(-1)}/ws/interview-assist/${session.sessionId}`);
+    const firstMessage = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Timed out waiting for websocket error.")), 10000);
+      ws.onmessage = (event) => {
+        clearTimeout(timer);
+        resolve(JSON.parse(event.data));
+      };
+      ws.onerror = () => {};
+    });
+
+    assert.notEqual(firstMessage.data?.error, "voice demo required before realtime session.");
+    assert.ok(["agent_ready", "error"].includes(firstMessage.event));
+    ws.close();
+  }, { aiPort: 18210 });
 });

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "node src/server.js",
     "start:server": "node src/server.js",
     "start:worker": "node src/worker.js"
   },
