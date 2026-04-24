@@ -62,9 +62,9 @@ button {
 
 .interview-assist-shell {
   min-height: 100vh;
-  max-width: 1440px;
+  max-width: 1680px;
   margin: 0 auto;
-  padding: 0 86px 38px;
+  padding: 0 56px 38px;
   background: #ffffff;
 }
 
@@ -87,7 +87,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  min-height: 92px;
+  min-height: 76px;
 }
 
 .interview-assist-topbar h1 {
@@ -2472,6 +2472,14 @@ button {
   background: #fff7f5;
 }
 
+.assist-live-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 390px);
+  align-items: start;
+  gap: 18px;
+  margin-top: 22px;
+}
+
 .assist-answer-panel,
 .assist-recognition-panel {
   border: 1px solid #dde3ea;
@@ -2480,8 +2488,7 @@ button {
 }
 
 .assist-answer-panel {
-  min-height: 520px;
-  margin-top: 32px;
+  min-height: calc(100vh - 150px);
   padding: 18px;
 }
 
@@ -2498,7 +2505,7 @@ button {
 .assist-answer-section h3,
 .assist-answer-section p,
 .assist-recognition-header h2,
-.assist-transcript-stream p,
+.assist-transcript-stream span,
 .assist-transcript-stream strong {
   margin: 0;
 }
@@ -2571,14 +2578,14 @@ button {
 }
 
 .assist-recognition-panel {
-  position: relative;
+  position: sticky;
+  top: 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  height: 170px;
-  min-height: 170px;
-  margin-top: 40px;
-  padding: 14px;
+  gap: 12px;
+  max-height: calc(100vh - 102px);
+  padding: 16px;
+  overflow: auto;
 }
 
 .assist-recognition-header {
@@ -2589,23 +2596,24 @@ button {
 }
 
 .assist-recognition-badges {
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
 .assist-transcript-stream {
   display: flex;
-  flex: 1;
   flex-direction: column;
-  gap: 5px;
-  min-height: 74px;
-  padding: 10px;
+  gap: 8px;
+  min-height: 104px;
+  padding: 12px;
   border: 1px solid #eef2f7;
   border-radius: 10px;
   background: #fbfcfd;
-  overflow: hidden;
+  overflow: auto;
 }
 
-.assist-transcript-stream p,
+.assist-transcript-stream span,
 .assist-transcript-stream strong {
   color: #4b5563;
   font-size: 11px;
@@ -2615,8 +2623,9 @@ button {
 
 .assist-transcript-stream strong {
   color: #111827;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 800;
+  word-break: break-word;
 }
 
 .assist-transport-debug {
@@ -2675,10 +2684,6 @@ button {
 }
 
 .assist-manual-entry {
-  position: absolute;
-  left: 14px;
-  bottom: -26px;
-  z-index: 2;
   color: #4b5563;
   font-size: 12px;
   font-weight: 700;
@@ -2690,13 +2695,9 @@ button {
 }
 
 .assist-manual-body {
-  position: absolute;
-  left: 0;
-  bottom: 22px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 1fr;
   gap: 10px;
-  width: min(760px, calc(100vw - 40px));
   margin-top: 10px;
   padding: 12px;
   border: 1px solid #dde3ea;
@@ -2724,9 +2725,8 @@ button {
 }
 
 .assist-bottom-controls {
+  flex-wrap: wrap;
   gap: 8px;
-  height: 34px;
-  margin-top: 34px;
 }
 
 .assist-control-button {
@@ -2791,6 +2791,23 @@ button {
   font-weight: 700;
 }
 
+@media (max-width: 1180px) {
+  .assist-live-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .assist-recognition-panel {
+    position: relative;
+    top: auto;
+    order: -1;
+    max-height: none;
+  }
+
+  .assist-answer-panel {
+    min-height: 0;
+  }
+}
+
 @media (max-width: 980px) {
   .interview-assist-shell,
   .home-shell {
@@ -2799,7 +2816,6 @@ button {
   }
 
   .interview-assist-topbar,
-  .assist-header-actions,
   .assist-recognition-header,
   .assist-bottom-controls {
     align-items: flex-start;
@@ -2808,15 +2824,18 @@ button {
   }
 
   .interview-assist-topbar {
-    padding: 18px 0;
+    gap: 12px;
+    padding: 14px 0;
   }
 
-  .assist-answer-panel {
-    min-height: 0;
+  .assist-header-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
   }
 
-  .assist-recognition-panel {
-    margin-top: 20px;
+  .assist-live-workspace {
+    margin-top: 14px;
   }
 
   .assist-manual-body {

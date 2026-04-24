@@ -724,129 +724,132 @@ export function InterviewAssistWorkspace() {
 
       {error ? <section className="feedback-banner error-banner assist-error-banner">{error}</section> : null}
 
-      <section className="assist-answer-panel">
-        <div className="assist-question-context">
-          <p>问题</p>
-          <h1>{questionLabel}</h1>
-        </div>
+      <div className="assist-live-workspace">
+        <section className="assist-answer-panel">
+          <div className="assist-question-context">
+            <p>问题</p>
+            <h1>{questionLabel}</h1>
+          </div>
 
-        <div className="assist-answer-heading">
-          <h2>AI 回答</h2>
-          <span className="assist-mini-pill">
-            <span className={`assist-dot assist-dot-${isExpanding ? "connecting" : status}`} />
-            {isExpanding ? "展开中" : statusLabel}
-          </span>
-        </div>
-
-        <p className="assist-opening-line">{frameworkSummary}</p>
-        <p className="assist-key-summary">
-          {currentAnswer?.frameworkPoints?.length
-            ? (isExpanding ? "框架已完整，正在逐点展开细节。" : "框架已就绪，可先按这 3 个点组织口头回答。")
-            : "云端实时 ASR 先产出问题文本，再触发后续 LLM 分析。"}
-        </p>
-
-        <div className="assist-section-list">
-          {answerSections.length ? (
-            answerSections.map((section) => (
-              <article className="assist-answer-section" key={section.title}>
-                <h3>{section.title}</h3>
-                <p>{section.detail}</p>
-              </article>
-            ))
-          ) : (
-            <>
-              <article className="assist-answer-section">
-                <h3>01 | 实时转写</h3>
-                <p>浏览器持续上传 PCM 音频分片，阿里云实时 ASR 返回 partial/final 文本。</p>
-              </article>
-              <article className="assist-answer-section">
-                <h3>02 | Turn 结束触发分析</h3>
-                <p>当前版本默认把识别到的完整句子视为面试官问题，并触发回答辅导链路。</p>
-              </article>
-            </>
-          )}
-        </div>
-      </section>
-
-      <section className="assist-recognition-panel">
-        <div className="assist-recognition-header">
-          <h2>实时识别</h2>
-          <div className="assist-recognition-badges">
+          <div className="assist-answer-heading">
+            <h2>AI 回答</h2>
             <span className="assist-mini-pill">
-              <span className={`assist-dot assist-dot-${voiceDemoUploaded ? "listening" : "connecting"}`} />
-              {voiceDemoUploaded ? "voice demo 已上传" : "voice demo 可选"}
-            </span>
-            <span className="assist-mini-pill">
-              <span className="assist-dot assist-dot-voice" />
-              {socketConnected ? "正在流式识别" : "等待连接"}
+              <span className={`assist-dot assist-dot-${isExpanding ? "connecting" : status}`} />
+              {isExpanding ? "展开中" : statusLabel}
             </span>
           </div>
-        </div>
 
-        <div className="assist-transcript-stream">
-          <p>面试官：{transcriptPreview || "等待云端实时 ASR 返回识别内容。"}</p>
-          <p>我：{frameworkSummary}</p>
-        </div>
-        <div className="assist-volume-row">
-          <span>音量</span>
-          <div className="assist-volume-meter" aria-label="实时音量">
-            <span style={{ width: `${volumePercent}%` }} />
-          </div>
-          <strong>{volumePercent}%</strong>
-        </div>
-        <div className="assist-recording-row">
-          <span>录音</span>
-          {recordedAudioUrl ? <audio controls src={recordedAudioUrl} /> : <strong>{recordingStatus}</strong>}
-        </div>
-        <p className="assist-transport-debug">链路：{transportDebug}</p>
-        {roomDebugSnapshot ? <p className="assist-transport-debug">房间诊断：{roomDebugSnapshot}</p> : null}
-
-        <details className="assist-manual-entry" ref={manualEntryRef}>
-          <summary>手动输入（开发兜底）</summary>
-          <div className="assist-manual-body">
-            <textarea
-              value={questionText}
-              onChange={(event) => setQuestionText(event.target.value)}
-              placeholder="调试时可直接粘贴识别后的面试官问题。"
-            />
-            <div className="assist-chip-row">
-              {starterQuestions.map((item) => (
-                <button key={item} type="button" className="topic-chip" onClick={() => setQuestionText(item)}>
-                  {item}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              className="assist-control-button is-primary"
-              disabled={isSubmitting}
-              onClick={runManualAssist}
-            >
-              {isSubmitting ? "生成中" : "手动生成"}
-            </button>
-          </div>
-        </details>
-        {isPermissionDeniedError(error) ? (
-          <p className="assist-transport-debug">
-            麦克风权限当前不可用，建议先允许浏览器麦克风，或者直接展开上面的手动输入继续验证整条回答链路。
+          <p className="assist-opening-line">{frameworkSummary}</p>
+          <p className="assist-key-summary">
+            {currentAnswer?.frameworkPoints?.length
+              ? (isExpanding ? "框架已完整，正在逐点展开细节。" : "框架已就绪，可先按这 3 个点组织口头回答。")
+              : "云端实时 ASR 先产出问题文本，再触发后续 LLM 分析。"}
           </p>
-        ) : null}
-      </section>
 
-      <section className="assist-bottom-controls" aria-label="面试辅助控制">
-        <button type="button" className="assist-control-button is-listen" onClick={startListening} disabled={isUploadingVoiceDemo}>
-          <span className="assist-control-icon" aria-hidden="true" />
-          {isUploadingVoiceDemo ? "上传 demo 中" : "开始实时识别"}
-        </button>
-        <button type="button" className="assist-control-button" onClick={pauseListening}>
-          停止识别
-        </button>
-        <div className="assist-timer">
-          <span>稳定</span>
-          <span className="assist-dot assist-dot-resume" />
-          <strong>{formatDuration(elapsedSeconds)} / 02:00</strong>
-        </div>
-      </section>
+          <div className="assist-section-list">
+            {answerSections.length ? (
+              answerSections.map((section) => (
+                <article className="assist-answer-section" key={section.title}>
+                  <h3>{section.title}</h3>
+                  <p>{section.detail}</p>
+                </article>
+              ))
+            ) : (
+              <>
+                <article className="assist-answer-section">
+                  <h3>01 | 实时转写</h3>
+                  <p>浏览器持续上传 PCM 音频分片，阿里云实时 ASR 返回 partial/final 文本。</p>
+                </article>
+                <article className="assist-answer-section">
+                  <h3>02 | Turn 结束触发分析</h3>
+                  <p>当前版本默认把识别到的完整句子视为面试官问题，并触发回答辅导链路。</p>
+                </article>
+              </>
+            )}
+          </div>
+        </section>
+
+        <aside className="assist-recognition-panel">
+          <div className="assist-recognition-header">
+            <h2>实时识别</h2>
+            <div className="assist-recognition-badges">
+              <span className="assist-mini-pill">
+                <span className={`assist-dot assist-dot-${voiceDemoUploaded ? "listening" : "connecting"}`} />
+                {voiceDemoUploaded ? "demo 已上传" : "demo 可选"}
+              </span>
+              <span className="assist-mini-pill">
+                <span className="assist-dot assist-dot-voice" />
+                {socketConnected ? "流式识别中" : "等待连接"}
+              </span>
+            </div>
+          </div>
+
+          <div className="assist-transcript-stream">
+            <span>面试官原声转写</span>
+            <strong>{transcriptPreview || "等待云端实时 ASR 返回识别内容。"}</strong>
+          </div>
+
+          <div className="assist-bottom-controls" aria-label="面试辅助控制">
+            <button type="button" className="assist-control-button is-listen" onClick={startListening} disabled={isUploadingVoiceDemo}>
+              <span className="assist-control-icon" aria-hidden="true" />
+              {isUploadingVoiceDemo ? "上传 demo 中" : "开始实时识别"}
+            </button>
+            <button type="button" className="assist-control-button" onClick={pauseListening}>
+              停止识别
+            </button>
+            <div className="assist-timer">
+              <span>稳定</span>
+              <span className="assist-dot assist-dot-resume" />
+              <strong>{formatDuration(elapsedSeconds)} / 02:00</strong>
+            </div>
+          </div>
+
+          <div className="assist-volume-row">
+            <span>音量</span>
+            <div className="assist-volume-meter" aria-label="实时音量">
+              <span style={{ width: `${volumePercent}%` }} />
+            </div>
+            <strong>{volumePercent}%</strong>
+          </div>
+          <div className="assist-recording-row">
+            <span>录音</span>
+            {recordedAudioUrl ? <audio controls src={recordedAudioUrl} /> : <strong>{recordingStatus}</strong>}
+          </div>
+          <p className="assist-transport-debug">链路：{transportDebug}</p>
+          {roomDebugSnapshot ? <p className="assist-transport-debug">房间诊断：{roomDebugSnapshot}</p> : null}
+
+          <details className="assist-manual-entry" ref={manualEntryRef}>
+            <summary>手动输入（开发兜底）</summary>
+            <div className="assist-manual-body">
+              <textarea
+                value={questionText}
+                onChange={(event) => setQuestionText(event.target.value)}
+                placeholder="调试时可直接粘贴识别后的面试官问题。"
+              />
+              <div className="assist-chip-row">
+                {starterQuestions.map((item) => (
+                  <button key={item} type="button" className="topic-chip" onClick={() => setQuestionText(item)}>
+                    {item}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="assist-control-button is-primary"
+                disabled={isSubmitting}
+                onClick={runManualAssist}
+              >
+                {isSubmitting ? "生成中" : "手动生成"}
+              </button>
+            </div>
+          </details>
+          {isPermissionDeniedError(error) ? (
+            <p className="assist-transport-debug">
+              麦克风权限当前不可用，建议先允许浏览器麦克风，或者直接展开上面的手动输入继续验证整条回答链路。
+            </p>
+          ) : null}
+        </aside>
+      </div>
     </main>
   );
 }
