@@ -80,8 +80,44 @@ def create_question_meta(concept: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def initial_probe(concept: Dict[str, Any]) -> str:
-    return concept.get("diagnosticQuestion") or concept.get("retryQuestion") or f"讲讲 {concept['title']}。"
+def build_live_question(
+    *,
+    concept: Dict[str, Any],
+    state: str = "weak",
+    attempts: int = 0,
+    burden_signal: str = "normal",
+    revisit: bool = False,
+) -> str:
+    title = concept.get("title", "这个点")
+    if revisit:
+        return f"我们回到“{title}”。先别背定义，用你自己的话补上上次没讲稳的关键机制。"
+    if burden_signal == "high":
+        return f"我们先收窄一个点：{title} 最关键的一环到底是什么？"
+    if state == "solid":
+        return f"如果面试官继续追问边界，你会怎么解释“{title}”最容易答偏的地方？"
+    if state == "partial" or attempts > 0:
+        return f"结合你刚才的阅读和已有回答，再讲一次：“{title}”这条链路里最容易漏掉的关键一步是什么？"
+    return f"不要背定义，直接用自己的话解释：“{title}”最核心的机制是什么，它为什么重要？"
+
+
+def initial_probe(concept: Dict[str, Any], session: Optional[Dict[str, Any]] = None) -> str:
+    if concept.get("interviewAnchor", {}).get("prompt"):
+        return concept["interviewAnchor"]["prompt"]
+
+    concept_state = ((session or {}).get("conceptStates") or {}).get(concept.get("id", ""), {})
+    memory_anchor = ((session or {}).get("memoryProfile") or {}).get("abilityItems", {}).get(concept.get("id", ""), {})
+    remembered_state = memory_anchor.get("state", "") or concept_state.get("judge", {}).get("state", "weak")
+    attempts = concept_state.get("attempts", 0)
+    burden_signal = (session or {}).get("burdenSignal", "normal")
+    if concept_state or memory_anchor:
+        return build_live_question(
+            concept=concept,
+            state=remembered_state,
+            attempts=attempts,
+            burden_signal=burden_signal,
+        )
+
+    return f"不要背定义，先用你自己的话讲讲“{concept['title']}”最关键的机制是什么。"
 
 
 def rank_state(state: str) -> int:
@@ -317,10 +353,10 @@ def choose_next_unit(session: Dict[str, Any], *, allow_revisit: bool = True) -> 
     return {"concept": None, "revisit": False}
 
 
-def resolve_prompt_for_concept(*, concept: Dict[str, Any], revisit: bool = False) -> str:
+def resolve_prompt_for_concept(*, session: Optional[Dict[str, Any]] = None, concept: Dict[str, Any], revisit: bool = False) -> str:
     if revisit:
         return f"我们回到刚才先放下的这个点：{concept['title']}。先用你自己的话把这一轮最关键的结论说出来。"
-    return initial_probe(concept)
+    return initial_probe(concept, session)
 
 
 def build_turn_resolution(*, concept: Dict[str, Any], next_concept: Optional[Dict[str, Any]], switched_concept: bool, final_prompt: str, final_question_meta: Optional[Dict[str, Any]], control_verdict: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -520,17 +556,6 @@ def create_session(payload: Any) -> Dict[str, Any]:
         }
     first_concept = concepts[0]
     session_id = str(uuid4())
-    initial_question = {
-        "role": "tutor",
-        "kind": "question",
-        "action": "probe",
-        "conceptId": first_concept["id"],
-        "conceptTitle": first_concept["title"],
-        "content": initial_probe(first_concept),
-        "questionMeta": create_question_meta(first_concept),
-        "revisitReason": "",
-        "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-    }
     session = {
         "id": session_id,
         "mode": "target",
@@ -541,9 +566,9 @@ def create_session(payload: Any) -> Dict[str, Any]:
         "conceptStates": concept_states,
         "ledger": create_evidence_ledger(concepts),
         "currentConceptId": first_concept["id"],
-        "currentProbe": initial_probe(first_concept),
+        "currentProbe": "",
         "currentQuestionMeta": create_question_meta(first_concept),
-        "turns": [initial_question],
+        "turns": [],
         "engagement": {
             "answerCount": 0,
             "controlCount": 0,
@@ -564,6 +589,20 @@ def create_session(payload: Any) -> Dict[str, Any]:
         "latestControlVerdict": None,
         "interactionLog": [],
     }
+    session["currentProbe"] = initial_probe(first_concept, session)
+    session["turns"] = [
+        {
+            "role": "tutor",
+            "kind": "question",
+            "action": "probe",
+            "conceptId": first_concept["id"],
+            "conceptTitle": first_concept["title"],
+            "content": session["currentProbe"],
+            "questionMeta": create_question_meta(first_concept),
+            "revisitReason": "",
+            "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+        }
+    ]
     append_interaction_event(
         session,
         event_type="session_started",
@@ -584,7 +623,7 @@ def apply_focus_domain(session: Dict[str, Any], domain_id: str) -> Dict[str, Any
     concept = next((item for item in candidates if not session["conceptStates"][item["id"]]["completed"]), candidates[0])
     session["workspaceScope"] = {"type": "domain", "id": domain_id}
     session["currentConceptId"] = concept["id"]
-    session["currentProbe"] = initial_probe(concept)
+    session["currentProbe"] = initial_probe(concept, session)
     session["currentQuestionMeta"] = create_question_meta(concept)
     session["turns"].append(create_workspace_turn(action="focus-domain", concept=concept))
     session["turns"].append(
@@ -619,7 +658,7 @@ def apply_focus_concept(session: Dict[str, Any], concept_id: str) -> Dict[str, A
         raise HTTPException(status_code=404, detail="Unknown concept.")
     session["workspaceScope"] = {"type": "concept", "id": concept_id}
     session["currentConceptId"] = concept_id
-    session["currentProbe"] = initial_probe(concept)
+    session["currentProbe"] = initial_probe(concept, session)
     session["currentQuestionMeta"] = create_question_meta(concept)
     session["turns"].append(create_workspace_turn(action="focus-concept", concept=concept))
     session["turns"].append(
@@ -764,7 +803,7 @@ def handle_advance_control(*, session: Dict[str, Any], concept: Dict[str, Any]) 
     next_unit = choose_next_unit(session, allow_revisit=False)
     next_concept = next_unit.get("concept")
     session["currentConceptId"] = next_concept["id"] if next_concept else concept["id"]
-    session["currentProbe"] = resolve_prompt_for_concept(concept=next_concept, revisit=bool(next_unit.get("revisit"))) if next_concept else ""
+    session["currentProbe"] = resolve_prompt_for_concept(session=session, concept=next_concept, revisit=bool(next_unit.get("revisit"))) if next_concept else ""
     session["currentQuestionMeta"] = create_question_meta(next_concept) if next_concept else None
     return {
         "conceptId": concept["id"],
@@ -995,7 +1034,7 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
         switched = bool(next_concept and next_concept["id"] != concept["id"])
         session["currentConceptId"] = next_concept["id"] if next_concept else session["currentConceptId"]
         session["currentProbe"] = (
-            resolve_prompt_for_concept(concept=next_concept, revisit=bool(next_unit.get("revisit")))
+            resolve_prompt_for_concept(session=session, concept=next_concept, revisit=bool(next_unit.get("revisit")))
             if next_concept and switched
             else get_move_follow_up_question(tutor_move)
             if next_concept

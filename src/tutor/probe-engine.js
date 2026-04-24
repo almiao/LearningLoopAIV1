@@ -53,26 +53,23 @@ function buildGapLabel({ concept, analysis, noiseDetected }) {
 }
 
 function buildAnswerFrame(concept) {
-  if (concept.retryQuestion) {
-    return concept.retryQuestion.replace(/^先(只|抓).*?[：:]\s*/, "");
-  }
-
-  return `${concept.title} 在材料里的关键机制是：……`;
+  return `先别展开全部，直接用你自己的话说清：${concept.title} 最关键的机制是什么？`;
 }
 
 export function buildTutorFeedback({ concept, analysis, noiseDetected }) {
   const gap = buildGapLabel({ concept, analysis, noiseDetected });
   const evidenceReference = concept.excerpt || concept.summary;
+  const nextQuestion = createFollowUpQuestion({ concept, lastSignal: analysis.signal });
 
   if (!noiseDetected && analysis.signal === "positive") {
     return {
       gap,
       evidenceReference,
-      coachingStep: concept.stretchQuestion || `继续补充“${concept.title}”的边界条件。`,
+      coachingStep: nextQuestion,
       positiveConfirmation: `你已经抓住了“${concept.title}”里最关键的点。`,
-      enrichment: concept.stretchQuestion || "",
+      enrichment: nextQuestion,
       teachingChunk: "",
-      checkQuestion: concept.checkQuestion || "",
+      checkQuestion: nextQuestion,
       explanation: `这轮回答已经覆盖到关键点。材料证据：${evidenceReference}`
     };
   }
@@ -85,7 +82,7 @@ export function buildTutorFeedback({ concept, analysis, noiseDetected }) {
     positiveConfirmation: "",
     enrichment: "",
     teachingChunk: concept.summary || evidenceReference,
-    checkQuestion: concept.checkQuestion || answerFrame,
+    checkQuestion: nextQuestion || answerFrame,
     explanation:
       `这题目前还没答到位。缺口：${gap} ` +
       `材料证据：${evidenceReference} ` +
@@ -93,19 +90,31 @@ export function buildTutorFeedback({ concept, analysis, noiseDetected }) {
   };
 }
 
-export function createFollowUpQuestion({ concept, lastSignal, burdenSignal = "normal" }) {
+export function createFollowUpQuestion({
+  concept,
+  lastSignal,
+  burdenSignal = "normal",
+  attempts = 0,
+  rememberedState = "",
+  revisit = false
+}) {
+  if (revisit) {
+    return `我们回到“${concept.title}”。先别背定义，用你自己的话补上上次没讲稳的关键机制。`;
+  }
+
   if (burdenSignal === "high") {
-    return concept.retryQuestion || `先只回答一个点：${concept.title} 在材料里的关键机制是什么？`;
+    return `我们先收窄一个点：${concept.title} 最关键的一环到底是什么？`;
   }
 
   if (lastSignal === "positive") {
-    return (
-      concept.stretchQuestion ||
-      `继续深入：如果面试官追问“${concept.title}”的边界条件，你会怎么展开？`
-    );
+    return `如果面试官继续追问边界，你会怎么解释“${concept.title}”最容易答偏的地方？`;
   }
 
-  return concept.retryQuestion || `先抓一个具体点：${concept.title} 的关键机制是什么？`;
+  if (rememberedState === "partial" || attempts > 0) {
+    return `结合你刚才的阅读和已有回答，再讲一次：“${concept.title}”这条链路里最容易漏掉的关键一步是什么？`;
+  }
+
+  return `不要背定义，直接用自己的话解释：“${concept.title}”最核心的机制是什么，它为什么重要？`;
 }
 
 export function chooseNextConcept(session) {
@@ -117,13 +126,25 @@ export function chooseNextConcept(session) {
   return next || session.concepts[0];
 }
 
-export function createInitialProbe(concept) {
+export function createInitialProbe(concept, session = null) {
+  const conceptState = session?.conceptStates?.[concept?.id] || null;
+  const rememberedState = session?.memoryProfile?.abilityItems?.[concept?.id]?.state || "";
   if (concept?.interviewAnchor?.prompt) {
     return concept.interviewAnchor.prompt;
   }
 
-  if (concept?.diagnosticQuestion) {
-    return concept.diagnosticQuestion;
+  if (conceptState || rememberedState) {
+    return createFollowUpQuestion({
+      concept,
+      lastSignal: rememberedState === "solid" ? "positive" : "negative",
+      burdenSignal: session?.burdenSignal || "normal",
+      attempts: conceptState?.attempts || 0,
+      rememberedState
+    });
+  }
+
+  if (concept?.interviewAnchor?.prompt) {
+    return concept.interviewAnchor.prompt;
   }
 
   return generateInitialProbe(concept);

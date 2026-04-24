@@ -142,6 +142,16 @@ function decodeEventData(raw) {
   return String(raw || "");
 }
 
+export function shouldPublishRelayDisconnect(relayState, ws) {
+  if (!relayState || relayState.stopped || relayState.closed) {
+    return false;
+  }
+  if (!ws) {
+    return true;
+  }
+  return ws.readyState !== WebSocket.CLOSING && ws.readyState !== WebSocket.CLOSED;
+}
+
 function aiRealtimeWsUrl(aiServiceUrl, sessionId) {
   return `${aiServiceUrl.replace(/^http/, "ws")}/ws/interview-assist/${encodeURIComponent(sessionId)}`;
 }
@@ -213,6 +223,9 @@ async function openAiRelay({ aiServiceUrl, sessionId, room, destinationIdentity,
 
   ws.onerror = async () => {
     logBridge("bridge_ai_ws_error", { sessionId });
+    if (!shouldPublishRelayDisconnect(relayState, ws)) {
+      return;
+    }
     await publishEvent(room, destinationIdentity, "error", {
       error: "AI realtime relay websocket disconnected.",
     });
@@ -233,8 +246,9 @@ async function stopAiRelay(relayState) {
     try {
       relayState.ws.send(JSON.stringify({ event: "stop" }));
     } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 1500));
   }
-  if (relayState.ws) {
+  if (relayState.ws && relayState.ws.readyState !== WebSocket.CLOSED) {
     relayState.ws.close();
   }
   relayState.ws = null;

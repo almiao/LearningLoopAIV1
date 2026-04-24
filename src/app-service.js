@@ -15,6 +15,7 @@ import {
 import { createMemoryProfileStore } from "./tutor/memory-profile-store.js";
 import { recordSessionCase } from "./tutor/case-recorder.js";
 import { createHeuristicTutorIntelligence } from "./tutor/tutor-intelligence.js";
+import { applyReadingProgress } from "./user/reading-progress.js";
 import { createUserProfileStore } from "./user/user-profile-store.js";
 import { buildUserProfileView } from "./user/profile-aggregator.js";
 
@@ -126,7 +127,8 @@ export function createAppService({ fetchImpl = globalThis.fetch, intelligence } 
           targetRole: baselinePack.targetRole,
           createdAt: previous.createdAt || now,
           lastActivityAt: now,
-          sessionsStarted: (previous.sessionsStarted || 0) + 1
+          sessionsStarted: (previous.sessionsStarted || 0) + 1,
+          readingProgress: previous.readingProgress || {}
         };
         user.lastActiveAt = now;
         await saveUser(user);
@@ -200,7 +202,8 @@ export function createAppService({ fetchImpl = globalThis.fetch, intelligence } 
           targetRole: updated.targetBaseline.targetRole || "",
           createdAt: previous.createdAt || new Date().toISOString(),
           lastActivityAt: new Date().toISOString(),
-          sessionsStarted: previous.sessionsStarted || 0
+          sessionsStarted: previous.sessionsStarted || 0,
+          readingProgress: previous.readingProgress || {}
         };
         user.lastActiveAt = user.targets[updated.targetBaseline.id].lastActivityAt;
         await saveUser(user);
@@ -210,6 +213,32 @@ export function createAppService({ fetchImpl = globalThis.fetch, intelligence } 
         ...projectSession(updated),
         latestFeedback: updated.latestFeedback
       };
+    },
+
+    async rememberReadingProgress(body) {
+      const user = await getUserProfile(body.userId);
+      const baselinePack = getBaselinePackById(body.targetBaselineId);
+      const previous = user.targets[body.targetBaselineId] || {
+        targetBaselineId: baselinePack.id,
+        title: baselinePack.title,
+        targetRole: baselinePack.targetRole,
+        createdAt: new Date().toISOString(),
+        lastActivityAt: "",
+        sessionsStarted: 0,
+        readingProgress: {},
+      };
+
+      user.targets[body.targetBaselineId] = applyReadingProgress(previous, {
+        targetBaselineId: body.targetBaselineId,
+        domainId: body.domainId,
+        conceptId: body.conceptId,
+        docPath: body.docPath,
+        docTitle: body.docTitle,
+        timestamp: new Date().toISOString(),
+      });
+      user.lastActiveAt = new Date().toISOString();
+      await saveUser(user);
+      return buildProfilePayload(user);
     },
 
     async focusDomain(body) {

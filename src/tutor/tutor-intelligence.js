@@ -1857,10 +1857,8 @@ export function createHeuristicTutorIntelligence() {
         decision.action === "advance"
           ? ""
           : decision.action === "teach"
-            ? concept.checkQuestion || tutorFeedback.checkQuestion || concept.retryQuestion
-            : decision.action === "deepen" || decision.action === "affirm"
-              ? concept.stretchQuestion || createFollowUpQuestion({ concept, lastSignal: normalizedSignal, burdenSignal })
-              : concept.retryQuestion || tutorFeedback.coachingStep;
+            ? createFollowUpQuestion({ concept, lastSignal: "negative", burdenSignal, attempts: conceptState.attempts, rememberedState: conceptState.judge?.state || "" })
+            : createFollowUpQuestion({ concept, lastSignal: normalizedSignal, burdenSignal, attempts: conceptState.attempts, rememberedState: conceptState.judge?.state || "" });
       const infoGainLevel =
         decision.action === "advance"
           ? "low"
@@ -2146,7 +2144,7 @@ export function createHeuristicTutorIntelligence() {
             ` 如果再补完整一点，会更像面试里的高质量表达。`,
           evidenceReference: concept.excerpt,
           teachingChunk: "",
-          nextQuestion: concept.stretchQuestion || createFollowUpQuestion({ concept, lastSignal: normalizedSignal, burdenSignal }),
+          nextQuestion: createFollowUpQuestion({ concept, lastSignal: normalizedSignal, burdenSignal, attempts: conceptState.attempts, rememberedState: conceptState.judge?.state || "" }),
           takeaway: "",
           confirmedUnderstanding: tutorFeedback.positiveConfirmation || `你已经抓住了“${concept.title}”的关键点。`,
           remainingGap: "",

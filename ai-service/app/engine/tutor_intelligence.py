@@ -1032,7 +1032,7 @@ class ProviderTutorIntelligence:
         payload = {
             "visibleReply": reply.get("visible_reply") or concept.get("summary", ""),
             "teachingParagraphs": teaching_paragraphs[:4],
-            "checkQuestion": reply.get("next_prompt") or concept.get("checkQuestion") or concept.get("retryQuestion") or "",
+            "checkQuestion": reply.get("next_prompt") or f"现在别背定义，用你自己的话重新讲一遍：{concept.get('title', '这个点')} 最关键的机制是什么？",
             "takeaway": reply.get("takeaway") or "",
         }
         validate_explain_concept_payload(payload)
@@ -1086,12 +1086,13 @@ class HeuristicTutorIntelligence:
         signal = self._classify_signal(concept=concept, answer=answer, forced_action=forced_action)
         text = ensure_string(answer)
         lowered = text.lower()
+        title = ensure_string(concept.get("title"), "这个点")
 
         if forced_action == "teach" or any(token in lowered for token in ("讲", "解释", "总结", "梳理")):
             ui_mode = "teach"
             state = "weak"
             confidence_level = "medium"
-            follow_up_question = ensure_string(concept.get("checkQuestion") or concept.get("retryQuestion"))
+            follow_up_question = f"现在别背定义，用你自己的话重新讲一遍：{title} 最关键的机制是什么？"
             reason = "用户显式要求讲解或当前更适合先补关键机制。"
         elif any(token in lowered for token in ("下一题", "下一个", "跳过")):
             ui_mode = "advance"
@@ -1103,28 +1104,23 @@ class HeuristicTutorIntelligence:
             ui_mode = "verify"
             state = "solid"
             confidence_level = "high"
-            follow_up_question = ensure_string(concept.get("stretchQuestion") or concept.get("checkQuestion"))
+            follow_up_question = f"如果面试官继续追问边界，你会怎么解释“{title}”最容易答偏的地方？"
             reason = "用户已经碰到主链，适合再用一个问题确认边界。"
         elif signal == "positive":
             ui_mode = "verify"
             state = "partial"
             confidence_level = "medium"
-            follow_up_question = ensure_string(concept.get("checkQuestion") or concept.get("retryQuestion"))
+            follow_up_question = f"结合你刚才的阅读和已有回答，再讲一次：“{title}”这条链路里最容易漏掉的关键一步是什么？"
             reason = "方向基本对，但还需要继续确认是否真正讲稳。"
         else:
             ui_mode = "probe"
             state = "weak"
             confidence_level = "low"
-            follow_up_question = ensure_string(concept.get("retryQuestion") or concept.get("checkQuestion"))
+            follow_up_question = f"不要背定义，直接用你自己的话解释：“{title}”最核心的机制是什么，它为什么重要？"
             reason = "当前回答还没有形成稳定机制链路。"
 
         if ui_mode in {"probe", "teach", "verify"} and not follow_up_question:
-            follow_up_question = ensure_string(
-                concept.get("diagnosticQuestion")
-                or concept.get("checkQuestion")
-                or concept.get("retryQuestion"),
-                f"你先用自己的话再讲一下：{concept.get('title', '这个点')} 的关键机制是什么？",
-            )
+            follow_up_question = f"你先用自己的话再讲一下：{title} 的关键机制是什么？"
 
         return normalize_turn_envelope_payload(
             {

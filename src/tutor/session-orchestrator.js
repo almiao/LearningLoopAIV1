@@ -339,12 +339,12 @@ function chooseNextUnit(session, { allowRevisit = true } = {}) {
   return { concept: chooseNextConcept(session), revisit: false };
 }
 
-function resolvePromptForConcept({ concept, revisit = false }) {
+function resolvePromptForConcept({ session = null, concept, revisit = false }) {
   if (revisit) {
     return `我们回到刚才先放下的这个点：${concept.title}。先用你自己的话把这一轮最关键的结论说出来。`;
   }
 
-  return createInitialProbe(concept);
+  return createInitialProbe(concept, session);
 }
 
 function findConceptForDomain(session, domainId) {
@@ -420,7 +420,7 @@ function hasLearnerTurns(session) {
 
 function setFocusedConcept(session, concept, actionLabel) {
   session.currentConceptId = concept.id;
-  session.currentProbe = resolvePromptForConcept({ concept });
+  session.currentProbe = createInitialProbe(concept, session);
   session.currentQuestionMeta = createQuestionMeta(concept);
 
   const questionTurn = createQuestionTurn({
@@ -476,8 +476,13 @@ function createSessionState({
   const protocolizedConcepts = withProtocolizedConcepts(concepts);
   const orderedConcepts = mode === "target" ? prioritizeConcepts(protocolizedConcepts, resolvedMemoryProfile) : protocolizedConcepts;
   const conceptStates = mode === "target" ? createConceptStatesFromMemory(orderedConcepts, resolvedMemoryProfile) : createConceptStates(orderedConcepts);
+  const seedSession = {
+    conceptStates,
+    memoryProfile: resolvedMemoryProfile,
+    burdenSignal: "normal"
+  };
   const initialConcept = orderedConcepts[0];
-  const currentProbe = resolvePromptForConcept({ concept: initialConcept });
+  const currentProbe = createInitialProbe(initialConcept, seedSession);
   const initialQuestion = createQuestionTurn({
     concept: initialConcept,
     content: currentProbe
@@ -1047,7 +1052,7 @@ export async function answerSession(
   session.currentConceptId = nextConcept?.id || session.currentConceptId;
   session.currentProbe = nextConcept
     ? switchedConcept
-      ? resolvePromptForConcept({ concept: nextConcept, revisit: nextUnit.revisit })
+      ? resolvePromptForConcept({ session, concept: nextConcept, revisit: nextUnit.revisit })
       : getMoveFollowUpQuestion(tutorMove)
     : "";
   session.currentQuestionMeta = session.currentProbe && nextConcept ? createQuestionMeta(nextConcept) : null;
@@ -1236,6 +1241,7 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
     if (nextUnit.concept) {
       session.currentConceptId = nextUnit.concept.id;
       session.currentProbe = resolvePromptForConcept({
+        session,
         concept: nextUnit.concept,
         revisit: nextUnit.revisit
       });

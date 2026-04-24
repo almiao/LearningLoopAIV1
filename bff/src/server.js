@@ -12,6 +12,7 @@ import {
 } from "../../src/knowledge/java-guide-doc-service.js";
 import { buildReminderCandidate } from "../../src/superapp/reminder-candidate.js";
 import { createMemoryProfileStore } from "../../src/tutor/memory-profile-store.js";
+import { applyReadingProgress } from "../../src/user/reading-progress.js";
 import { createUserProfileStore } from "../../src/user/user-profile-store.js";
 import { buildUserProfileView } from "../../src/user/profile-aggregator.js";
 
@@ -127,6 +128,7 @@ async function handleStartTarget(body) {
     createdAt: previous.createdAt || now,
     lastActivityAt: now,
     sessionsStarted: (previous.sessionsStarted || 0) + 1,
+    readingProgress: previous.readingProgress || {},
   };
   user.lastActiveAt = now;
   await userProfileStore.save(user);
@@ -169,6 +171,7 @@ async function handleAnswer(body) {
       createdAt: previous.createdAt || new Date().toISOString(),
       lastActivityAt: new Date().toISOString(),
       sessionsStarted: previous.sessionsStarted || 0,
+      readingProgress: previous.readingProgress || {},
     };
     user.lastActiveAt = user.targets[result.targetBaseline.id].lastActivityAt;
     await userProfileStore.save(user);
@@ -191,6 +194,40 @@ async function handleReminderCandidate(userId) {
     throw new Error("No reminder candidate available.");
   }
   return candidate;
+}
+
+async function handleReadingProgress(body) {
+  if (!body.userId) {
+    throw new Error("userId is required.");
+  }
+  if (!body.targetBaselineId) {
+    throw new Error("targetBaselineId is required.");
+  }
+
+  const user = await getUserProfile(body.userId);
+  const baselinePack = getBaselinePackById(body.targetBaselineId);
+  const previous = user.targets[body.targetBaselineId] || {
+    targetBaselineId: baselinePack.id,
+    title: baselinePack.title,
+    targetRole: baselinePack.targetRole,
+    createdAt: new Date().toISOString(),
+    lastActivityAt: "",
+    sessionsStarted: 0,
+    readingProgress: {},
+  };
+
+  user.targets[body.targetBaselineId] = applyReadingProgress(previous, {
+    targetBaselineId: body.targetBaselineId,
+    domainId: body.domainId,
+    conceptId: body.conceptId,
+    docPath: body.docPath,
+    docTitle: body.docTitle,
+    timestamp: new Date().toISOString(),
+  });
+  user.targets[body.targetBaselineId].lastActivityAt = new Date().toISOString();
+  user.lastActiveAt = user.targets[body.targetBaselineId].lastActivityAt;
+  await userProfileStore.save(user);
+  return buildProfilePayload(user);
 }
 
 async function ensureSuperappDemoUser() {
@@ -249,6 +286,7 @@ async function persistAnswerSideEffects(result) {
       createdAt: previous.createdAt || new Date().toISOString(),
       lastActivityAt: new Date().toISOString(),
       sessionsStarted: previous.sessionsStarted || 0,
+      readingProgress: previous.readingProgress || {},
     };
     user.lastActiveAt = user.targets[result.targetBaseline.id].lastActivityAt;
     await userProfileStore.save(user);
@@ -338,6 +376,11 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname.startsWith("/api/profile/")) {
       const userId = url.pathname.split("/").at(-1);
       sendJson(response, 200, await buildProfilePayload(await getUserProfile(userId)));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/profile/reading-progress") {
+      sendJson(response, 200, await handleReadingProgress(await readJsonBody(request)));
       return;
     }
 

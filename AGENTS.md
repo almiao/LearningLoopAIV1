@@ -52,6 +52,7 @@ Keep runtime marker contracts stable and non-destructive when overlays are appli
 - No new dependencies without explicit request.
 - Keep diffs small, reviewable, and reversible.
 - Run lint, typecheck, tests, and static analysis after changes.
+- For any user-visible behavior change in frontend, BFF, AI service, or cross-service flow, run `npm run restart:full && npm run verify:real` before claiming completion.
 - Final reports must include changed files, simplifications made, and remaining risks.
 
 <lore_commit_protocol>

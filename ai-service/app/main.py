@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import queue
 import threading
@@ -44,6 +45,11 @@ from app.engine.tutor_intelligence import describe_tutor_intelligence
 
 def sse_event(event: str, data: Dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+async def poll_realtime_asr_event(recognizer: AliyunRealtimeRecognizer, timeout: float = 0.1):
+    """Poll the blocking ASR SDK off the main event loop."""
+    return await asyncio.to_thread(recognizer.poll_event, timeout)
 
 
 class StreamingTutorIntelligence:
@@ -331,10 +337,15 @@ async def interview_assist_realtime_ws(websocket: WebSocket, session_id: str) ->
 
     async def drain_events() -> None:
         nonlocal transcript_buffer
-        while not stop_event.is_set():
-            event = recognizer.poll_event(timeout=0.1)
+
+        last_event_at = asyncio.get_running_loop().time()
+        while True:
+            event = await poll_realtime_asr_event(recognizer, timeout=0.1)
             if event is None:
+                if stop_event.is_set() and asyncio.get_running_loop().time() - last_event_at > 1.0:
+                    break
                 continue
+            last_event_at = asyncio.get_running_loop().time()
 
             logger.event(
                 "interview_assist_realtime_asr_event",
@@ -387,10 +398,11 @@ async def interview_assist_realtime_ws(websocket: WebSocket, session_id: str) ->
                 })
                 continue
 
+            if stop_event.is_set() and event.event in {"asr_complete", "asr_close"}:
+                break
+
     drain_task = None
     try:
-        import asyncio
-
         drain_task = asyncio.create_task(drain_events())
 
         while True:
@@ -413,15 +425,21 @@ async def interview_assist_realtime_ws(websocket: WebSocket, session_id: str) ->
                         session_id=session_id,
                         audio_frames=binary_frames_received,
                     )
+                    stop_event.set()
+                    recognizer.stop()
                     break
     except WebSocketDisconnect:
         logger.event("interview_assist_realtime_ws_disconnected", session_id=session_id, audio_frames=binary_frames_received)
     finally:
-        stop_event.set()
-        recognizer.stop()
+        if not stop_event.is_set():
+            stop_event.set()
+            recognizer.stop()
         logger.event("interview_assist_realtime_ws_closed", session_id=session_id, audio_frames=binary_frames_received)
         if drain_task:
-            drain_task.cancel()
+            try:
+                await asyncio.wait_for(drain_task, timeout=3.0)
+            except Exception:
+                drain_task.cancel()
 
 
 @app.post("/api/interview-assist/answer-stream")

@@ -97,10 +97,16 @@ export function createUserProfileStore({ usersDir = defaultUsersDir } = {}) {
       if (!entry.isFile() || !entry.name.endsWith(".json")) {
         continue;
       }
-      const raw = await readFile(path.join(usersDir, entry.name), "utf8");
-      const parsed = JSON.parse(raw);
-      validateUserShape(parsed, entry.name.replace(/\.json$/, ""));
-      users.push(parsed);
+      try {
+        const raw = await readFile(path.join(usersDir, entry.name), "utf8");
+        const parsed = JSON.parse(raw);
+        validateUserShape(parsed, entry.name.replace(/\.json$/, ""));
+        users.push(parsed);
+      } catch (error) {
+        console.warn(
+          `Skipping unreadable user profile ${entry.name}: ${error instanceof Error ? error.message : "unknown error"}`
+        );
+      }
     }
     return users;
   }

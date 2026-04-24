@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, postJson } from "../lib/api";
 import {
   getStoredTargetBaselineId,
@@ -9,6 +9,8 @@ import {
   setStoredTargetBaselineId,
   setStoredUserId,
 } from "../lib/user-session";
+
+const profileDirtyStorageKey = "learning-loop-profile-dirty-at";
 
 const promptChips = [
   { label: "Java 面试（JavaGuide版）", query: "Java" },
@@ -98,6 +100,23 @@ function pickMostActionableItem(items = []) {
   return ordered[0] || null;
 }
 
+function getLearningHref(targetBaselineId = "", item = null, domain = null) {
+  const params = new URLSearchParams();
+  if (targetBaselineId) {
+    params.set("target", targetBaselineId);
+  }
+  const docPath = domain?.currentDocPath || item?.primaryDocPath || "";
+  if (docPath) {
+    params.set("doc", docPath);
+  }
+  const conceptId = domain?.currentAbilityItemId || item?.abilityItemId || "";
+  if (conceptId) {
+    params.set("concept", conceptId);
+  }
+  params.set("autostart", "1");
+  return `/learn?${params.toString()}`;
+}
+
 function buildPathCards(target) {
   if (!target) {
     return defaultPathCards.map((lane, index) => ({
@@ -108,42 +127,78 @@ function buildPathCards(target) {
       latestTitle: "",
       recommendedTitle: "",
       statusItems: [],
+      isCurrent: index === 0,
     }));
   }
 
-  const unlockedIndex = laneConfig.findIndex((lane) =>
-    (target.domains || []).some((domain) => lane.matchIds.includes(domain.id) && (domain.progressPercentage || 0) < 80)
-  );
-
-  return laneConfig.map((lane, index) => {
-    const matchedDomains = (target.domains || []).filter((domain) => lane.matchIds.includes(domain.id));
-    const allItems = matchedDomains.flatMap((domain) => domain.items || []);
-    const recommendedItem = pickMostActionableItem(allItems);
-    const latestItem = [...allItems]
-      .filter((item) => item.evidenceCount > 0)
-      .sort((left, right) => String(right.lastUpdatedAt || "").localeCompare(String(left.lastUpdatedAt || "")))[0] || recommendedItem;
-    const statusItems = [...allItems]
-      .sort((left, right) => (left.progressPercentage || 0) - (right.progressPercentage || 0))
-      .slice(0, 3)
-      .map((item) => ({
-        title: item.title,
-        label: stateText(item.state),
-        rawState: item.state,
+  const cards = laneConfig.map((lane) => {
+    const matchedDomains = lane.matchIds
+      .map((domainId) => (target.readingDomains || []).find((domain) => domain.id === domainId))
+      .filter(Boolean)
+      .map((domain) => ({
+        ...domain,
+        isCurrent: domain.id === target.currentDomainId,
       }));
+
+    const laneDocs = matchedDomains.flatMap((domain) =>
+      (domain.docs || []).map((doc) => ({
+        ...doc,
+        domainId: domain.id,
+        domainTitle: domain.title,
+      }))
+    );
+    const currentDomain = matchedDomains.find((domain) => domain.id === target.currentDomainId) || matchedDomains[0] || null;
+    const currentDoc =
+      currentDomain?.previewDocs?.[0] ||
+      laneDocs.find((doc) => !doc.started) ||
+      laneDocs[0] ||
+      null;
+    const previewItems = (currentDomain?.previewDocs || laneDocs.slice(0, 3)).map((doc) => ({
+      title: doc.title,
+      label: doc.started ? "已开始" : "",
+      rawState: doc.started ? "partial" : "",
+    }));
+    const latestItem =
+      currentDoc ||
+      laneDocs.find((doc) => doc.started) ||
+      null;
+    const hasUnstarted = laneDocs.some((doc) => !doc.started);
+    const fallbackLatestDocTitle = target.currentDocTitle || "";
 
     return {
       key: lane.key,
       title: lane.title,
       subtitle: lane.subtitle,
       progress: average(matchedDomains.map((domain) => domain.progressPercentage || 0)),
-      href: `/learn?target=${target.targetBaselineId}${recommendedItem?.abilityItemId ? `&concept=${recommendedItem.abilityItemId}` : ""}&autostart=1`,
-      unlocked: unlockedIndex < 0 ? index === 0 : index <= unlockedIndex + 1,
+      href: getLearningHref(target.targetBaselineId, {
+        primaryDocPath: currentDoc?.path || "",
+        primaryDocTitle: currentDoc?.title || "",
+      }, currentDomain),
+      unlocked: true,
       latestTitle: latestItem?.title || "",
-      recommendedTitle: recommendedItem?.title || "",
-      updatedLabel: formatRelativeTime(latestItem?.lastUpdatedAt || ""),
-      statusItems,
+      latestDocTitle:
+        currentDomain?.currentDocTitle ||
+        (target.currentDomainId && matchedDomains.some((domain) => domain.id === target.currentDomainId) ? fallbackLatestDocTitle : "") ||
+        currentDoc?.title ||
+        "",
+      recommendedTitle: currentDoc?.title || "",
+      updatedLabel: formatRelativeTime(target.readingProgress?.lastUpdatedAt || ""),
+      statusItems: previewItems,
+      containsCurrentDomain: matchedDomains.some((domain) => domain.id === target.currentDomainId),
+      hasUnstarted,
     };
   });
+
+  const activeKey =
+    cards.find((card) => card.containsCurrentDomain)?.key ||
+    cards.find((card) => card.hasUnstarted)?.key ||
+    cards[0]?.key ||
+    "";
+
+  return cards.map(({ containsCurrentDomain, hasUnstarted, ...card }) => ({
+    ...card,
+    isCurrent: card.key === activeKey,
+  }));
 }
 
 function buildNextStep(target) {
@@ -158,25 +213,33 @@ function buildNextStep(target) {
     };
   }
 
-  const allItems = (target.domains || []).flatMap((domain) =>
-    (domain.items || []).map((item) => ({
+  const allDocs = (target.readingDomains || []).flatMap((domain) =>
+    (domain.docs || []).map((item) => ({
       ...item,
       domainId: domain.id,
       domainTitle: domain.title,
     }))
   );
-  const nextItem = pickMostActionableItem(allItems);
+  const nextItem =
+    allDocs.find((item) => item.path === target.currentDocPath) ||
+    allDocs.find((item) => !item.started) ||
+    allDocs[0];
   const lane = laneConfig.find((entry) => entry.matchIds.includes(nextItem?.domainId || "")) || laneConfig[0];
 
   return {
     title: nextItem ? nextItem.title : `${target.title} · 继续推进`,
     reason: nextItem
-      ? nextItem.state === "weak"
-        ? "原因：这是面试高频 + 你未掌握"
-        : "原因：这个模块当前不稳定，继续补强最划算"
+      ? "原因：继续沿着你上次阅读的位置推进，打断最少。"
       : "原因：继续沿着当前目标推进，比重新选方向更高效",
-    lastSignal: nextItem ? `你上次卡在：${nextItem.title}` : "你上次卡在：还没有历史学习记录",
-    href: `/learn?target=${target.targetBaselineId}${nextItem?.abilityItemId ? `&concept=${nextItem.abilityItemId}` : ""}&autostart=1`,
+    lastSignal: target.currentDocTitle
+      ? `你上次读到：${target.currentDocTitle}`
+      : nextItem
+        ? `你上次读到：${nextItem.title}`
+        : "你上次卡在：还没有历史学习记录",
+    href: getLearningHref(target.targetBaselineId, {
+      primaryDocPath: nextItem?.path || "",
+      primaryDocTitle: nextItem?.title || "",
+    }, (target.readingDomains || []).find((domain) => domain.id === nextItem?.domainId) || null),
     cta: "开始学习",
     laneKey: lane.key,
     weakness: nextItem?.domainTitle || "当前推荐模块",
@@ -191,6 +254,21 @@ export function HomePage() {
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const lastProfileSyncRef = useRef(0);
+
+  async function refreshProfile() {
+    const userId = getStoredUserId();
+    if (!userId) {
+      return;
+    }
+    try {
+      const data = await apiFetch(`/api/profile/${userId}`);
+      setProfile(data);
+      lastProfileSyncRef.current = Date.now();
+    } catch {
+      setStoredUserId("");
+    }
+  }
 
   useEffect(() => {
     apiFetch("/api/baselines")
@@ -208,9 +286,53 @@ export function HomePage() {
     if (!userId) {
       return;
     }
-    apiFetch(`/api/profile/${userId}`)
-      .then((data) => setProfile(data))
-      .catch(() => setStoredUserId(""));
+    void refreshProfile();
+  }, []);
+
+  useEffect(() => {
+    function shouldRefreshProfile() {
+      const raw = window.localStorage.getItem(profileDirtyStorageKey) || "0";
+      const dirtyAt = Number.parseInt(raw, 10);
+      if (!Number.isFinite(dirtyAt)) {
+        return false;
+      }
+      return dirtyAt > lastProfileSyncRef.current;
+    }
+
+    function handlePotentialReturn(force = false) {
+      if (force || shouldRefreshProfile()) {
+        void refreshProfile();
+      }
+    }
+
+    function handleFocus() {
+      handlePotentialReturn();
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        handlePotentialReturn();
+      }
+    }
+
+    function handlePageShow() {
+      handlePotentialReturn(true);
+    }
+
+    function handlePopState() {
+      handlePotentialReturn(true);
+    }
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("pageshow", handlePageShow);
+    window.addEventListener("popstate", handlePopState);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("pageshow", handlePageShow);
+      window.removeEventListener("popstate", handlePopState);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   const primaryPack = baselines[0] || null;
@@ -385,7 +507,7 @@ export function HomePage() {
           {laneConfig.map((lane, index) => {
             const relatedCard = pathCards.find((card) => card.key === lane.key);
             return (
-              <div key={lane.key} className={`path-step${nextStep.laneKey === lane.key ? " active" : ""}${relatedCard?.unlocked ? "" : " locked"}`}>
+              <div key={lane.key} className={`path-step${relatedCard?.isCurrent ? " active" : ""}${relatedCard?.unlocked ? "" : " locked"}`}>
                 <span>{lane.title}</span>
                 {index < laneConfig.length - 1 ? <span className="path-step-arrow">→</span> : null}
               </div>
@@ -397,7 +519,7 @@ export function HomePage() {
           {visiblePathCards.map((card) => (
             <Link
               key={card.key}
-              className={`path-card${nextStep.laneKey === card.key ? " active" : ""}${card.unlocked ? "" : " locked"}`}
+              className={`path-card${card.isCurrent ? " active" : ""}${card.unlocked ? "" : " locked"}`}
               href={profile ? card.href : "#login-panel"}
               onClick={() => withStoredTarget(card.href)}
             >
@@ -410,12 +532,12 @@ export function HomePage() {
                   <div className="path-card-status" key={`${card.key}-${item.title}`}>
                     <span className={`status-bullet${item.rawState === "solid" ? " solid" : item.rawState === "partial" ? " partial" : item.rawState === "weak" ? " weak" : ""}`} />
                     <span className="path-card-status-title">{item.title}</span>
-                    <span className="path-card-status-label">{item.label}</span>
+                    {item.label ? <span className="path-card-status-label">{item.label}</span> : null}
                   </div>
                 ))}
               </div>
               <div className="path-card-meta">
-                <span>上次做到：{card.latestTitle || "还没开始"}</span>
+                <span>上次读到：{card.latestDocTitle || card.latestTitle || "还没开始"}</span>
               </div>
               <div className="path-card-hover">
                 <span>{card.recommendedTitle || "点击后直接进入对话学习"}</span>

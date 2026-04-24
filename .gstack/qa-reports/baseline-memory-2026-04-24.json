@@ -1,0 +1,24 @@
+{
+  "date": "2026-04-24",
+  "url": "http://localhost:3000",
+  "scope": "memory-flow",
+  "mode": "report-only",
+  "status": "DONE_WITH_CONCERNS",
+  "findings": [
+    {
+      "id": "ISSUE-001",
+      "severity": "high",
+      "title": "Desktop reading-page outline shows unrelated global content instead of the current article outline"
+    },
+    {
+      "id": "ISSUE-002",
+      "severity": "high",
+      "title": "Mobile reading-page outline toggle is blocked by overlay interception"
+    }
+  ],
+  "notes": [
+    "Direct doc-path navigation still persists reading memory correctly",
+    "Homepage resume CTA reopens the remembered article correctly",
+    "Integration profile-flow tests pass"
+  ]
+}

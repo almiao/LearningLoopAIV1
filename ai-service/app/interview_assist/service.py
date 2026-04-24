@@ -163,16 +163,30 @@ class ProviderInterviewAssistIntelligence:
         return [text] if text else []
 
 
+def _resolved_interview_assist_provider() -> str:
+    return str(
+        os.environ.get("INTERVIEW_ASSIST_LLM_PROVIDER")
+        or os.environ.get("LLAI_LLM_PROVIDER")
+        or "OPENAI"
+    ).upper()
+
+
 def _create_interview_assist_intelligence():
-    provider = str(os.environ.get("INTERVIEW_ASSIST_LLM_PROVIDER", "OPENAI")).upper()
+    provider = _resolved_interview_assist_provider()
     if provider == "MOCK":
         return MockInterviewAssistIntelligence()
     if provider == "DEEPSEEK":
         return ProviderInterviewAssistIntelligence(
             provider="DEEPSEEK",
-            model=os.environ.get("INTERVIEW_ASSIST_DEEPSEEK_MODEL", DEFAULT_DEEPSEEK_MODEL),
+            model=os.environ.get(
+                "INTERVIEW_ASSIST_DEEPSEEK_MODEL",
+                os.environ.get("LLAI_DEEPSEEK_MODEL", DEFAULT_DEEPSEEK_MODEL),
+            ),
             api_key=os.environ.get("INTERVIEW_ASSIST_DEEPSEEK_API_KEY", os.environ.get("LLAI_DEEPSEEK_API_KEY", "")),
-            base_url=os.environ.get("INTERVIEW_ASSIST_DEEPSEEK_BASE_URL", DEFAULT_DEEPSEEK_BASE_URL),
+            base_url=os.environ.get(
+                "INTERVIEW_ASSIST_DEEPSEEK_BASE_URL",
+                os.environ.get("LLAI_DEEPSEEK_BASE_URL", DEFAULT_DEEPSEEK_BASE_URL),
+            ),
         )
     return ProviderInterviewAssistIntelligence(
         provider="OPENAI",
@@ -529,7 +543,7 @@ def ack_first_screen_rendered(*, session_id: str, turn_id: str, rendered_at: Opt
 
 
 def describe_interview_assist() -> Dict[str, Any]:
-    provider = str(os.environ.get("INTERVIEW_ASSIST_LLM_PROVIDER", "OPENAI")).upper()
+    provider = _resolved_interview_assist_provider()
     configured = provider == "MOCK" or bool(
         os.environ.get("INTERVIEW_ASSIST_OPENAI_API_KEY")
         or os.environ.get("OPENAI_API_KEY")
