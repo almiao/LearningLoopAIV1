@@ -10,7 +10,8 @@ const livekitApiSecret = process.env.LIVEKIT_API_SECRET || "";
 const capturedAudioDir = process.env.INTERVIEW_ASSIST_CAPTURE_DIR || path.join(repoRoot, ".omx", "interview-assist", "captured-audio");
 const speechRmsThreshold = Number(process.env.INTERVIEW_ASSIST_SPEECH_RMS_THRESHOLD || 120);
 const speechPeakThreshold = Number(process.env.INTERVIEW_ASSIST_SPEECH_PEAK_THRESHOLD || 900);
-const silenceFramesToStop = Number(process.env.INTERVIEW_ASSIST_SILENCE_FRAMES_TO_STOP || 40);
+const silenceFramesToStop = Number(process.env.INTERVIEW_ASSIST_SILENCE_FRAMES_TO_STOP || 0);
+const relayCompletionTimeoutMs = Number(process.env.INTERVIEW_ASSIST_RELAY_COMPLETION_TIMEOUT_MS || 15000);
 
 function logBridge(event, payload = {}) {
   console.log(JSON.stringify({
@@ -59,6 +60,10 @@ function int16ToLittleEndianBuffer(int16Samples) {
     buffer.writeInt16LE(int16Samples[index] || 0, index * 2);
   }
   return buffer;
+}
+
+export function shouldStopAfterSilence({ speechDetected, silenceFrameCount, threshold = silenceFramesToStop }) {
+  return threshold > 0 && speechDetected && silenceFrameCount >= threshold;
 }
 
 function wavHeader({ dataSize, sampleRate, channels, bitsPerSample }) {
@@ -152,6 +157,59 @@ export function shouldPublishRelayDisconnect(relayState, ws) {
   return ws.readyState !== WebSocket.CLOSING && ws.readyState !== WebSocket.CLOSED;
 }
 
+function resolveRelayCompletionWaiters(relayState) {
+  const waiters = relayState?.completionWaiters || [];
+  relayState.completionWaiters = [];
+  for (const resolve of waiters) {
+    resolve();
+  }
+}
+
+export function markRelayAiEvent(relayState, event) {
+  if (!relayState || !event) {
+    return;
+  }
+  relayState.lastAiEvent = event;
+  if (event === "transcript_partial" || event === "transcript_final") {
+    relayState.transcriptSeen = true;
+  }
+  if (event === "turn_committed") {
+    relayState.turnCommittedSeen = true;
+  }
+  if (event === "answer_ready" || event === "error") {
+    relayState.answerDone = true;
+    resolveRelayCompletionWaiters(relayState);
+  }
+}
+
+export function shouldWaitForRelayCompletion(relayState) {
+  return Boolean(
+    relayState
+      && !relayState.closed
+      && !relayState.answerDone
+      && (relayState.transcriptSeen || relayState.turnCommittedSeen),
+  );
+}
+
+export async function waitForRelayCompletion(relayState, { timeoutMs = relayCompletionTimeoutMs } = {}) {
+  if (!shouldWaitForRelayCompletion(relayState)) {
+    return;
+  }
+  await new Promise((resolve) => {
+    let waiter;
+    const finish = () => {
+      relayState.completionWaiters = relayState.completionWaiters.filter((item) => item !== waiter);
+      resolve();
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    waiter = () => {
+      clearTimeout(timer);
+      finish();
+    };
+    relayState.completionWaiters.push(waiter);
+  });
+}
+
 function aiRealtimeWsUrl(aiServiceUrl, sessionId) {
   return `${aiServiceUrl.replace(/^http/, "ws")}/ws/interview-assist/${encodeURIComponent(sessionId)}`;
 }
@@ -198,6 +256,7 @@ async function openAiRelay({ aiServiceUrl, sessionId, room, destinationIdentity,
         sessionId,
         relayEvent: parsed.event,
       });
+      markRelayAiEvent(relayState, parsed.event);
       if (parsed.event === "error") {
         relayState.stopped = true;
       }
@@ -218,6 +277,7 @@ async function openAiRelay({ aiServiceUrl, sessionId, room, destinationIdentity,
 
   ws.onclose = () => {
     relayState.closed = true;
+    resolveRelayCompletionWaiters(relayState);
     logBridge("bridge_ai_ws_closed", { sessionId });
   };
 
@@ -246,7 +306,7 @@ async function stopAiRelay(relayState) {
     try {
       relayState.ws.send(JSON.stringify({ event: "stop" }));
     } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await waitForRelayCompletion(relayState);
   }
   if (relayState.ws && relayState.ws.readyState !== WebSocket.CLOSED) {
     relayState.ws.close();
@@ -352,7 +412,7 @@ async function bridgeTrackToAi({ aiServiceUrl, track, room, sessionId, destinati
         }
       }
 
-      if (speechDetected && silenceFrameCount >= silenceFramesToStop) {
+      if (shouldStopAfterSilence({ speechDetected, silenceFrameCount })) {
         logBridge("bridge_silence_stop_triggered", {
           sessionId,
           frameIndex,
@@ -413,6 +473,11 @@ function createBridgeState({ aiServiceUrl, wsUrl, roomName, sessionId, participa
     started: false,
     stopped: false,
     closed: false,
+    transcriptSeen: false,
+    turnCommittedSeen: false,
+    answerDone: false,
+    lastAiEvent: "",
+    completionWaiters: [],
     ws: null,
     reader: null,
   };

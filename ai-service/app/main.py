@@ -4,7 +4,7 @@ import asyncio
 import json
 import queue
 import threading
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,6 +50,39 @@ def sse_event(event: str, data: Dict[str, Any]) -> str:
 async def poll_realtime_asr_event(recognizer: AliyunRealtimeRecognizer, timeout: float = 0.1):
     """Poll the blocking ASR SDK off the main event loop."""
     return await asyncio.to_thread(recognizer.poll_event, timeout)
+
+
+async def stream_realtime_assist_answer_events(
+    *,
+    session_id: str,
+    question_text: str,
+    question_ended_at: Optional[int],
+    send_json_event: Callable[[str, Dict[str, Any]], Awaitable[None]],
+) -> None:
+    event_queue: queue.Queue[tuple[str, Dict[str, Any]]] = queue.Queue()
+
+    def emit(event: str, data: Dict[str, Any]) -> None:
+        event_queue.put((event, data))
+
+    def worker() -> None:
+        try:
+            stream_assist_answer(
+                session_id=session_id,
+                question_text=question_text,
+                question_ended_at=question_ended_at,
+                emit=emit,
+            )
+        except Exception as exc:  # pragma: no cover - streamed back to the websocket client
+            event_queue.put(("error", {"error": str(exc) or "Interview assist stream failed."}))
+        finally:
+            event_queue.put(("done", {}))
+
+    threading.Thread(target=worker, daemon=True).start()
+    while True:
+        event, data = await asyncio.to_thread(event_queue.get)
+        if event == "done":
+            break
+        await send_json_event(event, data)
 
 
 class StreamingTutorIntelligence:
@@ -375,19 +408,12 @@ async def interview_assist_realtime_ws(websocket: WebSocket, session_id: str) ->
                     "role": "interviewer",
                 })
                 if session.get("mode") == "assist_candidate":
-                    try:
-                        stream_queue: queue.Queue[tuple[str, Dict[str, Any]]] = queue.Queue()
-                        stream_assist_answer(
-                            session_id=session_id,
-                            question_text=transcript_buffer,
-                            question_ended_at=None,
-                            emit=lambda ev, data: stream_queue.put((ev, data)),
-                        )
-                        while not stream_queue.empty():
-                            ev, data = stream_queue.get()
-                            await send_json_event(ev, data)
-                    except Exception as exc:
-                        await send_json_event("error", {"error": str(exc)})
+                    await stream_realtime_assist_answer_events(
+                        session_id=session_id,
+                        question_text=transcript_buffer,
+                        question_ended_at=None,
+                        send_json_event=send_json_event,
+                    )
                 transcript_buffer = ""
                 continue
 
