@@ -248,6 +248,14 @@ button {
   font-size: 20px;
 }
 
+.search-feedback {
+  min-height: 18px;
+  margin: -8px 0 0;
+  color: #6f6a61;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .prompt-chip-row,
 .goal-pill-row,
 .auth-actions,

@@ -435,6 +435,13 @@ export function HomePage() {
             placeholder="搜索学习路线、知识点或面经"
           />
         </label>
+        <p className="search-feedback" aria-live="polite">
+          {search.trim()
+            ? (visiblePathCards.length
+                ? `正在按“${search.trim()}”筛选下方模块，找到 ${visiblePathCards.length} 个匹配。`
+                : `没有找到“${search.trim()}”相关模块，可以换个关键词。`)
+            : "输入关键词会筛选下方模块，也可以直接选择一个主题。"}
+        </p>
         <div className="prompt-chip-row">
           {promptChips.map((chip) => (
             <button
