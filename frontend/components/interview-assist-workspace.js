@@ -29,6 +29,16 @@ const starterQuestions = [
   "介绍一下你最近做的项目。",
 ];
 
+const roleLabels = {
+  candidate: "我在回答",
+  interviewer: "我在提问",
+};
+
+const assistModeLabels = {
+  assist_candidate: "辅导候选人",
+  assist_interviewer: "辅助面试官",
+};
+
 function isPermissionDeniedError(error) {
   const text = String(error?.message || error || "").toLowerCase();
   return text.includes("permission denied") || text.includes("notallowederror");
@@ -602,19 +612,19 @@ export function InterviewAssistWorkspace() {
   const statusLabel = statusLabels[status] || status;
   const frameworkSummary = currentAnswer?.frameworkPoints?.length
     ? currentAnswer.frameworkPoints.join("；")
-    : "等待云端实时 ASR 返回完整问题。";
+    : "等待识别到完整问题。";
   const questionLabel =
     currentAnswer?.questionText || transcriptPreview || questionText || "等待实时识别返回文本。";
-  const settingsSummary = `${selfRole} · ${mode}${voiceDemoFile ? " · 有 demo" : ""}`;
+  const settingsSummary = `${roleLabels[selfRole]} · ${assistModeLabels[mode]}${voiceDemoFile ? " · 有语音样本" : ""}`;
   const transportStateLabel = {
-    idle: "待连接",
-    connecting: "连接中",
-    "room-connected": "房间已连接",
-    "track-published": "麦克风已发布",
-    connected: "传输已连接",
-    stalled: "桥接超时",
-    error: "连接失败",
-  }[transportState] || "待连接";
+    idle: "音频未连接",
+    connecting: "正在连接音频",
+    "room-connected": "音频房间已连上",
+    "track-published": "麦克风已接入",
+    connected: "实时音频已连接",
+    stalled: "音频转写超时",
+    error: "音频连接失败",
+  }[transportState] || "音频未连接";
   const transportStateDot = {
     idle: "connecting",
     connecting: "connecting",
@@ -631,10 +641,10 @@ export function InterviewAssistWorkspace() {
       <header className="interview-assist-topbar">
         <div className="assist-brand-block">
           <Link className="assist-brand-title" href="/">LoopAssist</Link>
-          <p>阿里云实时 ASR 负责转写，LLM 负责后续回答框架与细节生成</p>
+          <p>实时听题，整理可直接开口的回答提纲。</p>
         </div>
 
-        <Link className="assist-page-name" href="/learn">最佳真实面试辅助</Link>
+        <Link className="assist-page-name" href="/learn">返回学习页</Link>
 
         <div className="assist-header-actions">
           <div className="assist-settings-anchor" ref={settingsPanelRef}>
@@ -652,7 +662,7 @@ export function InterviewAssistWorkspace() {
                 <div className="assist-settings-panel-head">
                   <div>
                     <strong>会前配置</strong>
-                    <p>默认 interviewer / assist_candidate，voice demo 可选。</p>
+                    <p>默认按候选人视角给回答建议，语音样本可选。</p>
                   </div>
                   <button
                     type="button"
@@ -665,23 +675,23 @@ export function InterviewAssistWorkspace() {
                 </div>
 
                 <div className="assist-settings-group">
-                  <h3>真实角色</h3>
+                  <h3>我的角色</h3>
                   <div className="assist-chip-row">
-                    <button type="button" className={selfRole === "candidate" ? "topic-chip topic-chip-dark" : "topic-chip"} onClick={() => setSelfRole("candidate")}>candidate</button>
-                    <button type="button" className={selfRole === "interviewer" ? "topic-chip topic-chip-dark" : "topic-chip"} onClick={() => setSelfRole("interviewer")}>interviewer</button>
+                    <button type="button" className={selfRole === "candidate" ? "topic-chip topic-chip-dark" : "topic-chip"} onClick={() => setSelfRole("candidate")}>我在回答</button>
+                    <button type="button" className={selfRole === "interviewer" ? "topic-chip topic-chip-dark" : "topic-chip"} onClick={() => setSelfRole("interviewer")}>我在提问</button>
                   </div>
                 </div>
 
                 <div className="assist-settings-group">
-                  <h3>服务模式</h3>
+                  <h3>辅导方向</h3>
                   <div className="assist-chip-row">
-                    <button type="button" className={mode === "assist_candidate" ? "topic-chip topic-chip-dark" : "topic-chip"} onClick={() => setMode("assist_candidate")}>assist_candidate</button>
-                    <button type="button" className={mode === "assist_interviewer" ? "topic-chip topic-chip-dark" : "topic-chip"} onClick={() => setMode("assist_interviewer")}>assist_interviewer</button>
+                    <button type="button" className={mode === "assist_candidate" ? "topic-chip topic-chip-dark" : "topic-chip"} onClick={() => setMode("assist_candidate")}>辅导候选人</button>
+                    <button type="button" className={mode === "assist_interviewer" ? "topic-chip topic-chip-dark" : "topic-chip"} onClick={() => setMode("assist_interviewer")}>辅助面试官</button>
                   </div>
                 </div>
 
                 <div className="assist-settings-group">
-                  <h3>Voice Demo（可选）</h3>
+                  <h3>语音样本（可选）</h3>
                   <input
                     type="file"
                     accept="audio/*"
@@ -699,7 +709,7 @@ export function InterviewAssistWorkspace() {
                     <textarea
                       value={resumeText}
                       onChange={(event) => setResumeText(event.target.value)}
-                      placeholder="可直接粘贴简历文本，供后续 LLM 参考。"
+                      placeholder="可直接粘贴简历文本，供回答建议参考。"
                     />
                   </div>
                 ) : null}
@@ -717,7 +727,7 @@ export function InterviewAssistWorkspace() {
           </div>
           <div className="assist-status-pill">
             <span className={`assist-dot assist-dot-${transportStateDot}`} />
-            <span>{`LiveKit ${transportStateLabel}`}</span>
+            <span>{transportStateLabel}</span>
           </div>
         </div>
       </header>
@@ -743,7 +753,7 @@ export function InterviewAssistWorkspace() {
           <p className="assist-key-summary">
             {currentAnswer?.frameworkPoints?.length
               ? (isExpanding ? "框架已完整，正在逐点展开细节。" : "框架已就绪，可先按这 3 个点组织口头回答。")
-              : "云端实时 ASR 先产出问题文本，再触发后续 LLM 分析。"}
+              : "系统先听清问题，再整理回答提纲。"}
           </p>
 
           <div className="assist-section-list">
@@ -758,11 +768,11 @@ export function InterviewAssistWorkspace() {
               <>
                 <article className="assist-answer-section">
                   <h3>01 | 实时转写</h3>
-                  <p>浏览器持续上传 PCM 音频分片，阿里云实时 ASR 返回 partial/final 文本。</p>
+                  <p>浏览器持续上传音频片段，云端返回临时和完整转写。</p>
                 </article>
                 <article className="assist-answer-section">
-                  <h3>02 | Turn 结束触发分析</h3>
-                  <p>当前版本默认把识别到的完整句子视为面试官问题，并触发回答辅导链路。</p>
+                  <h3>02 | 完整问题触发分析</h3>
+                  <p>一句完整问题出现后，自动触发回答提纲和细节建议。</p>
                 </article>
               </>
             )}
@@ -775,7 +785,7 @@ export function InterviewAssistWorkspace() {
             <div className="assist-recognition-badges">
               <span className="assist-mini-pill">
                 <span className={`assist-dot assist-dot-${voiceDemoUploaded ? "listening" : "connecting"}`} />
-                {voiceDemoUploaded ? "demo 已上传" : "demo 可选"}
+                {voiceDemoUploaded ? "样本已上传" : "可加语音样本"}
               </span>
               <span className="assist-mini-pill">
                 <span className="assist-dot assist-dot-voice" />
@@ -815,16 +825,16 @@ export function InterviewAssistWorkspace() {
             <span>录音</span>
             {recordedAudioUrl ? <audio controls src={recordedAudioUrl} /> : <strong>{recordingStatus}</strong>}
           </div>
-          <p className="assist-transport-debug">链路：{transportDebug}</p>
-          {roomDebugSnapshot ? <p className="assist-transport-debug">房间诊断：{roomDebugSnapshot}</p> : null}
+          <p className="assist-transport-debug">状态：{transportDebug}</p>
+          {roomDebugSnapshot ? <p className="assist-transport-debug">诊断：{roomDebugSnapshot}</p> : null}
 
           <details className="assist-manual-entry" ref={manualEntryRef}>
-            <summary>手动输入（开发兜底）</summary>
+            <summary>手动输入问题</summary>
             <div className="assist-manual-body">
               <textarea
                 value={questionText}
                 onChange={(event) => setQuestionText(event.target.value)}
-                placeholder="调试时可直接粘贴识别后的面试官问题。"
+                placeholder="也可以直接粘贴面试官问题。"
               />
               <div className="assist-chip-row">
                 {starterQuestions.map((item) => (
