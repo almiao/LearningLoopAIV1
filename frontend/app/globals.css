@@ -2128,12 +2128,46 @@ button {
     padding: 20px 16px 40px;
   }
 
-  .study-main {
+  .learn-shell:not(.focus-reader-mode) {
+    height: auto;
+    min-height: 100vh;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .study-main:not(.focus-reader-layout) {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: auto;
+    padding: 16px;
     overflow: visible;
   }
 
-  .reader-panel {
+  .study-main:not(.focus-reader-layout) .reader-panel,
+  .study-main:not(.focus-reader-layout) .qa-panel {
+    min-height: auto;
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    background: var(--surface);
     overflow: visible;
+  }
+
+  .study-main:not(.focus-reader-layout) .reader-panel {
+    border-right: 1px solid var(--line);
+  }
+
+  .study-main:not(.focus-reader-layout) .qa-panel-reading {
+    border-left: 1px solid var(--line);
+  }
+
+  .study-main:not(.focus-reader-layout) .reader-body,
+  .study-main:not(.focus-reader-layout) .qa-scroll {
+    overflow: visible;
+  }
+
+  .study-main:not(.focus-reader-layout) .qa-panel {
+    min-height: 360px;
   }
 
   .auth-strip,
