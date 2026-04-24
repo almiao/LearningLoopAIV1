@@ -29,6 +29,24 @@ const starterQuestions = [
   "介绍一下你最近做的项目。",
 ];
 
+function isPermissionDeniedError(error) {
+  const text = String(error?.message || error || "").toLowerCase();
+  return text.includes("permission denied") || text.includes("notallowederror");
+}
+
+function describeRealtimeStartError(error) {
+  if (isPermissionDeniedError(error)) {
+    return {
+      message: "麦克风权限被拒绝。请先在浏览器中允许麦克风访问，然后重试；如果只是先验证回答链路，可以直接使用下方“手动输入（开发兜底）”。",
+      debug: "浏览器拒绝了麦克风权限，请允许麦克风后再试，或改用手动输入继续全流程。",
+    };
+  }
+  return {
+    message: error?.message || "启动实时识别失败。",
+    debug: `启动失败：${error?.message || "unknown"}`,
+  };
+}
+
 function formatDuration(totalSeconds) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -127,6 +145,7 @@ export function InterviewAssistWorkspace() {
   const monitorAnimationRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
+  const manualEntryRef = useRef(null);
 
   function cleanupTransport() {
     if (audioMonitorTimerRef.current) {
@@ -155,6 +174,15 @@ export function InterviewAssistWorkspace() {
     setVolumeLevel(0);
     setTransportState("idle");
     setTransportDebug("传输已清理");
+  }
+
+  function revealManualFallback() {
+    const details = manualEntryRef.current;
+    if (!details) {
+      return;
+    }
+    details.open = true;
+    details.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   useEffect(() => {
@@ -507,10 +535,14 @@ export function InterviewAssistWorkspace() {
       }, 8000);
     } catch (nextError) {
       cleanupTransport();
-      setError(nextError.message || "启动实时识别失败。");
+      const nextState = describeRealtimeStartError(nextError);
+      setError(nextState.message);
       setTransportState("error");
-      setTransportDebug(`启动失败：${nextError.message || "unknown"}`);
+      setTransportDebug(nextState.debug);
       setStatus("error");
+      if (isPermissionDeniedError(nextError)) {
+        revealManualFallback();
+      }
     }
   }
 
@@ -769,7 +801,7 @@ export function InterviewAssistWorkspace() {
         <p className="assist-transport-debug">链路：{transportDebug}</p>
         {roomDebugSnapshot ? <p className="assist-transport-debug">房间诊断：{roomDebugSnapshot}</p> : null}
 
-        <details className="assist-manual-entry">
+        <details className="assist-manual-entry" ref={manualEntryRef}>
           <summary>手动输入（开发兜底）</summary>
           <div className="assist-manual-body">
             <textarea
@@ -794,6 +826,11 @@ export function InterviewAssistWorkspace() {
             </button>
           </div>
         </details>
+        {isPermissionDeniedError(error) ? (
+          <p className="assist-transport-debug">
+            麦克风权限当前不可用，建议先允许浏览器麦克风，或者直接展开上面的手动输入继续验证整条回答链路。
+          </p>
+        ) : null}
       </section>
 
       <section className="assist-bottom-controls" aria-label="面试辅助控制">
