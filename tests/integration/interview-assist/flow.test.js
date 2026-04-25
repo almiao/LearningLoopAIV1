@@ -26,10 +26,10 @@ test("interview assist realtime session keeps voice demo optional and still acce
     assert.equal(response.ok, true);
     assert.equal(uploaded.voiceDemoUploaded, true);
     assert.equal(uploaded.status, "ready");
-  });
+  }, { aiPort: 18200 });
 });
 
-test("interview assist answer stream still returns framework before detail for candidate assist", async (t) => {
+test("interview assist answer stream returns markdown core before detail for candidate assist", async (t) => {
   await withInterviewAssistServices(t, async ({ aiBaseUrl }) => {
     const session = await postJson(`${aiBaseUrl}/api/interview-assist/session`, {
       targetRole: "java-backend",
@@ -42,15 +42,70 @@ test("interview assist answer stream still returns framework before detail for c
       questionEndedAt: Date.now(),
     });
 
-    const frameworkDoneIndex = events.findIndex((item) => item.event === "framework_done");
+    const coreDoneIndex = events.findIndex((item) => item.event === "core_done");
     const firstDetailIndex = events.findIndex((item) => item.event === "detail_delta");
     const answerReady = events.find((item) => item.event === "answer_ready")?.data;
 
-    assert.ok(frameworkDoneIndex >= 0);
-    assert.ok(firstDetailIndex > frameworkDoneIndex);
-    assert.equal(answerReady.frameworkPoints.length, 3);
-    assert.equal(answerReady.detailBlocks.length, 3);
-  });
+    assert.ok(coreDoneIndex >= 0);
+    assert.ok(firstDetailIndex > coreDoneIndex);
+    assert.match(answerReady.coreMarkdown, /\*\*核心点：\*\*/);
+    assert.match(answerReady.detailMarkdown, /项目经验/);
+    assert.match(answerReady.answerMarkdown, /核心点/);
+  }, { aiPort: 18201 });
+});
+
+test("interview assist answer stream carries recent context into pronoun follow-up", async (t) => {
+  await withInterviewAssistServices(t, async ({ aiBaseUrl }) => {
+    const session = await postJson(`${aiBaseUrl}/api/interview-assist/session`, {
+      targetRole: "java-backend",
+      sessionMode: "realtime_interview_assist",
+    });
+
+    await postEventStream(`${aiBaseUrl}/api/interview-assist/answer-stream`, {
+      sessionId: session.sessionId,
+      questionText: "AQS 是什么？",
+      questionEndedAt: Date.now(),
+    });
+
+    const events = await postEventStream(`${aiBaseUrl}/api/interview-assist/answer-stream`, {
+      sessionId: session.sessionId,
+      questionText: "它怎么解决并发问题？",
+      questionEndedAt: Date.now(),
+    });
+    const answerReady = events.find((item) => item.event === "answer_ready")?.data;
+
+    assert.equal(answerReady.contextTurnsUsed, 1);
+    assert.match(answerReady.coreMarkdown, /AQS/);
+    assert.doesNotMatch(answerReady.coreMarkdown, /它/);
+  }, { aiPort: 18202 });
+});
+
+test("interview assist answer stream caps recent context at two turns", async (t) => {
+  await withInterviewAssistServices(t, async ({ aiBaseUrl }) => {
+    const session = await postJson(`${aiBaseUrl}/api/interview-assist/session`, {
+      targetRole: "java-backend",
+      sessionMode: "realtime_interview_assist",
+    });
+
+    for (const questionText of ["第一轮问题", "第二轮问题", "第三轮问题"]) {
+      await postEventStream(`${aiBaseUrl}/api/interview-assist/answer-stream`, {
+        sessionId: session.sessionId,
+        questionText,
+        questionEndedAt: Date.now(),
+      });
+    }
+
+    const events = await postEventStream(`${aiBaseUrl}/api/interview-assist/answer-stream`, {
+      sessionId: session.sessionId,
+      questionText: "继续展开一下",
+      questionEndedAt: Date.now(),
+    });
+    const answerReady = events.find((item) => item.event === "answer_ready")?.data;
+
+    assert.equal(answerReady.contextTurnsUsed, 2);
+    assert.equal(answerReady.contextTurns.length, 2);
+    assert.deepEqual(answerReady.contextTurns.map((item) => item.questionText), ["第二轮问题", "第三轮问题"]);
+  }, { aiPort: 18203 });
 });
 
 test("interview assist realtime websocket no longer requires voice demo before connecting", async (t) => {

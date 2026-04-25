@@ -176,6 +176,47 @@ test("explicit control intent takes precedence over free-text wording", async ()
   assert.equal(taught.engagement.teachRequestCount, 1);
 });
 
+test("summarize control intent closes the current concept with an interview takeaway", async () => {
+  const source = parseDocumentInput({
+    title: "ThreadLocal 存储机制",
+    content: `
+ThreadLocal 的核心不是把值存在线程外部的全局位置，而是把值挂在当前线程对象内部维护的 ThreadLocalMap 上。
+
+调用 ThreadLocal.set(value) 时，当前线程会把当前这个 ThreadLocal 实例作为 key，把 value 作为 value，写入自己的 ThreadLocalMap。
+
+因此同一个 ThreadLocal 对象被不同线程访问时，本质上是在不同线程各自的 ThreadLocalMap 里查值，所以互不干扰。
+
+面试回答时，最好把对象关系说成：Thread 持有 ThreadLocalMap，ThreadLocal 只是访问这个 map 的 key。
+`
+  });
+
+  const session = await createSession({
+    source,
+    intelligence,
+    interactionPreference: "balanced"
+  });
+
+  const taught = await answerSession(session, {
+    answer: "不知道",
+    burdenSignal: "normal",
+    interactionPreference: "balanced",
+    intelligence
+  });
+
+  const summarized = await answerSession(taught, {
+    answer: "总结一下",
+    burdenSignal: "normal",
+    interactionPreference: "balanced",
+    intelligence
+  });
+
+  assert.equal(summarized.latestFeedback.action, "summarize");
+  assert.equal(summarized.latestFeedback.turnResolution.mode, "stop");
+  assert.equal(summarized.currentProbe, "");
+  assert.match(summarized.latestFeedback.explanation, /标准答案：/);
+  assert.match(summarized.latestFeedback.takeaway, /ThreadLocalMap|Thread 持有 ThreadLocalMap/);
+});
+
 test("repeated teach requests stay on the same concept and continue teach-back", async () => {
   const source = parseDocumentInput({
     title: "AQS 详解",

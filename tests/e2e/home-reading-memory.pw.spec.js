@@ -25,11 +25,27 @@ async function loginAndSeed(page, request) {
   return payload.profile.user.id;
 }
 
-test("home continue-learning card refreshes after reading another document", async ({ page, request }) => {
+test("home page lists the full static catalog and opens documents without target hints", async ({ page }) => {
+  await page.goto("/", { waitUntil: "networkidle" });
+  await expect(page.getByText("JavaGuide 全量目录")).toBeVisible();
+  await expect(page.getByText("304")).toBeVisible();
+  await expect(page.locator(".knowledge-doc-row").first()).toBeVisible();
+
+  await page.locator(".knowledge-doc-row").first().click();
+  await page.waitForURL(/\/learn\?/);
+  expect(new URL(page.url()).searchParams.has("doc")).toBe(true);
+  expect(new URL(page.url()).searchParams.has("target")).toBe(false);
+  expect(new URL(page.url()).searchParams.has("autostart")).toBe(false);
+});
+
+test("home page does not surface history-driven current or recommendation labels", async ({ page, request }) => {
   await loginAndSeed(page, request);
 
   await page.goto("/", { waitUntil: "networkidle" });
-  await expect(page.getByText("继续学习（推荐）")).toBeVisible();
+  await expect(page.getByText("JavaGuide 全量目录")).toBeVisible();
+  await expect(page.getByText("继续学习（推荐）")).toHaveCount(0);
+  await expect(page.getByText("当前章节")).toHaveCount(0);
+  await expect(page.locator("body")).not.toContainText("你上次读到");
 
   await page.goto("/learn?target=bigtech-java-backend&doc=docs/system-design/framework/spring/spring-transaction.md&autostart=1", {
     waitUntil: "networkidle",
@@ -39,12 +55,13 @@ test("home continue-learning card refreshes after reading another document", asy
   await page.getByTestId("outline-toggle").click();
   await expect(page.getByTestId("outline-panel")).toBeVisible();
   await expect(page.getByRole("button", { name: "什么是事务？" })).toBeVisible();
-  await page.getByRole("button", { name: "IoC & AOP详解（快速搞懂）" }).click();
+  await page.getByRole("button", { name: /IoC.*AOP/ }).click();
   await expect(page.getByTestId("document-surface")).toContainText("IoC");
 
-  await page.waitForTimeout(500);
-  await page.goBack({ waitUntil: "networkidle" });
+  await page.goto("/", { waitUntil: "networkidle" });
 
-  await expect(page.getByText("继续学习（推荐）")).toBeVisible();
-  await expect(page.locator("body")).toContainText("你上次读到：IoC & AOP详解（快速搞懂）");
+  await expect(page.getByText("JavaGuide 全量目录")).toBeVisible();
+  await expect(page.getByText("继续学习（推荐）")).toHaveCount(0);
+  await expect(page.getByText("当前章节")).toHaveCount(0);
+  await expect(page.locator("body")).not.toContainText("你上次读到");
 });

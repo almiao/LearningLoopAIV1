@@ -22,19 +22,86 @@ from app.observability.logger import logger
 
 ASSIST_SESSIONS: Dict[str, Dict[str, Any]] = {}
 ASSIST_SESSION_LOCKS: Dict[str, threading.Lock] = {}
-DEFAULT_FRAMEWORK_POINT_COUNT = int(os.environ.get("INTERVIEW_ASSIST_FRAMEWORK_POINTS", "3"))
-DETAIL_TAG = "</detail>"
-FRAMEWORK_OPEN = "<framework>"
-FRAMEWORK_CLOSE = "</framework>"
+CORE_OPEN = "<core>"
+CORE_CLOSE = "</core>"
+DETAIL_OPEN = "<detail>"
+DETAIL_CLOSE = "</detail>"
 VOICE_DEMO_DIR = os.environ.get("INTERVIEW_ASSIST_VOICE_DEMO_DIR", ".omx/interview-assist/voice-demos")
+
+
+def _read_nonnegative_int_env(name: str, default: int) -> int:
+    try:
+        return max(0, int(os.environ.get(name, str(default))))
+    except ValueError:
+        return default
+
+
+CONTEXT_WINDOW_TURNS = _read_nonnegative_int_env("INTERVIEW_ASSIST_CONTEXT_TURNS", 2)
 
 
 def _normalize(text: Any) -> str:
     return re.sub(r"\s+", " ", str(text or "")).strip()
 
 
-def _recent_turns(session: Dict[str, Any], limit: int = 2) -> List[Dict[str, Any]]:
+def _recent_turns(session: Dict[str, Any], limit: int = CONTEXT_WINDOW_TURNS) -> List[Dict[str, Any]]:
+    if limit <= 0:
+        return []
     return list(session.get("turns") or [])[-limit:]
+
+
+def _legacy_framework_summary(turn: Dict[str, Any]) -> str:
+    points = [_normalize(item) for item in (turn.get("frameworkPoints") or []) if _normalize(item)]
+    if not points:
+        return ""
+    return "；".join(points)
+
+
+def _turn_core_text(turn: Dict[str, Any]) -> str:
+    return _normalize(
+        turn.get("coreMarkdown")
+        or turn.get("answerMarkdown")
+        or _legacy_framework_summary(turn)
+    )
+
+
+def _turn_detail_text(turn: Dict[str, Any]) -> str:
+    detail_markdown = _normalize(turn.get("detailMarkdown"))
+    if detail_markdown:
+        return detail_markdown
+    detail_blocks = [_normalize(item) for item in (turn.get("detailBlocks") or []) if _normalize(item)]
+    return " ".join(detail_blocks)
+
+
+def _extract_subject_from_text(text: str) -> str:
+    normalized = _normalize(text)
+    if not normalized:
+        return ""
+    acronym = re.search(r"\b[A-Za-z][A-Za-z0-9+#._-]{1,}\b", normalized)
+    if acronym:
+        return acronym.group(0)
+    match = re.match(r"(.{2,24}?)(?:是什么|是啥|怎么|如何|为什么|呢|？|\\?)", normalized)
+    return _normalize(match.group(1)) if match else normalized[:24]
+
+
+def _resolve_answer_subject(question_text: str, recent_turns: List[Dict[str, Any]]) -> str:
+    question = _normalize(question_text)
+    if re.search(r"\b[A-Za-z][A-Za-z0-9+#._-]{1,}\b", question):
+        return _extract_subject_from_text(question)
+    if re.search(r"(它|这个|那个|这块|刚才|上面|前面|it)", question, re.IGNORECASE) and recent_turns:
+        return _extract_subject_from_text(_normalize(recent_turns[-1].get("questionText")))
+    return _extract_subject_from_text(question)
+
+
+def _make_references_explicit(text: str, subject: str) -> str:
+    subject = _normalize(subject)
+    if not subject:
+        return text
+    result = str(text or "")
+    # Keep this as invisible polish: users see clear nouns, not meta-explanations.
+    for pronoun in ("它们", "它", "这个", "那个", "这块"):
+        result = result.replace(pronoun, subject)
+    result = re.sub(r"\b[Ii]t\b", subject, result)
+    return result
 
 
 def _format_recent_turns(turns: List[Dict[str, Any]]) -> str:
@@ -47,56 +114,40 @@ def _format_recent_turns(turns: List[Dict[str, Any]]) -> str:
         question_text = _normalize(turn.get("questionText"))
         if question_text:
             lines.append(f"面试官：{question_text}")
-        framework_points = [
-            _normalize(item) for item in (turn.get("frameworkPoints") or []) if _normalize(item)
-        ]
-        if framework_points:
-            lines.append("框架：")
-            lines.extend(f"{point_index}. {point}" for point_index, point in enumerate(framework_points, start=1))
-        detail_blocks = [_normalize(item) for item in (turn.get("detailBlocks") or []) if _normalize(item)]
-        if detail_blocks:
-            lines.append("展开：")
-            lines.extend(f"{point_index}. {detail}" for point_index, detail in enumerate(detail_blocks, start=1))
+        core_text = _turn_core_text(turn)
+        if core_text:
+            lines.append(f"AI回答核心：{core_text}")
+        detail_text = _turn_detail_text(turn)
+        if detail_text:
+            lines.append(f"AI回答展开：{detail_text}")
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
 
 
-def _parse_framework_points(text: str) -> List[str]:
-    lines = []
-    for raw_line in text.splitlines():
-        cleaned = re.sub(r"^\s*(?:[-*]|\d+[.)]|[一二三四五六七八九十]+[、.])\s*", "", raw_line.strip())
-        if cleaned:
-            lines.append(cleaned)
-    points = [_normalize(line) for line in lines if _normalize(line)]
-    if len(points) < DEFAULT_FRAMEWORK_POINT_COUNT:
-        raise ValueError("Interview assist framework output returned too few framework points.")
-    return points[:DEFAULT_FRAMEWORK_POINT_COUNT]
-
-
-def _framework_prompt(question_text: str, recent_turns: List[Dict[str, Any]]) -> str:
+def _answer_prompt(question_text: str, recent_turns: List[Dict[str, Any]]) -> str:
     return "\n".join(
         [
             "你是一个实时面试辅助模型。",
-            "目标：在用户听到完整面试题后，先给一套可以马上开口组织语言的回答框架，再逐点展开细节。",
+            "目标：帮用户马上开口回答面试问题。先输出可以直接参考的核心回答，再自然展开。",
             "请严格按下面的标签协议输出，不要输出标签外的任何文字。",
             "",
             "输出格式必须完全遵守：",
-            "<framework>",
-            "1. 第一条框架点",
-            "2. 第二条框架点",
-            "3. 第三条框架点",
-            "</framework>",
-            "<detail index=\"1\">第一条框架点的展开内容，1-2句，口语化。</detail>",
-            "<detail index=\"2\">第二条框架点的展开内容，1-2句，口语化。</detail>",
-            "<detail index=\"3\">第三条框架点的展开内容，1-2句，口语化。</detail>",
+            "<core>",
+            "用 markdown 写核心回答。可以是一小段，也可以是 2-4 个 bullet。重要词可以加粗。",
+            "</core>",
+            "<detail>",
+            "继续用 markdown 展开说明。按问题需要自然组织，不要固定三段模板。",
+            "</detail>",
             "",
-            f"必须先完整输出 {DEFAULT_FRAMEWORK_POINT_COUNT} 条框架点并关闭 </framework>，然后才能开始任何 <detail>。",
-            "框架点要求 8-20 个字，直接可说，覆盖：结论主线、核心机制/论据、项目场景/边界取舍。",
-            "detail 要和对应框架点一一对应，每条 1-2 句，能被用户直接复述。",
+            "回答要求：",
+            "1. 先完整输出 <core> 并关闭 </core>，再开始 <detail>。",
+            "2. 结合历史上下文理解当前问题，但最终回答里不要用“它、这个、那个”等模糊代称，直接写清楚对象名。",
+            "3. 如果当前内容明显不是完整问题，或结合上下文也无法判断，可以自然地简短说明无法判断，不要强行编答案。",
+            "4. 保持口语化、可直接复述。不要解释你如何理解代称，不要写规则说明。",
             "",
             f"当前问题：{question_text}",
             "",
-            "历史上下文（仅供参考）：",
+            f"最近 {CONTEXT_WINDOW_TURNS} 轮上下文（仅供理解当前问题，不要逐字复述）：",
             _format_recent_turns(recent_turns),
         ]
     )
@@ -109,28 +160,25 @@ class MockInterviewAssistIntelligence:
 
     def stream_answer(self, *, question_text: str, recent_turns: List[Dict[str, Any]]) -> List[str]:
         question = _normalize(question_text) or "当前问题"
-        framework_points = [
-            f"先回答：{question[:18]}",
-            "补核心机制和关键依据",
-            "落到项目场景与取舍",
-        ][: DEFAULT_FRAMEWORK_POINT_COUNT]
-        context_note = ""
+        subject = question
         if recent_turns:
-            context_note = " 上一轮内容可以顺手带一句，形成连续回答。"
-        details = [
-            f"先直接给结论，说明你会怎么回答这个问题，再把重点收在 {framework_points[0]}。{context_note}".strip(),
-            f"然后讲清楚这件事背后的关键机制、为什么这么做，以及它成立的前提条件，围绕 {framework_points[1]} 往下展开。",
-            f"最后补一个真实项目里的使用场景、收益或边界取舍，把回答落在经验层，收束到 {framework_points[2]}。",
-        ][: len(framework_points)]
+            subject = _normalize(recent_turns[-1].get("questionText")) or question
+        core = f"**核心点：** 可以先围绕“{subject[:28]}”直接给结论，再补关键机制和项目场景。"
+        detail = "\n".join(
+            [
+                f"- 先把回答对象说清楚，让面试官知道你在回答“{subject[:28]}”。",
+                "- 再讲机制、为什么这样设计，以及适用边界。",
+                "- 最后落到项目经验：你在哪个场景用过，解决了什么问题，有什么取舍。",
+            ]
+        )
         full_text = "\n".join(
             [
-                "<framework>",
-                *[f"{index}. {point}" for index, point in enumerate(framework_points, start=1)],
-                "</framework>",
-                *[
-                    f"<detail index=\"{index + 1}\">{detail}</detail>"
-                    for index, detail in enumerate(details)
-                ],
+                CORE_OPEN,
+                core,
+                CORE_CLOSE,
+                DETAIL_OPEN,
+                detail,
+                DETAIL_CLOSE,
             ]
         )
         step = max(24, len(full_text) // 5)
@@ -149,7 +197,7 @@ class ProviderInterviewAssistIntelligence:
         return bool(self.api_key)
 
     def stream_answer(self, *, question_text: str, recent_turns: List[Dict[str, Any]]) -> List[str]:
-        prompt = _framework_prompt(question_text, recent_turns)
+        prompt = _answer_prompt(question_text, recent_turns)
         if self.provider == "DEEPSEEK":
             return list(
                 stream_deepseek_text_chunks(
@@ -286,10 +334,6 @@ def _create_turn_metadata(*, session: Dict[str, Any], question_text: str, questi
     }
 
 
-def _detail_open_tag(index: int) -> str:
-    return f"<detail index=\"{index + 1}\">"
-
-
 def _should_flush_detail_delta(text: str) -> bool:
     stripped = text.strip()
     if not stripped:
@@ -315,6 +359,7 @@ def stream_assist_answer(
         ended_at = int(question_ended_at or time.time() * 1000)
         started_at = time.time()
         recent_turns = _recent_turns(session)
+        answer_subject = _resolve_answer_subject(question, recent_turns)
         set_session_context(session_id=session_id, turn=len(session["turns"]) + 1)
         meta = _create_turn_metadata(session=session, question_text=question, question_ended_at=ended_at)
         session["activeTurnIds"].append(meta["turnId"])
@@ -326,200 +371,206 @@ def stream_assist_answer(
             intelligence = _require_intelligence()
             stream_chunks = intelligence.stream_answer(question_text=question, recent_turns=recent_turns)
             stream_buffer = ""
-            framework_buffer = ""
-            framework_points: List[str] = []
-            detail_blocks = [""] * DEFAULT_FRAMEWORK_POINT_COUNT
-            detail_pending = [""] * DEFAULT_FRAMEWORK_POINT_COUNT
-            detail_started: set[int] = set()
-            detail_done: set[int] = set()
-            current_detail_index: Optional[int] = None
-            framework_started = False
-            framework_emitted = False
-            framework_latency_ms = 0
+            core_buffer = ""
+            detail_buffer = ""
+            detail_pending = ""
+            core_markdown = ""
+            core_started = False
+            core_emitted = False
+            detail_started = False
+            detail_done = False
+            core_latency_ms = 0
 
             for chunk in stream_chunks:
                 stream_buffer += chunk or ""
 
-                if not framework_emitted:
-                    if not framework_started:
-                        open_index = stream_buffer.find(FRAMEWORK_OPEN)
+                if not core_emitted:
+                    if not core_started:
+                        open_index = stream_buffer.find(CORE_OPEN)
                         if open_index < 0:
-                            stream_buffer = stream_buffer[-(len(FRAMEWORK_OPEN) - 1) :]
+                            stream_buffer = stream_buffer[-(len(CORE_OPEN) - 1) :]
                             continue
-                        stream_buffer = stream_buffer[open_index + len(FRAMEWORK_OPEN) :]
-                        framework_started = True
-                    close_index = stream_buffer.find(FRAMEWORK_CLOSE)
+                        stream_buffer = stream_buffer[open_index + len(CORE_OPEN) :]
+                        core_started = True
+                    close_index = stream_buffer.find(CORE_CLOSE)
                     if close_index >= 0:
-                        framework_buffer += stream_buffer[:close_index]
-                        framework_points = _parse_framework_points(framework_buffer)
-                        framework_latency_ms = int((time.time() - started_at) * 1000)
-                        for index, point in enumerate(framework_points):
-                            emit(
-                                "framework_delta",
-                                {
-                                    "sessionId": session_id,
-                                    "turnId": meta["turnId"],
-                                    "questionText": question,
-                                    "index": index,
-                                    "point": point,
-                                },
-                            )
+                        core_buffer += stream_buffer[:close_index]
+                        core_markdown = _make_references_explicit(core_buffer.strip(), answer_subject)
+                        if not core_markdown:
+                            raise ValueError("Interview assist model output returned an empty core block.")
+                        core_latency_ms = int((time.time() - started_at) * 1000)
+                        emit(
+                            "core_delta",
+                            {
+                                "sessionId": session_id,
+                                "turnId": meta["turnId"],
+                                "questionText": question,
+                                "delta": core_markdown,
+                            },
+                        )
                         logger.event(
                             events.FIRST_SCREEN_READY,
                             session_id=session_id,
                             turn_id=meta["turnId"],
-                            latency_ms=framework_latency_ms,
-                            key_points_count=len(framework_points),
+                            latency_ms=core_latency_ms,
+                            key_points_count=1,
+                            context_turns_used=len(recent_turns),
                         )
                         emit(
-                            "framework_done",
+                            "core_done",
                             {
                                 "sessionId": session_id,
                                 "turnId": meta["turnId"],
                                 "traceId": meta["traceId"],
                                 "questionText": question,
-                                "frameworkPoints": framework_points,
-                                "frameworkLatencyMs": framework_latency_ms,
+                                "coreMarkdown": core_markdown,
+                                "frameworkLatencyMs": core_latency_ms,
+                                "coreLatencyMs": core_latency_ms,
                                 "contextTurnsUsed": len(recent_turns),
+                                "contextTurns": recent_turns,
                             },
                         )
-                        framework_emitted = True
+                        core_emitted = True
                         logger.event(events.EXPANSION_READY, session_id=session_id, turn_id=meta["turnId"])
-                        stream_buffer = stream_buffer[close_index + len(FRAMEWORK_CLOSE) :]
+                        stream_buffer = stream_buffer[close_index + len(CORE_CLOSE) :]
                     else:
-                        safe_length = max(0, len(stream_buffer) - (len(FRAMEWORK_CLOSE) - 1))
+                        safe_length = max(0, len(stream_buffer) - (len(CORE_CLOSE) - 1))
                         if safe_length > 0:
-                            framework_buffer += stream_buffer[:safe_length]
+                            core_buffer += stream_buffer[:safe_length]
                             stream_buffer = stream_buffer[safe_length:]
                         continue
 
-                while framework_emitted:
-                    if current_detail_index is None:
-                        match = re.search(r"<detail index=\"(\d+)\">", stream_buffer)
-                        if not match:
+                while core_emitted and not detail_done:
+                    if not detail_started:
+                        open_index = stream_buffer.find(DETAIL_OPEN)
+                        if open_index < 0:
+                            stream_buffer = stream_buffer[-(len(DETAIL_OPEN) - 1) :]
                             break
-                        next_index = int(match.group(1)) - 1
-                        if next_index < 0 or next_index >= len(framework_points):
-                            raise ValueError("Interview assist detail output returned an invalid detail index.")
-                        current_detail_index = next_index
-                        if current_detail_index not in detail_started:
-                            emit(
-                                "detail_start",
-                                {
-                                    "sessionId": session_id,
-                                    "turnId": meta["turnId"],
-                                    "index": current_detail_index,
-                                    "title": framework_points[current_detail_index],
-                                },
-                            )
-                            detail_started.add(current_detail_index)
-                        stream_buffer = stream_buffer[match.end() :]
+                        stream_buffer = stream_buffer[open_index + len(DETAIL_OPEN) :]
+                        detail_started = True
+                        emit(
+                            "detail_start",
+                            {
+                                "sessionId": session_id,
+                                "turnId": meta["turnId"],
+                                "title": "展开说明",
+                            },
+                        )
                         continue
 
-                    close_index = stream_buffer.find(DETAIL_TAG)
+                    close_index = stream_buffer.find(DETAIL_CLOSE)
                     if close_index >= 0:
                         delta = stream_buffer[:close_index]
                         if delta:
-                            detail_pending[current_detail_index] += delta
-                        if detail_pending[current_detail_index].strip():
-                            detail_blocks[current_detail_index] += detail_pending[current_detail_index]
+                            detail_pending += delta
+                        if detail_pending.strip():
+                            sanitized_delta = _make_references_explicit(detail_pending, answer_subject)
+                            detail_buffer += sanitized_delta
                             emit(
                                 "detail_delta",
                                 {
                                     "sessionId": session_id,
                                     "turnId": meta["turnId"],
-                                    "index": current_detail_index,
-                                    "delta": detail_pending[current_detail_index],
+                                    "delta": sanitized_delta,
                                 },
                             )
-                            detail_pending[current_detail_index] = ""
-                        detail_blocks[current_detail_index] = _normalize(detail_blocks[current_detail_index])
+                            detail_pending = ""
+                        detail_markdown = detail_buffer.strip()
                         emit(
                             "detail_done",
                             {
                                 "sessionId": session_id,
                                 "turnId": meta["turnId"],
-                                "index": current_detail_index,
-                                "detail": detail_blocks[current_detail_index],
+                                "detailMarkdown": detail_markdown,
+                                "detail": detail_markdown,
                             },
                         )
-                        detail_done.add(current_detail_index)
-                        stream_buffer = stream_buffer[close_index + len(DETAIL_TAG) :]
-                        current_detail_index = None
-                        continue
+                        detail_done = True
+                        stream_buffer = stream_buffer[close_index + len(DETAIL_CLOSE) :]
+                        break
 
-                    safe_length = max(0, len(stream_buffer) - (len(DETAIL_TAG) - 1))
+                    safe_length = max(0, len(stream_buffer) - (len(DETAIL_CLOSE) - 1))
                     if safe_length <= 0:
                         break
                     delta = stream_buffer[:safe_length]
-                    detail_pending[current_detail_index] += delta
-                    if _should_flush_detail_delta(detail_pending[current_detail_index]):
-                        detail_blocks[current_detail_index] += detail_pending[current_detail_index]
+                    detail_pending += delta
+                    if _should_flush_detail_delta(detail_pending):
+                        sanitized_delta = _make_references_explicit(detail_pending, answer_subject)
+                        detail_buffer += sanitized_delta
                         emit(
                             "detail_delta",
                             {
                                 "sessionId": session_id,
                                 "turnId": meta["turnId"],
-                                "index": current_detail_index,
-                                "delta": detail_pending[current_detail_index],
+                                "delta": sanitized_delta,
                             },
                         )
-                        detail_pending[current_detail_index] = ""
+                        detail_pending = ""
                     stream_buffer = stream_buffer[safe_length:]
                     break
 
-            if not framework_emitted:
-                raise ValueError("Interview assist model output did not produce a complete framework block.")
-            if current_detail_index is not None:
-                if detail_pending[current_detail_index].strip():
-                    detail_blocks[current_detail_index] += detail_pending[current_detail_index]
+            if not core_emitted:
+                raise ValueError("Interview assist model output did not produce a complete core block.")
+            if detail_started and not detail_done:
+                if detail_pending.strip():
+                    sanitized_delta = _make_references_explicit(detail_pending, answer_subject)
+                    detail_buffer += sanitized_delta
                     emit(
                         "detail_delta",
                         {
                             "sessionId": session_id,
                             "turnId": meta["turnId"],
-                            "index": current_detail_index,
-                            "delta": detail_pending[current_detail_index],
+                            "delta": sanitized_delta,
                         },
                     )
-                    detail_pending[current_detail_index] = ""
-                detail_blocks[current_detail_index] = _normalize(detail_blocks[current_detail_index])
+                    detail_pending = ""
+                detail_markdown = detail_buffer.strip()
                 emit(
                     "detail_done",
                     {
                         "sessionId": session_id,
                         "turnId": meta["turnId"],
-                        "index": current_detail_index,
-                        "detail": detail_blocks[current_detail_index],
+                        "detailMarkdown": detail_markdown,
+                        "detail": detail_markdown,
                     },
                 )
-                detail_done.add(current_detail_index)
-            detail_blocks = [_normalize(item) for item in detail_blocks[: len(framework_points)]]
-            if len(detail_done) < len(framework_points):
-                raise ValueError("Interview assist model output did not complete all detail blocks.")
+                detail_done = True
+            if not detail_done:
+                raise ValueError("Interview assist model output did not produce a complete detail block.")
+
+            detail_markdown = detail_buffer.strip()
+            answer_markdown = "\n\n".join(item for item in [core_markdown, detail_markdown] if item)
 
             total_latency_ms = int((time.time() - started_at) * 1000)
             turn_record = {
                 "turnId": meta["turnId"],
                 "questionText": question,
-                "frameworkPoints": framework_points,
-                "detailBlocks": detail_blocks,
+                "coreMarkdown": core_markdown,
+                "detailMarkdown": detail_markdown,
+                "answerMarkdown": answer_markdown,
+                "frameworkPoints": [core_markdown],
+                "detailBlocks": [detail_markdown],
                 "questionEndedAt": ended_at,
                 "latencyMs": total_latency_ms,
             }
             session["turns"].append(turn_record)
-            session["turns"] = session["turns"][-2:]
+            session["turns"] = session["turns"][-CONTEXT_WINDOW_TURNS:] if CONTEXT_WINDOW_TURNS > 0 else []
 
             payload = {
                 "sessionId": session_id,
                 "turnId": meta["turnId"],
                 "traceId": meta["traceId"],
                 "questionText": question,
-                "frameworkPoints": framework_points,
-                "detailBlocks": detail_blocks,
-                "frameworkLatencyMs": framework_latency_ms,
+                "coreMarkdown": core_markdown,
+                "detailMarkdown": detail_markdown,
+                "answerMarkdown": answer_markdown,
+                "frameworkPoints": [core_markdown],
+                "detailBlocks": [detail_markdown],
+                "frameworkLatencyMs": core_latency_ms,
+                "coreLatencyMs": core_latency_ms,
                 "latencyMs": total_latency_ms,
                 "contextTurnsUsed": len(recent_turns),
+                "contextTurns": recent_turns,
             }
             emit("answer_ready", payload)
             return payload
@@ -557,8 +608,8 @@ def describe_interview_assist() -> Dict[str, Any]:
         "pureLlm": True,
         "provider": provider,
         "configured": configured,
-        "streamStages": ["framework", "detail"],
-        "contextWindowTurns": 2,
+        "streamStages": ["core_markdown", "detail_markdown"],
+        "contextWindowTurns": CONTEXT_WINDOW_TURNS,
         "realtimeAsr": {
             "provider": "ALIYUN_DASHSCOPE",
             "configured": realtime_asr_configured,

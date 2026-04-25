@@ -171,3 +171,30 @@ test("chat transcript hides takeaway for in-progress verify turns", () => {
 
   assert.equal(timeline[1].takeaway, "");
 });
+
+test("chat transcript keeps takeaway and summarize intent for closure turns", () => {
+  const timeline = buildChatTimeline([
+    {
+      role: "learner",
+      kind: "control",
+      action: "summarize",
+      conceptId: "threadlocal",
+      conceptTitle: "ThreadLocal 存储机制",
+      content: "总结一下",
+      timestamp: 40
+    },
+    {
+      role: "tutor",
+      kind: "feedback",
+      action: "summarize",
+      conceptId: "threadlocal",
+      conceptTitle: "ThreadLocal 存储机制",
+      content: "这题先收口，我帮你压成面试里能直接带走的版本。",
+      takeaway: "Thread 持有 ThreadLocalMap，value 挂在当前线程自己的 map 上。",
+      timestamp: 41
+    }
+  ]);
+
+  assert.equal(timeline[0].intentLabel, "请求总结");
+  assert.equal(timeline[1].takeaway, "Thread 持有 ThreadLocalMap，value 挂在当前线程自己的 map 上。");
+});

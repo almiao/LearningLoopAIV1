@@ -1,6 +1,6 @@
 import { normalizeWhitespace } from "../material/material-model.js";
 
-const allowedControlIntents = new Set(["advance", "teach"]);
+const allowedControlIntents = new Set(["advance", "teach", "summarize"]);
 
 export function normalizeControlIntent(intent) {
   const normalized = normalizeWhitespace(intent).toLowerCase();
@@ -24,6 +24,12 @@ export function detectControlIntent(answer, explicitIntent = "") {
 
   if (["讲一下", "先讲一下", "直接讲", "给答案", "解释一下"].map((item) => item.toLowerCase()).includes(normalized)) {
     return "teach";
+  }
+
+  if (
+    ["总结一下", "总结", "收尾一下", "面试总结", "给个总结", "wrap up"].map((item) => item.toLowerCase()).includes(normalized)
+  ) {
+    return "summarize";
   }
 
   return null;

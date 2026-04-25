@@ -413,18 +413,18 @@ const baselinePacks = [
           },
           {
             id: "spring-ioc-aop-proxy-chain",
-            title: "IoC / AOP / 代理链路理解",
-            summary: "能把 IoC、AOP、代理对象和运行时增强链路讲清楚。",
-            excerpt: "这类题核心不是记概念，而是能不能把运行时代理链和业务方法联系起来。",
+            title: "Spring AOP 代理增强链路",
+            summary: "能按调用顺序说清：业务代码拿到代理对象，调用先进入代理，再执行通知，最后进入目标方法。",
+            excerpt: "这类题核心不是背 IoC 和 AOP 定义，而是把代理对象如何接住业务调用、如何串起通知和目标方法讲清楚。",
             keywords: ["spring", "ioc", "aop", "proxy", "bean", "增强", "代理链"],
-            misconception: "容易背 IoC 和 AOP 的定义，但不会解释它们在运行时到底怎么接到业务方法上。",
+            misconception: "容易把 IoC、AOP 分别背成定义，却说不清业务调用为什么必须先走代理对象。",
             importance: "core",
             coverage: "medium",
-            diagnosticQuestion: "系统生成诊断题：Spring 里的 IoC 和 AOP 最后是怎样落到运行时代理链路上的？",
-            retryQuestion: "先只回答一个点：为什么说很多 Spring 能力最后都要落到代理对象上？",
-            stretchQuestion: "如果继续追问 Bean 生命周期和增强链顺序，你会怎么补充？",
-            checkQuestion: "现在重新讲一遍：IoC、AOP 和代理链为什么不能拆开理解？",
-            remediationHint: "先从 Bean 管理，再到代理，再到增强切面，按顺序讲。",
+            diagnosticQuestion: "一个被 Spring AOP 增强的 Bean 被调用时，调用先到谁、通知在哪里执行、最后怎么进入目标方法？",
+            retryQuestion: "先只回答一个点：业务代码为什么必须拿到代理对象，AOP 才能生效？",
+            stretchQuestion: "如果继续追问 JDK 动态代理和 CGLIB 的选择，你会怎么补充？",
+            checkQuestion: "现在重新讲一遍：AOP 代理对象是怎么把前置/后置通知和目标方法串起来的？",
+            remediationHint: "按调用链讲：容器创建 Bean -> 包成代理 -> 调用代理 -> 执行通知 -> 调目标方法。",
             provenance: {
               type: "system-generated",
               company: "",
@@ -436,10 +436,10 @@ const baselinePacks = [
             remediationAssets: [
               {
                 id: "spring-ioc-aop-card",
-                title: "IoC / AOP / 代理链补强卡",
+                title: "Spring AOP 代理链补强卡",
                 kind: "note",
                 durationMinutes: 15,
-                description: "围绕 Bean、代理、增强链重建一轮运行时解释。"
+                description: "围绕代理对象、通知执行、目标方法调用重建一轮运行时解释。"
               }
             ]
           },

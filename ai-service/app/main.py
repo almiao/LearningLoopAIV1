@@ -120,7 +120,7 @@ class StreamingTutorIntelligence:
 class StartTargetRequest(BaseModel):
     userId: str = ""
     source: Dict[str, Any]
-    decomposition: Dict[str, Any]
+    decomposition: Optional[Dict[str, Any]] = None
     targetBaseline: Dict[str, Any]
     memoryProfile: Dict[str, Any]
     interactionPreference: str = "balanced"

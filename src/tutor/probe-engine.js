@@ -53,7 +53,11 @@ function buildGapLabel({ concept, analysis, noiseDetected }) {
 }
 
 function buildAnswerFrame(concept) {
-  return `先别展开全部，直接用你自己的话说清：${concept.title} 最关键的机制是什么？`;
+  return (
+    concept.retryQuestion ||
+    concept.diagnosticQuestion ||
+    `先别展开全部，围绕“${concept.title}”说清材料里的一个具体链路。`
+  );
 }
 
 export function buildTutorFeedback({ concept, analysis, noiseDetected }) {
@@ -114,7 +118,11 @@ export function createFollowUpQuestion({
     return `结合你刚才的阅读和已有回答，再讲一次：“${concept.title}”这条链路里最容易漏掉的关键一步是什么？`;
   }
 
-  return `不要背定义，直接用自己的话解释：“${concept.title}”最核心的机制是什么，它为什么重要？`;
+  return (
+    concept.retryQuestion ||
+    concept.diagnosticQuestion ||
+    `围绕“${concept.title}”回答一个具体点：材料里它的关键链路是怎么走的？`
+  );
 }
 
 export function chooseNextConcept(session) {
@@ -133,12 +141,18 @@ export function createInitialProbe(concept, session = null) {
     return concept.interviewAnchor.prompt;
   }
 
-  if (conceptState || rememberedState) {
+  const attempts = conceptState?.attempts || 0;
+  const hasPriorInteraction =
+    attempts > 0 ||
+    (conceptState?.teachCount || 0) > 0 ||
+    (conceptState?.lastAction && conceptState.lastAction !== "probe");
+
+  if (rememberedState || hasPriorInteraction) {
     return createFollowUpQuestion({
       concept,
       lastSignal: rememberedState === "solid" ? "positive" : "negative",
       burdenSignal: session?.burdenSignal || "normal",
-      attempts: conceptState?.attempts || 0,
+      attempts,
       rememberedState
     });
   }

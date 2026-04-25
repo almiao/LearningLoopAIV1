@@ -11,14 +11,15 @@ import {
   getLivekitRoomDebug,
   uploadVoiceDemo,
 } from "../lib/interview-assist-api";
+import { renderMarkdownContent } from "../lib/render-markdown-content";
 
 const statusLabels = {
   idle: "待开始",
   connecting: "连接中",
   listening: "实时识别中",
   paused: "已暂停",
-  generating_skeleton: "框架生成中",
-  first_screen_ready: "框架已就绪",
+  generating_skeleton: "核心生成中",
+  first_screen_ready: "核心已就绪",
   error: "异常",
 };
 
@@ -47,8 +48,8 @@ function isPermissionDeniedError(error) {
 function describeRealtimeStartError(error) {
   if (isPermissionDeniedError(error)) {
     return {
-      message: "麦克风权限被拒绝。请先在浏览器中允许麦克风访问，然后重试；如果只是先验证回答链路，可以直接使用下方“手动输入（开发兜底）”。",
-      debug: "浏览器拒绝了麦克风权限，请允许麦克风后再试，或改用手动输入继续全流程。",
+      message: "麦克风权限被拒绝。请先在浏览器里允许麦克风，或直接改用手动输入。",
+      debug: "浏览器拒绝了麦克风权限，请允许后重试，或改用手动输入。",
     };
   }
   return {
@@ -63,22 +64,33 @@ function formatDuration(totalSeconds) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function buildAnswerSections(answer) {
-  const frameworkPoints = answer?.frameworkPoints || [];
-  const detailBlocks = answer?.detailBlocks || [];
-  return frameworkPoints.map((point, index) => ({
-    title: `${String(index + 1).padStart(2, "0")} | ${point}`,
-    detail: detailBlocks[index] || "细节正在继续展开。",
-  }));
-}
-
 function createEmptyAnswer(questionText = "", sessionId = "") {
   return {
     sessionId,
     turnId: "",
     questionText,
+    coreMarkdown: "",
+    detailMarkdown: "",
+    answerMarkdown: "",
+    contextTurns: [],
     frameworkPoints: [],
     detailBlocks: [],
+  };
+}
+
+function normalizeAnswerPayload(answer) {
+  if (!answer) {
+    return answer;
+  }
+  const coreMarkdown = answer.coreMarkdown || (answer.frameworkPoints || []).join("；");
+  const detailMarkdown = answer.detailMarkdown || (answer.detailBlocks || []).filter(Boolean).join("\n\n");
+  const answerMarkdown = answer.answerMarkdown || [coreMarkdown, detailMarkdown].filter(Boolean).join("\n\n");
+  return {
+    ...answer,
+    coreMarkdown,
+    detailMarkdown,
+    answerMarkdown,
+    contextTurns: answer.contextTurns || [],
   };
 }
 
@@ -231,7 +243,7 @@ export function InterviewAssistWorkspace() {
   }, [isSettingsOpen]);
 
   useEffect(() => {
-    if (!currentAnswer?.turnId || !(currentAnswer.frameworkPoints || []).length) {
+    if (!currentAnswer?.turnId || !(currentAnswer.coreMarkdown || (currentAnswer.frameworkPoints || []).length)) {
       return undefined;
     }
     if (ackedTurnRef.current === currentAnswer.turnId) {
@@ -262,7 +274,7 @@ export function InterviewAssistWorkspace() {
     return () => window.clearInterval(timerId);
   }, [session?.sessionId, status]);
 
-  const answerSections = useMemo(() => buildAnswerSections(currentAnswer), [currentAnswer]);
+  const recentRecognitionTurns = useMemo(() => history.slice(0, 2), [history]);
 
   function applyAssistEvent(event, data) {
     if (event === "agent_ready") {
@@ -282,6 +294,23 @@ export function InterviewAssistWorkspace() {
       setCurrentAnswer(createEmptyAnswer(data.questionText || "", session?.sessionId || ""));
       setStatus("generating_skeleton");
       setIsExpanding(false);
+      return;
+    }
+    if (event === "core_delta") {
+      setCurrentAnswer((prev) => {
+        const base = prev || createEmptyAnswer(data.questionText || transcriptPreview, session?.sessionId || "");
+        const coreMarkdown = `${base.coreMarkdown || ""}${data.delta || ""}`;
+        return normalizeAnswerPayload({ ...base, questionText: data.questionText || base.questionText, coreMarkdown });
+      });
+      return;
+    }
+    if (event === "core_done") {
+      setCurrentAnswer((prev) => normalizeAnswerPayload({
+        ...(prev || createEmptyAnswer(data.questionText, data.sessionId)),
+        ...data,
+        detailMarkdown: prev?.detailMarkdown || "",
+      }));
+      setStatus("first_screen_ready");
       return;
     }
     if (event === "framework_delta") {
@@ -313,24 +342,32 @@ export function InterviewAssistWorkspace() {
     if (event === "detail_delta") {
       setCurrentAnswer((prev) => {
         const base = prev || createEmptyAnswer("", session?.sessionId || "");
-        const detailBlocks = [...(base.detailBlocks || [])];
-        detailBlocks[data.index] = `${detailBlocks[data.index] || ""}${data.delta || ""}`;
-        return { ...base, detailBlocks };
+        if (typeof data.index === "number") {
+          const detailBlocks = [...(base.detailBlocks || [])];
+          detailBlocks[data.index] = `${detailBlocks[data.index] || ""}${data.delta || ""}`;
+          return normalizeAnswerPayload({ ...base, detailBlocks });
+        }
+        const detailMarkdown = `${base.detailMarkdown || ""}${data.delta || ""}`;
+        return normalizeAnswerPayload({ ...base, detailMarkdown });
       });
       return;
     }
     if (event === "detail_done") {
       setCurrentAnswer((prev) => {
         const base = prev || createEmptyAnswer("", session?.sessionId || "");
+        if (data.detailMarkdown) {
+          return normalizeAnswerPayload({ ...base, detailMarkdown: data.detailMarkdown });
+        }
         const detailBlocks = [...(base.detailBlocks || [])];
         detailBlocks[data.index] = data.detail || detailBlocks[data.index] || "";
-        return { ...base, detailBlocks };
+        return normalizeAnswerPayload({ ...base, detailBlocks });
       });
       return;
     }
     if (event === "answer_ready") {
-      setCurrentAnswer(data);
-      setHistory((items) => [data, ...items].slice(0, 3));
+      const normalized = normalizeAnswerPayload(data);
+      setCurrentAnswer(normalized);
+      setHistory((items) => [normalized, ...items].slice(0, 3));
       setIsExpanding(false);
       return;
     }
@@ -370,6 +407,15 @@ export function InterviewAssistWorkspace() {
     } else {
       setVoiceDemoUploaded(false);
     }
+    return nextSession;
+  }
+
+  async function ensureAssistSession() {
+    if (session?.sessionId) {
+      return session;
+    }
+    const nextSession = await createRealtimeSession({ selfRole, mode, resumeText });
+    setSession(nextSession);
     return nextSession;
   }
 
@@ -576,7 +622,7 @@ export function InterviewAssistWorkspace() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          sessionId: session?.sessionId || (await createRealtimeSession({ selfRole, mode, resumeText })).sessionId,
+          sessionId: (await ensureAssistSession()).sessionId,
           questionText,
           questionEndedAt: Date.now(),
         }),
@@ -610,9 +656,9 @@ export function InterviewAssistWorkspace() {
   }
 
   const statusLabel = statusLabels[status] || status;
-  const frameworkSummary = currentAnswer?.frameworkPoints?.length
-    ? currentAnswer.frameworkPoints.join("；")
-    : "等待识别到完整问题。";
+  const coreMarkdown = currentAnswer?.coreMarkdown || (currentAnswer?.frameworkPoints || []).join("；");
+  const detailMarkdown = currentAnswer?.detailMarkdown || (currentAnswer?.detailBlocks || []).filter(Boolean).join("\n\n");
+  const hasAnswerMarkdown = Boolean(coreMarkdown || detailMarkdown);
   const questionLabel =
     currentAnswer?.questionText || transcriptPreview || questionText || "等待实时识别返回文本。";
   const settingsSummary = `${roleLabels[selfRole]} · ${assistModeLabels[mode]}${voiceDemoFile ? " · 有语音样本" : ""}`;
@@ -641,7 +687,7 @@ export function InterviewAssistWorkspace() {
       <header className="interview-assist-topbar">
         <div className="assist-brand-block">
           <Link className="assist-brand-title" href="/">LoopAssist</Link>
-          <p>实时听题，整理可直接开口的回答提纲。</p>
+          <p>听题后直接给出可开口的回答。</p>
         </div>
 
         <Link className="assist-page-name" href="/learn">返回学习页</Link>
@@ -662,7 +708,7 @@ export function InterviewAssistWorkspace() {
                 <div className="assist-settings-panel-head">
                   <div>
                     <strong>会前配置</strong>
-                    <p>默认按候选人视角给回答建议，语音样本可选。</p>
+                    <p>按当前角色生成建议，样本和简历都可选。</p>
                   </div>
                   <button
                     type="button"
@@ -700,7 +746,7 @@ export function InterviewAssistWorkspace() {
                       setVoiceDemoUploaded(false);
                     }}
                   />
-                  <p>{voiceDemoFile ? `已选择：${voiceDemoFile.name}` : "不上传也可以直接开始实时识别。"}</p>
+                  <p>{voiceDemoFile ? `已选择：${voiceDemoFile.name}` : "未上传，可直接开始。"}</p>
                 </div>
 
                 {selfRole === "candidate" ? (
@@ -709,7 +755,7 @@ export function InterviewAssistWorkspace() {
                     <textarea
                       value={resumeText}
                       onChange={(event) => setResumeText(event.target.value)}
-                      placeholder="可直接粘贴简历文本，供回答建议参考。"
+                      placeholder="粘贴简历文本，让建议更贴近你的经历。"
                     />
                   </div>
                 ) : null}
@@ -749,34 +795,27 @@ export function InterviewAssistWorkspace() {
             </span>
           </div>
 
-          <p className="assist-opening-line">{frameworkSummary}</p>
+          {hasAnswerMarkdown ? (
+            <div className="assist-answer-markdown">
+              {coreMarkdown ? (
+                <section className="assist-core-answer markdown-content" aria-label="AI回答核心点">
+                  {renderMarkdownContent(coreMarkdown, `${currentAnswer?.turnId || "assist"}-core`)}
+                </section>
+              ) : null}
+              {detailMarkdown ? (
+                <section className="assist-detail-answer markdown-content" aria-label="AI回答展开">
+                  {renderMarkdownContent(detailMarkdown, `${currentAnswer?.turnId || "assist"}-detail`)}
+                </section>
+              ) : null}
+            </div>
+          ) : (
+            <p className="assist-opening-line">等待问题进入。</p>
+          )}
           <p className="assist-key-summary">
-            {currentAnswer?.frameworkPoints?.length
-              ? (isExpanding ? "框架已完整，正在逐点展开细节。" : "框架已就绪，可先按这 3 个点组织口头回答。")
-              : "系统先听清问题，再整理回答提纲。"}
+            {hasAnswerMarkdown
+              ? (isExpanding ? "核心回答已出，正在继续展开。" : "已经可以先按这一版开口。")
+              : "识别完成后会直接生成回答。"}
           </p>
-
-          <div className="assist-section-list">
-            {answerSections.length ? (
-              answerSections.map((section) => (
-                <article className="assist-answer-section" key={section.title}>
-                  <h3>{section.title}</h3>
-                  <p>{section.detail}</p>
-                </article>
-              ))
-            ) : (
-              <>
-                <article className="assist-answer-section">
-                  <h3>01 | 实时转写</h3>
-                  <p>浏览器持续上传音频片段，云端返回临时和完整转写。</p>
-                </article>
-                <article className="assist-answer-section">
-                  <h3>02 | 完整问题触发分析</h3>
-                  <p>一句完整问题出现后，自动触发回答提纲和细节建议。</p>
-                </article>
-              </>
-            )}
-          </div>
         </section>
 
         <aside className="assist-recognition-panel">
@@ -796,13 +835,27 @@ export function InterviewAssistWorkspace() {
 
           <div className="assist-transcript-stream">
             <span>面试官原声转写</span>
-            <strong>{transcriptPreview || "等待云端实时 ASR 返回识别内容。"}</strong>
+            <strong>{transcriptPreview || "开始识别后，这里显示实时转写。"}</strong>
+          </div>
+
+          <div className="assist-context-turns" aria-label="最近两轮识别上下文">
+            <span>最近两轮上下文</span>
+            {recentRecognitionTurns.length ? (
+              recentRecognitionTurns.map((turn, index) => (
+                <p key={turn.turnId || `${turn.questionText}-${index}`}>
+                  <strong>{index === 0 ? "上一轮" : "上上轮"}</strong>
+                  {turn.questionText || "上一轮问题暂不可见。"}
+                </p>
+              ))
+            ) : (
+              <p>最近两轮问题会显示在这里。</p>
+            )}
           </div>
 
           <div className="assist-bottom-controls" aria-label="面试辅助控制">
             <button type="button" className="assist-control-button is-listen" onClick={startListening} disabled={isUploadingVoiceDemo}>
               <span className="assist-control-icon" aria-hidden="true" />
-              {isUploadingVoiceDemo ? "上传 demo 中" : "开始实时识别"}
+              {isUploadingVoiceDemo ? "上传样本中" : "开始识别"}
             </button>
             <button type="button" className="assist-control-button" onClick={pauseListening}>
               停止识别
@@ -825,16 +878,20 @@ export function InterviewAssistWorkspace() {
             <span>录音</span>
             {recordedAudioUrl ? <audio controls src={recordedAudioUrl} /> : <strong>{recordingStatus}</strong>}
           </div>
-          <p className="assist-transport-debug">状态：{transportDebug}</p>
-          {roomDebugSnapshot ? <p className="assist-transport-debug">诊断：{roomDebugSnapshot}</p> : null}
+          {status === "error" || roomDebugSnapshot ? (
+            <>
+              <p className="assist-transport-debug">连接状态：{transportDebug}</p>
+              {roomDebugSnapshot ? <p className="assist-transport-debug">诊断：{roomDebugSnapshot}</p> : null}
+            </>
+          ) : null}
 
           <details className="assist-manual-entry" ref={manualEntryRef}>
-            <summary>手动输入问题</summary>
+            <summary>手动输入</summary>
             <div className="assist-manual-body">
               <textarea
                 value={questionText}
                 onChange={(event) => setQuestionText(event.target.value)}
-                placeholder="也可以直接粘贴面试官问题。"
+                placeholder="粘贴面试官问题"
               />
               <div className="assist-chip-row">
                 {starterQuestions.map((item) => (
@@ -855,7 +912,7 @@ export function InterviewAssistWorkspace() {
           </details>
           {isPermissionDeniedError(error) ? (
             <p className="assist-transport-debug">
-              麦克风权限当前不可用，建议先允许浏览器麦克风，或者直接展开上面的手动输入继续验证整条回答链路。
+              麦克风当前不可用，可以先允许浏览器权限，或直接改用手动输入。
             </p>
           ) : null}
         </aside>

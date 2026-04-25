@@ -32,6 +32,10 @@ function buildUserIntentLabel(turn) {
     return "切到下一题";
   }
 
+  if (turn.action === "summarize") {
+    return "请求总结";
+  }
+
   return "";
 }
 
@@ -41,6 +45,8 @@ function buildAssistantBodyParts(turn) {
 
 function buildAssistantEntry(turn, index) {
   const bodyParts = buildAssistantBodyParts(turn);
+  const isInProgressVerifyTurn =
+    turn.action === "check" && Boolean(turn.candidateCoachingStep || turn.coachingStep);
   return {
     id: createEntryId(turn, index),
     type: "message",
@@ -50,7 +56,7 @@ function buildAssistantEntry(turn, index) {
     body: bodyParts[0] || "",
     bodyParts,
     teachingParagraphs: [],
-    takeaway: "",
+    takeaway: isInProgressVerifyTurn ? "" : turn.takeaway || "",
     followUpQuestion: "",
     candidateFollowUpQuestion: turn.candidateCoachingStep || "",
     coachingStep: turn.coachingStep || "",
@@ -109,6 +115,7 @@ export function buildChatTimeline(turns = [], { limit = 24 } = {}) {
       if (sameConceptFollowUp) {
         timeline.push({
           ...buildAssistantEntry(turn, index),
+          takeaway: "",
           candidateFollowUpQuestion: "",
           coachingStep: ""
         });

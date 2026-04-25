@@ -4,253 +4,133 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, postJson } from "../lib/api";
 import {
-  getStoredTargetBaselineId,
   getStoredUserId,
-  setStoredTargetBaselineId,
   setStoredUserId,
 } from "../lib/user-session";
 
 const profileDirtyStorageKey = "learning-loop-profile-dirty-at";
 
 const promptChips = [
-  { label: "Java 面试（JavaGuide版）", query: "Java" },
-  { label: "JVM & 并发", query: "JVM" },
+  { label: "Java", query: "java" },
+  { label: "JVM", query: "jvm" },
   { label: "数据库", query: "数据库" },
 ];
 
-const defaultPrimaryTrack = {
-  title: "Java 面试（JavaGuide版）",
-  subtitle: "Java 后端工程师",
-  description: "围绕并发、数据库、JVM 等高频主题，进入后直接开始练习与复盘。",
-  targetBaselineId: "bigtech-java-backend",
-};
+function buildKnowledgeTree(documents = []) {
+  const root = [];
 
-const defaultPathCards = [
-  { key: "java-basics", title: "Java基础", subtitle: "集合、语法、网络基础" },
-  { key: "jvm-concurrency", title: "JVM&并发", subtitle: "JVM、内存、并发控制" },
-  { key: "database", title: "数据库", subtitle: "MySQL、Redis、缓存治理" },
-  { key: "spring", title: "Spring", subtitle: "事务、AOP、运行时" },
-  { key: "project", title: "项目", subtitle: "高可用、消息队列、工程取舍" },
-];
+  for (const document of documents) {
+    const relativePath = String(document.path || "").replace(/^docs\//, "");
+    const segments = relativePath.split("/");
+    const folderSegments = segments.slice(0, -1);
+    let level = root;
 
-const laneConfig = [
-  { key: "java-basics", title: "基础", subtitle: "集合、语法、网络基础", matchIds: ["network-http-tcp"] },
-  { key: "jvm-concurrency", title: "JVM", subtitle: "JVM、内存、并发控制", matchIds: ["java-concurrency", "jvm-basics"] },
-  { key: "database", title: "数据库", subtitle: "MySQL、Redis、缓存治理", matchIds: ["database-core", "redis-cache"] },
-  { key: "spring", title: "Spring", subtitle: "事务、AOP、运行时", matchIds: ["spring-runtime"] },
-  { key: "project", title: "项目", subtitle: "高可用、消息队列、工程取舍", matchIds: ["service-reliability", "messaging-async"] },
-];
+    folderSegments.forEach((segment, index) => {
+      const key = folderSegments.slice(0, index + 1).join("/");
+      let node = level.find((item) => item.type === "folder" && item.key === key);
+      if (!node) {
+        node = {
+          type: "folder",
+          key,
+          label: document.folderLabels?.[index] || segment,
+          children: [],
+        };
+        level.push(node);
+      }
+      level = node.children;
+    });
 
-function getPackSubtitle(pack) {
-  if (!pack) {
-    return "";
+    level.push({
+      type: "document",
+      key: document.path,
+      path: document.path,
+      label: document.title,
+    });
   }
-  return pack.targetRole || pack.shortTitle || "学习路线";
+
+  return root;
 }
 
-function average(values = []) {
-  if (!values.length) {
-    return 0;
-  }
-  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
-}
-
-function formatRelativeTime(value) {
-  if (!value) {
-    return "还没开始";
-  }
-  const time = new Date(value).getTime();
-  if (!Number.isFinite(time)) {
-    return "刚刚更新";
-  }
-  const diffHours = Math.max(0, Math.round((Date.now() - time) / (1000 * 60 * 60)));
-  if (diffHours < 1) {
-    return "刚刚学习";
-  }
-  if (diffHours < 24) {
-    return `${diffHours} 小时前`;
-  }
-  const diffDays = Math.round(diffHours / 24);
-  if (diffDays < 30) {
-    return `${diffDays} 天前`;
-  }
-  return `${Math.round(diffDays / 30)} 个月前`;
-}
-
-function stateText(state) {
-  if (state === "solid") {
-    return "已掌握";
-  }
-  if (state === "partial") {
-    return "不稳定";
-  }
-  if (state === "weak") {
-    return "未掌握";
-  }
-  return "未开始";
-}
-
-function pickMostActionableItem(items = []) {
-  const ordered = [...items].sort((left, right) => {
-    if ((left.progressPercentage || 0) !== (right.progressPercentage || 0)) {
-      return (left.progressPercentage || 0) - (right.progressPercentage || 0);
+function countDocuments(nodes = []) {
+  return nodes.reduce((count, node) => {
+    if (node.type === "document") {
+      return count + 1;
     }
-    return (right.evidenceCount || 0) - (left.evidenceCount || 0);
-  });
-  return ordered[0] || null;
+    return count + countDocuments(node.children || []);
+  }, 0);
 }
 
-function getLearningHref(targetBaselineId = "", item = null, domain = null) {
+function filterKnowledgeTree(nodes = [], query = "") {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return nodes;
+  }
+
+  return nodes
+    .map((node) => {
+      if (node.type === "document") {
+        const haystack = `${node.label} ${node.path}`.toLowerCase();
+        return haystack.includes(normalizedQuery) ? node : null;
+      }
+
+      const folderMatches = `${node.label} ${node.key}`.toLowerCase().includes(normalizedQuery);
+      const filteredChildren = filterKnowledgeTree(node.children || [], normalizedQuery);
+      if (!folderMatches && !filteredChildren.length) {
+        return null;
+      }
+      return {
+        ...node,
+        children: folderMatches ? node.children : filteredChildren,
+      };
+    })
+    .filter(Boolean);
+}
+
+function documentHref(docPath = "") {
   const params = new URLSearchParams();
-  if (targetBaselineId) {
-    params.set("target", targetBaselineId);
-  }
-  const docPath = domain?.currentDocPath || item?.primaryDocPath || "";
-  if (docPath) {
-    params.set("doc", docPath);
-  }
-  const conceptId = domain?.currentAbilityItemId || item?.abilityItemId || "";
-  if (conceptId) {
-    params.set("concept", conceptId);
-  }
-  params.set("autostart", "1");
+  params.set("doc", docPath);
   return `/learn?${params.toString()}`;
 }
 
-function buildPathCards(target) {
-  if (!target) {
-    return defaultPathCards.map((lane, index) => ({
-      ...lane,
-      progress: 0,
-      href: "#login-panel",
-      unlocked: index === 0,
-      latestTitle: "",
-      recommendedTitle: "",
-      statusItems: [],
-      isCurrent: index === 0,
-    }));
-  }
+function KnowledgeTreeNodes({ nodes, depth = 0 }) {
+  return (
+    <div className={depth === 0 ? "knowledge-tree-list" : "knowledge-tree-list nested"}>
+      {nodes.map((node) => {
+        if (node.type === "document") {
+          return (
+            <Link
+              key={node.key}
+              className="chapter-row knowledge-doc-row"
+              href={documentHref(node.path)}
+            >
+              <span className="status-bullet" />
+              <span className="chapter-row-title">{node.label}</span>
+              <span className="chapter-row-tag">文档</span>
+            </Link>
+          );
+        }
 
-  const cards = laneConfig.map((lane) => {
-    const matchedDomains = lane.matchIds
-      .map((domainId) => (target.readingDomains || []).find((domain) => domain.id === domainId))
-      .filter(Boolean)
-      .map((domain) => ({
-        ...domain,
-        isCurrent: domain.id === target.currentDomainId,
-      }));
-
-    const laneDocs = matchedDomains.flatMap((domain) =>
-      (domain.docs || []).map((doc) => ({
-        ...doc,
-        domainId: domain.id,
-        domainTitle: domain.title,
-      }))
-    );
-    const currentDomain = matchedDomains.find((domain) => domain.id === target.currentDomainId) || matchedDomains[0] || null;
-    const currentDoc =
-      currentDomain?.previewDocs?.[0] ||
-      laneDocs.find((doc) => !doc.started) ||
-      laneDocs[0] ||
-      null;
-    const previewItems = (currentDomain?.previewDocs || laneDocs.slice(0, 3)).map((doc) => ({
-      title: doc.title,
-      label: doc.started ? "已开始" : "",
-      rawState: doc.started ? "partial" : "",
-    }));
-    const latestItem =
-      currentDoc ||
-      laneDocs.find((doc) => doc.started) ||
-      null;
-    const hasUnstarted = laneDocs.some((doc) => !doc.started);
-    const fallbackLatestDocTitle = target.currentDocTitle || "";
-
-    return {
-      key: lane.key,
-      title: lane.title,
-      subtitle: lane.subtitle,
-      progress: average(matchedDomains.map((domain) => domain.progressPercentage || 0)),
-      href: getLearningHref(target.targetBaselineId, {
-        primaryDocPath: currentDoc?.path || "",
-        primaryDocTitle: currentDoc?.title || "",
-      }, currentDomain),
-      unlocked: true,
-      latestTitle: latestItem?.title || "",
-      latestDocTitle:
-        currentDomain?.currentDocTitle ||
-        (target.currentDomainId && matchedDomains.some((domain) => domain.id === target.currentDomainId) ? fallbackLatestDocTitle : "") ||
-        currentDoc?.title ||
-        "",
-      recommendedTitle: currentDoc?.title || "",
-      updatedLabel: formatRelativeTime(target.readingProgress?.lastUpdatedAt || ""),
-      statusItems: previewItems,
-      containsCurrentDomain: matchedDomains.some((domain) => domain.id === target.currentDomainId),
-      hasUnstarted,
-    };
-  });
-
-  const activeKey =
-    cards.find((card) => card.containsCurrentDomain)?.key ||
-    cards.find((card) => card.hasUnstarted)?.key ||
-    cards[0]?.key ||
-    "";
-
-  return cards.map(({ containsCurrentDomain, hasUnstarted, ...card }) => ({
-    ...card,
-    isCurrent: card.key === activeKey,
-  }));
-}
-
-function buildNextStep(target) {
-  if (!target) {
-    return {
-      title: "先连接档案，系统会给出下一步建议",
-      reason: "原因：先建立学习档案，再让系统判断你最值得开始的节点。",
-      lastSignal: "你上次卡在：还没有历史学习记录",
-      href: "#login-panel",
-      cta: "开始使用",
-      laneKey: "java-basics",
-    };
-  }
-
-  const allDocs = (target.readingDomains || []).flatMap((domain) =>
-    (domain.docs || []).map((item) => ({
-      ...item,
-      domainId: domain.id,
-      domainTitle: domain.title,
-    }))
+        const documentCount = countDocuments(node.children || []);
+        return (
+          <details key={node.key} className="knowledge-folder" open={depth === 0}>
+            <summary>
+              <span>{node.label}</span>
+              <span>{documentCount} 篇</span>
+            </summary>
+            <KnowledgeTreeNodes nodes={node.children || []} depth={depth + 1} />
+          </details>
+        );
+      })}
+    </div>
   );
-  const nextItem =
-    allDocs.find((item) => item.path === target.currentDocPath) ||
-    allDocs.find((item) => !item.started) ||
-    allDocs[0];
-  const lane = laneConfig.find((entry) => entry.matchIds.includes(nextItem?.domainId || "")) || laneConfig[0];
-
-  return {
-    title: nextItem ? nextItem.title : `${target.title} · 继续推进`,
-    reason: nextItem
-      ? "原因：继续沿着你上次阅读的位置推进，打断最少。"
-      : "原因：继续沿着当前目标推进，比重新选方向更高效",
-    lastSignal: target.currentDocTitle
-      ? `你上次读到：${target.currentDocTitle}`
-      : nextItem
-        ? `你上次读到：${nextItem.title}`
-        : "你上次卡在：还没有历史学习记录",
-    href: getLearningHref(target.targetBaselineId, {
-      primaryDocPath: nextItem?.path || "",
-      primaryDocTitle: nextItem?.title || "",
-    }, (target.readingDomains || []).find((domain) => domain.id === nextItem?.domainId) || null),
-    cta: "开始学习",
-    laneKey: lane.key,
-    weakness: nextItem?.domainTitle || "当前推荐模块",
-  };
 }
 
 export function HomePage() {
   const [handle, setHandle] = useState("");
   const [pin, setPin] = useState("");
   const [search, setSearch] = useState("");
-  const [baselines, setBaselines] = useState([]);
+  const [expandedSectionKeys, setExpandedSectionKeys] = useState([]);
+  const [knowledgeDocuments, setKnowledgeDocuments] = useState([]);
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -271,13 +151,8 @@ export function HomePage() {
   }
 
   useEffect(() => {
-    apiFetch("/api/baselines")
-      .then((data) => {
-        setBaselines(data.baselines || []);
-        if (!getStoredTargetBaselineId() && data.baselines?.[0]?.id) {
-          setStoredTargetBaselineId(data.baselines[0].id);
-        }
-      })
+    apiFetch("/api/knowledge/docs")
+      .then((data) => setKnowledgeDocuments(data.documents || []))
       .catch((nextError) => setError(nextError.message));
   }, []);
 
@@ -335,31 +210,34 @@ export function HomePage() {
     };
   }, []);
 
-  const primaryPack = baselines[0] || null;
-  const activeTarget = profile?.targets?.[0] || null;
-  const pathCards = useMemo(() => buildPathCards(activeTarget), [activeTarget]);
-  const visiblePathCards = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
-    if (!normalizedSearch) {
-      return pathCards;
-    }
-    return pathCards.filter((card) =>
-      `${card.title} ${card.subtitle} ${card.recommendedTitle} ${card.latestTitle}`.toLowerCase().includes(normalizedSearch)
-    );
-  }, [pathCards, search]);
-  const nextStep = useMemo(() => buildNextStep(activeTarget), [activeTarget]);
-  const currentProgress = activeTarget?.completionPercentage || 0;
-  const heroTrack = primaryPack
-    ? {
-        ...defaultPrimaryTrack,
-        subtitle: getPackSubtitle(primaryPack),
-        description: primaryPack.packSummary || defaultPrimaryTrack.description,
-        targetBaselineId: primaryPack.id,
+  const knowledgeTree = useMemo(() => buildKnowledgeTree(knowledgeDocuments), [knowledgeDocuments]);
+  const visibleSections = useMemo(() => filterKnowledgeTree(knowledgeTree, search), [knowledgeTree, search]);
+  const totalDocumentCount = knowledgeDocuments.length;
+  const matchingDocumentCount = countDocuments(visibleSections);
+
+  useEffect(() => {
+    const availableKeys = new Set(visibleSections.filter((section) => section.type === "folder").map((section) => section.key));
+    const nextExpanded = expandedSectionKeys.filter((key) => availableKeys.has(key));
+    if (nextExpanded.length) {
+      if (nextExpanded.length !== expandedSectionKeys.length) {
+        setExpandedSectionKeys(nextExpanded);
       }
-    : defaultPrimaryTrack;
-  const aiSignal = activeTarget
-    ? `你当前最大短板：${nextStep.weakness}`
-    : "先进入一轮学习，系统会自动判断你当前最大的短板。";
+      return;
+    }
+
+    const firstFolder = visibleSections.find((section) => section.type === "folder");
+    if (firstFolder) {
+      setExpandedSectionKeys([firstFolder.key]);
+    }
+  }, [expandedSectionKeys, visibleSections]);
+
+  function toggleSection(sectionKey) {
+    setExpandedSectionKeys((currentKeys) => (
+      currentKeys.includes(sectionKey)
+        ? currentKeys.filter((key) => key !== sectionKey)
+        : [...currentKeys, sectionKey]
+    ));
+  }
 
   async function onLogin(event) {
     event.preventDefault();
@@ -376,14 +254,6 @@ export function HomePage() {
     } finally {
       setIsSubmitting(false);
     }
-  }
-
-  function withStoredTarget(href) {
-    const baselineId = activeTarget?.targetBaselineId || primaryPack?.id;
-    if (baselineId) {
-      setStoredTargetBaselineId(baselineId);
-    }
-    return href;
   }
 
   return (
@@ -418,36 +288,35 @@ export function HomePage() {
         ) : (
           <div className="topbar-actions">
             <Link className="secondary-pill" href="/interview-assist">真实面试辅助</Link>
-            <a className="primary-pill" href="#login-panel">开始使用</a>
+            <a className="primary-pill" href="#login-panel">登录</a>
           </div>
         )}
       </section>
 
       <section className="home-hero">
-        <p className="section-kicker">面向开发者的主动学习路径</p>
-        <h1>今天想学习什么？</h1>
-        <p className="hero-ai-signal">{aiSignal}</p>
-        <label className="search-shell" aria-label="搜索学习路线、知识点或面经">
+        <p className="section-kicker">JavaGuide 静态文档库</p>
+        <h1>选择一篇文档开始阅读</h1>
+        <label className="search-shell" aria-label="搜索目录或文档">
           <span className="search-icon">⌕</span>
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="搜索学习路线、知识点或面经"
+            placeholder="搜索目录或文档"
           />
         </label>
-        <p className="search-feedback" aria-live="polite">
-          {search.trim()
-            ? (visiblePathCards.length
-                ? `正在按“${search.trim()}”筛选下方模块，找到 ${visiblePathCards.length} 个匹配。`
-                : `没有找到“${search.trim()}”相关模块，可以换个关键词。`)
-            : "输入关键词会筛选下方模块，也可以直接选择一个主题。"}
-        </p>
+        {search.trim() ? (
+          <p className="search-feedback" aria-live="polite">
+            {matchingDocumentCount
+              ? `正在按“${search.trim()}”筛选文档，找到 ${matchingDocumentCount} 个匹配。`
+              : `没有找到“${search.trim()}”相关文档，可以换个关键词。`}
+          </p>
+        ) : null}
         <div className="prompt-chip-row">
           {promptChips.map((chip) => (
             <button
               key={chip.label}
               type="button"
-              className={chip.query === "Java" ? "topic-chip topic-chip-dark" : "topic-chip"}
+              className={chip.query === "java" ? "topic-chip topic-chip-dark" : "topic-chip"}
               onClick={() => setSearch(chip.query)}
             >
               {chip.label}
@@ -461,8 +330,8 @@ export function HomePage() {
           <form className="auth-form-inline" onSubmit={onLogin}>
             <div className="auth-copy">
               <div>
-                <strong>先连接你的学习档案</strong>
-                <p>输入昵称和 PIN，后续进度、记忆和目标会持续沉淀。</p>
+                <strong>登录后同步学习进度</strong>
+                <p>目录浏览不需要登录，登录后阅读页会记录你的进度。</p>
               </div>
             </div>
             <div className="auth-fields-inline">
@@ -476,83 +345,89 @@ export function HomePage() {
 
       {error ? <section className="feedback-banner error-banner">{error}</section> : null}
 
-      <section className="learning-overview">
-        <section className="next-step-panel featured-next-step">
-          <div className="next-step-copy">
-            <span className="next-step-kicker">继续学习（推荐）</span>
-            <h3>{nextStep.title}</h3>
-            <p>{nextStep.reason}</p>
-            <p className="next-step-feedback">{nextStep.lastSignal}</p>
+      <section className="learning-browser-card">
+        <div className="learning-browser-head">
+          <div className="learning-browser-copy">
+            <span className="learning-header-kicker">目录浏览</span>
+            <h2>JavaGuide 全量目录</h2>
           </div>
-          <Link
-            className="primary-pill next-step-primary"
-            href={profile ? nextStep.href : "#login-panel"}
-            onClick={() => withStoredTarget(nextStep.href)}
-          >
-            {profile ? nextStep.cta : "开始使用"}
-          </Link>
-        </section>
-
-        <article className="learning-header-card">
-          <div className="learning-header-copy">
-            <span className="learning-header-kicker">Java 面试 · JavaGuide</span>
-            <h2>{activeTarget?.title || heroTrack.title}</h2>
-            <p>{activeTarget ? "从推荐入口继续学习，模块卡片用于切换专题。" : heroTrack.description}</p>
+          <div className="progress-summary">
+            <strong>{totalDocumentCount}</strong>
+            <span>篇静态文档</span>
           </div>
-          <div className="learning-header-side">
-            <div className="progress-summary">
-              <strong>{currentProgress}%</strong>
-              <span>{activeTarget?.completionLabel || "准备开始"}</span>
-            </div>
-          </div>
-          <div className="progress-bar-shell">
-            <span className="progress-bar-fill" style={{ width: `${currentProgress}%` }} />
-          </div>
-        </article>
-
-        <div className="path-steps">
-          {laneConfig.map((lane, index) => {
-            const relatedCard = pathCards.find((card) => card.key === lane.key);
-            return (
-              <div key={lane.key} className={`path-step${relatedCard?.isCurrent ? " active" : ""}${relatedCard?.unlocked ? "" : " locked"}`}>
-                <span>{lane.title}</span>
-                {index < laneConfig.length - 1 ? <span className="path-step-arrow">→</span> : null}
-              </div>
-            );
-          })}
         </div>
 
-        <section className="learning-path-grid">
-          {visiblePathCards.map((card) => (
-            <Link
-              key={card.key}
-              className={`path-card${card.isCurrent ? " active" : ""}${card.unlocked ? "" : " locked"}`}
-              href={profile ? card.href : "#login-panel"}
-              onClick={() => withStoredTarget(card.href)}
-            >
-              <div className="path-card-top">
-                <h3>{card.title}</h3>
-                <span className="path-card-progress">{card.progress}%</span>
-              </div>
-              <div className="path-card-status-list">
-                {(card.statusItems || []).slice(0, 3).map((item) => (
-                  <div className="path-card-status" key={`${card.key}-${item.title}`}>
-                    <span className={`status-bullet${item.rawState === "solid" ? " solid" : item.rawState === "partial" ? " partial" : item.rawState === "weak" ? " weak" : ""}`} />
-                    <span className="path-card-status-title">{item.title}</span>
-                    {item.label ? <span className="path-card-status-label">{item.label}</span> : null}
-                  </div>
-                ))}
-              </div>
-              <div className="path-card-meta">
-                <span>上次读到：{card.latestDocTitle || card.latestTitle || "还没开始"}</span>
-              </div>
-              <div className="path-card-hover">
-                <span>{card.recommendedTitle || "点击后直接进入对话学习"}</span>
-                <span>{card.updatedLabel}</span>
-              </div>
-            </Link>
+        <div className="learning-browser-tabs" aria-label="JavaGuide 顶层目录">
+          {visibleSections.map((section) => (
+            section.type === "folder" ? (
+              <button
+                key={section.key}
+                type="button"
+                className={expandedSectionKeys.includes(section.key) ? "learning-browser-tab active" : "learning-browser-tab"}
+                onClick={() => toggleSection(section.key)}
+              >
+                <span>{section.label}</span>
+                <strong>{countDocuments(section.children || [])}</strong>
+              </button>
+            ) : null
           ))}
-        </section>
+        </div>
+
+        {visibleSections.length ? (
+          <div className="learning-browser-directory-list">
+            {visibleSections.map((section) => {
+              if (section.type === "document") {
+                return (
+                  <Link
+                    key={section.key}
+                    className="chapter-row knowledge-doc-row"
+                    href={documentHref(section.path)}
+                  >
+                    <span className="status-bullet" />
+                    <span className="chapter-row-title">{section.label}</span>
+                    <span className="chapter-row-tag">文档</span>
+                  </Link>
+                );
+              }
+
+              const isExpanded = expandedSectionKeys.includes(section.key);
+              const sectionDocumentCount = countDocuments(section.children || []);
+              return (
+                <section
+                  key={section.key}
+                  className={isExpanded ? "directory-card expanded" : "directory-card"}
+                >
+                  <button
+                    type="button"
+                    className="directory-card-toggle"
+                    onClick={() => toggleSection(section.key)}
+                    aria-expanded={isExpanded}
+                  >
+                    <div className="directory-card-copy">
+                      <span className="chapter-panel-kicker">{sectionDocumentCount} 篇文档</span>
+                      <h3>{section.label}</h3>
+                      <p>{section.key}</p>
+                    </div>
+                    <div className="directory-card-meta">
+                      <span className="directory-card-progress">{sectionDocumentCount}</span>
+                      <span className="directory-card-arrow">{isExpanded ? "收起" : "展开"}</span>
+                    </div>
+                  </button>
+
+                  {isExpanded ? (
+                    <div className="learning-browser-body">
+                      <KnowledgeTreeNodes nodes={section.children || []} />
+                    </div>
+                  ) : null}
+                </section>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="chapter-empty">
+            <p>当前搜索还没有匹配到文档，换个关键词试试。</p>
+          </div>
+        )}
       </section>
     </main>
   );

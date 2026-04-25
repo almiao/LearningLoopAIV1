@@ -133,9 +133,25 @@ async function handleStartTarget(body) {
   user.lastActiveAt = now;
   await userProfileStore.save(user);
 
+  const activeDocument = body.docPath
+    ? await readJavaGuideDocument(body.docPath)
+    : null;
+  const source = activeDocument
+    ? {
+        kind: "knowledge-document",
+        title: activeDocument.title,
+        content: activeDocument.markdown,
+        metadata: {
+          baselinePackId: baselinePack.id,
+          targetRole: baselinePack.targetRole,
+          docPath: activeDocument.path,
+        },
+      }
+    : createBaselinePackSource(baselinePack);
+
   const aiPayload = {
     userId: user.id,
-    source: createBaselinePackSource(baselinePack),
+    source,
     decomposition: createBaselinePackDecomposition(baselinePack),
     targetBaseline: {
       id: baselinePack.id,

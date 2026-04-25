@@ -49,6 +49,19 @@ function splitTextBlocks(value) {
     .filter(Boolean);
 }
 
+function renderQuestionPhase(meta) {
+  switch (meta?.phase) {
+    case "teach-back":
+      return "讲解后复述";
+    case "follow-up":
+      return "追问";
+    case "revisit":
+      return "回访";
+    default:
+      return "首问";
+  }
+}
+
 export function AppShell() {
   const [handle, setHandle] = useState("");
   const [pin, setPin] = useState("");
@@ -68,6 +81,9 @@ export function AppShell() {
   const visibleMemoryEvents = (visibleView.latestMemoryEvents?.length
     ? visibleView.latestMemoryEvents
     : deferredSession?.memoryEvents || []).slice(-4);
+  const questionProgress = session?.currentQuestionMeta?.progress || null;
+  const sessionTakeaway = session?.latestFeedback?.takeaway || "";
+  const sessionClosed = Boolean(session) && !session?.currentProbe;
 
   useEffect(() => {
     (async () => {
@@ -438,6 +454,14 @@ export function AppShell() {
                   <button
                     type="button"
                     className="secondary"
+                    disabled={isAnswering || !session}
+                    onClick={() => submitAnswer({ answer: "总结一下", intent: "summarize" })}
+                  >
+                    面试总结
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
                     disabled={isAnswering}
                     onClick={() => submitAnswer({ answer: "下一题", intent: "advance" })}
                   >
@@ -458,10 +482,22 @@ export function AppShell() {
               <div className="card">
                 <div className="tag">待你回答</div>
                 <p>{session.currentProbe || "当前没有待回答问题。"}</p>
+                {questionProgress ? (
+                  <p className="muted">
+                    当前轮次：第 {questionProgress.currentRound} / {questionProgress.maxRounds} 轮 · {renderQuestionPhase(session.currentQuestionMeta)}
+                  </p>
+                ) : null}
                 {session.latestFeedback?.turnResolution ? (
                   <p className="muted">流程决策：{renderResolution(session.latestFeedback.turnResolution)}</p>
                 ) : null}
               </div>
+              {sessionClosed && sessionTakeaway ? (
+                <div className="card" style={{ marginTop: 12 }}>
+                  <div className="tag">本题已收口</div>
+                  <p><strong>带走一句：</strong>{sessionTakeaway}</p>
+                  <p className="muted">{session.latestFeedback?.explanation || "这一轮已经整理成可复述版本。"}</p>
+                </div>
+              ) : null}
               <div className="card" style={{ marginTop: 12 }}>
                 <div className="tag">目标匹配度</div>
                 <h3>{session.targetMatch?.percentage || 0}%</h3>
@@ -486,6 +522,7 @@ export function AppShell() {
                 <div className="card">
                   <div className="tag">本轮反馈</div>
                   <p>{session.latestFeedback.explanation}</p>
+                  {session.latestFeedback.takeaway ? <p className="muted"><strong>带走一句：</strong>{session.latestFeedback.takeaway}</p> : null}
                   {session.latestFeedback.coachingStep ? <p className="muted">下一步：{session.latestFeedback.coachingStep}</p> : null}
                 </div>
               ) : null}

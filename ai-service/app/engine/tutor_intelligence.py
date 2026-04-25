@@ -453,8 +453,7 @@ def normalize_turn_envelope_payload(payload: Dict[str, Any], concept: Dict[str, 
     ui_mode = next_move.get("ui_mode") if next_move.get("ui_mode") in {"probe", "teach", "verify", "advance", "revisit", "stop"} else "probe"
     if ui_mode in {"probe", "teach", "verify"} and not follow_up_question:
         follow_up_question = ensure_string(
-            concept.get("checkQuestion") or concept.get("retryQuestion") or concept.get("diagnosticQuestion"),
-            f"你先用自己的话讲一下：{concept.get('title', '这个点')} 的关键机制是什么？",
+            concept.get("checkQuestion") or concept.get("retryQuestion") or concept.get("diagnosticQuestion")
         )
     return {
         "runtime_map": {
@@ -924,6 +923,8 @@ class ProviderTutorIntelligence:
                 "- Each unit must support a concrete first diagnostic question.",
                 "- Each unit should include a check question for teach-back after explanation.",
                 "- Prefer mechanisms, distinctions, failure modes, and misconceptions over broad topic labels.",
+                "- Do not generate broad prompts like “what is the core mechanism and why is it important”. Ask one concrete, answerable question tied to a specific passage.",
+                "- Keep unit titles as internal anchors. The learner-facing question should stand on its own without exposing the anchor label.",
                 "- Assign importance as core/secondary/optional and coverage as high/medium/low.",
                 "",
                 format_source_for_prompt(source),
@@ -1029,10 +1030,13 @@ class ProviderTutorIntelligence:
         )
         reply = envelope.get("reply") or {}
         teaching_paragraphs = reply.get("teaching_paragraphs") or []
+        check_question = reply.get("next_prompt") or concept.get("checkQuestion")
+        if not check_question:
+            raise ValueError("AI tutor explanation must include a generated check question.")
         payload = {
             "visibleReply": reply.get("visible_reply") or concept.get("summary", ""),
             "teachingParagraphs": teaching_paragraphs[:4],
-            "checkQuestion": reply.get("next_prompt") or f"现在别背定义，用你自己的话重新讲一遍：{concept.get('title', '这个点')} 最关键的机制是什么？",
+            "checkQuestion": check_question,
             "takeaway": reply.get("takeaway") or "",
         }
         validate_explain_concept_payload(payload)
@@ -1092,7 +1096,11 @@ class HeuristicTutorIntelligence:
             ui_mode = "teach"
             state = "weak"
             confidence_level = "medium"
-            follow_up_question = f"现在别背定义，用你自己的话重新讲一遍：{title} 最关键的机制是什么？"
+            follow_up_question = (
+                concept.get("retryQuestion")
+                or concept.get("diagnosticQuestion")
+                or f"围绕“{title}”回答一个具体点：材料里它的关键链路是怎么走的？"
+            )
             reason = "用户显式要求讲解或当前更适合先补关键机制。"
         elif any(token in lowered for token in ("下一题", "下一个", "跳过")):
             ui_mode = "advance"
@@ -1116,7 +1124,11 @@ class HeuristicTutorIntelligence:
             ui_mode = "probe"
             state = "weak"
             confidence_level = "low"
-            follow_up_question = f"不要背定义，直接用你自己的话解释：“{title}”最核心的机制是什么，它为什么重要？"
+            follow_up_question = (
+                concept.get("retryQuestion")
+                or concept.get("diagnosticQuestion")
+                or f"围绕“{title}”回答一个具体点：材料里它的关键链路是怎么走的？"
+            )
             reason = "当前回答还没有形成稳定机制链路。"
 
         if ui_mode in {"probe", "teach", "verify"} and not follow_up_question:
@@ -1207,10 +1219,18 @@ class HeuristicTutorIntelligence:
         return normalize_explain_concept_payload(payload, concept)
 
 
-def create_tutor_intelligence() -> ProviderTutorIntelligence | None:
+def _allow_heuristic_fallback() -> bool:
+    return (
+        str(os.environ.get("LLAI_ALLOW_HEURISTIC_FALLBACK", "")).lower() in {"1", "true", "yes", "on"}
+        or str(os.environ.get("NODE_ENV", "")).lower() == "test"
+        or bool(os.environ.get("PYTEST_CURRENT_TEST"))
+    )
+
+
+def create_tutor_intelligence() -> ProviderTutorIntelligence | HeuristicTutorIntelligence | None:
     enabled = str(os.environ.get("LLAI_LLM_ENABLED", "true")).lower()
     if enabled in {"0", "false", "no", "off"}:
-        return HeuristicTutorIntelligence()
+        return HeuristicTutorIntelligence() if _allow_heuristic_fallback() else None
     provider = str(os.environ.get("LLAI_LLM_PROVIDER", "OPENAI")).upper()
     if provider == "DEEPSEEK":
         intelligence = ProviderTutorIntelligence(
@@ -1219,13 +1239,13 @@ def create_tutor_intelligence() -> ProviderTutorIntelligence | None:
             api_key=os.environ.get("LLAI_DEEPSEEK_API_KEY", ""),
             base_url=os.environ.get("LLAI_DEEPSEEK_BASE_URL", DEFAULT_DEEPSEEK_BASE_URL),
         )
-        return intelligence if intelligence.configured else HeuristicTutorIntelligence()
+        return intelligence if intelligence.configured else (HeuristicTutorIntelligence() if _allow_heuristic_fallback() else None)
     intelligence = ProviderTutorIntelligence(
         provider="OPENAI",
         model=os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
         api_key=os.environ.get("OPENAI_API_KEY", ""),
     )
-    return intelligence if intelligence.configured else HeuristicTutorIntelligence()
+    return intelligence if intelligence.configured else (HeuristicTutorIntelligence() if _allow_heuristic_fallback() else None)
 
 
 def describe_tutor_intelligence() -> Dict[str, Any]:
@@ -1237,7 +1257,7 @@ def describe_tutor_intelligence() -> Dict[str, Any]:
             "provider": str(os.environ.get("LLAI_LLM_PROVIDER", "OPENAI")).upper(),
             "configured": False,
             "model": "",
-            "reason": "LLAI_LLM_ENABLED=false",
+            "reason": "AI tutor provider is not configured; heuristic fallback is disabled.",
         }
     info = intelligence.describe()
     return {

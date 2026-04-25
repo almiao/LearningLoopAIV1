@@ -4,7 +4,8 @@ from typing import Optional
 
 ADVANCE_INTENTS = {"下一题", "跳过", "skip", "next"}
 TEACH_INTENTS = {"讲一下", "先讲一下", "直接讲", "给答案", "解释一下"}
-ALLOWED_CONTROL_INTENTS = {"advance", "teach"}
+SUMMARIZE_INTENTS = {"总结一下", "总结", "收尾一下", "面试总结", "给个总结", "wrap up"}
+ALLOWED_CONTROL_INTENTS = {"advance", "teach", "summarize"}
 
 
 def normalize_whitespace(value: str = "") -> str:
@@ -28,4 +29,6 @@ def detect_control_intent(answer: str = "", explicit_intent: str = "") -> Option
         return "advance"
     if normalized in {item.lower() for item in TEACH_INTENTS}:
         return "teach"
+    if normalized in {item.lower() for item in SUMMARIZE_INTENTS}:
+        return "summarize"
     return None

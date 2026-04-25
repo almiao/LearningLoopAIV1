@@ -5,6 +5,7 @@ import { detectControlIntent } from "../../../src/tutor/control-intents.js";
 test("detectControlIntent recognizes lightweight control phrases", () => {
   assert.equal(detectControlIntent("下一题"), "advance");
   assert.equal(detectControlIntent("讲一下"), "teach");
-  assert.equal(detectControlIntent("总结一下"), null);
+  assert.equal(detectControlIntent("总结一下"), "summarize");
+  assert.equal(detectControlIntent("面试总结"), "summarize");
   assert.equal(detectControlIntent("正常回答内容"), null);
 });

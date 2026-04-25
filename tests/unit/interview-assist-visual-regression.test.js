@@ -11,8 +11,9 @@ test("interview assist realtime panel only presents ASR transcript content", asy
 
   assert.match(workspaceSource, /assist-live-workspace/);
   assert.match(workspaceSource, /面试官原声转写/);
-  assert.match(workspaceSource, /等待云端实时 ASR 返回识别内容/);
-  assert.doesNotMatch(workspaceSource, /我：\{frameworkSummary\}/);
+  assert.match(workspaceSource, /最近两轮上下文/);
+  assert.match(workspaceSource, /开始识别后，这里显示实时转写/);
+  assert.doesNotMatch(workspaceSource, /我：\{.*Summary\}/);
 });
 
 test("interview assist keeps realtime recognition visible on single-screen layouts", async () => {

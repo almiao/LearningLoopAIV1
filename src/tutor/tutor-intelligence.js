@@ -1321,6 +1321,8 @@ export function createOpenAITutorIntelligence({
         "- Each unit must support a concrete first diagnostic question.",
         "- Each unit should include a check question for teach-back after explanation.",
         "- Prefer mechanisms, distinctions, failure modes, and misconceptions over broad topic labels.",
+        "- Do not generate broad prompts like “what is the core mechanism and why is it important”. Ask one concrete, answerable question tied to a specific passage.",
+        "- Keep unit titles as internal anchors. The learner-facing question should stand on its own without exposing the anchor label.",
         "- Assign importance as core/secondary/optional and coverage as high/medium/low.",
         "",
         formatSourceForPrompt(source)
@@ -1517,6 +1519,8 @@ export function createDeepSeekTutorIntelligence({
         "- Each unit must support a concrete first diagnostic question.",
         "- Each unit should include a check question for teach-back after explanation.",
         "- Prefer mechanisms, distinctions, failure modes, and misconceptions over broad topic labels.",
+        "- Do not generate broad prompts like “what is the core mechanism and why is it important”. Ask one concrete, answerable question tied to a specific passage.",
+        "- Keep unit titles as internal anchors. The learner-facing question should stand on its own without exposing the anchor label.",
         "- Assign importance as core/secondary/optional and coverage as high/medium/low.",
         "",
         formatSourceForPrompt(source)

@@ -35,4 +35,7 @@ test("frontend interview assist page targets the independent agent base URL and 
   assert.match(workspaceSource, /useState\("interviewer"\)/);
   assert.match(workspaceSource, /useState\("assist_candidate"\)/);
   assert.match(workspaceSource, /assist-settings-panel/);
+  assert.match(workspaceSource, /renderMarkdownContent/);
+  assert.match(workspaceSource, /coreMarkdown/);
+  assert.doesNotMatch(workspaceSource, /dangerouslySetInnerHTML/);
 });

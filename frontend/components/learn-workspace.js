@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, postEventStream, postJson } from "../lib/api";
+import { readHeading, renderMarkdownContent, slugifyHeading } from "../lib/render-markdown-content";
 import {
   getStoredTargetBaselineId,
   getStoredUserId,
@@ -22,295 +23,17 @@ function splitTextBlocks(value) {
     .filter(Boolean);
 }
 
-function slugifyHeading(text) {
-  const slug = String(text || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[`*_~[\]()]/g, "")
-    .replace(/[^\p{L}\p{N}]+/gu, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug || "section";
-}
-
-function parseMarkdownTarget(rawTarget = "") {
-  const trimmed = String(rawTarget || "").trim();
-  if (!trimmed) {
-    return "";
+function renderQuestionPhase(meta) {
+  switch (meta?.phase) {
+    case "teach-back":
+      return "讲解后复述";
+    case "follow-up":
+      return "追问";
+    case "revisit":
+      return "回访";
+    default:
+      return "首问";
   }
-  if (trimmed.startsWith("<") && trimmed.endsWith(">")) {
-    return trimmed.slice(1, -1).trim();
-  }
-  const match = trimmed.match(/^(\S+)/);
-  return match ? match[1] : trimmed;
-}
-
-function renderInlineMarkdown(text, keyPrefix) {
-  return String(text || "")
-    .split(/(!\[[^\]]*]\([^)]+\)|\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*)/g)
-    .filter(Boolean)
-    .map((part, index) => {
-      if (part.startsWith("![") && part.includes("](") && part.endsWith(")")) {
-        const imageMatch = part.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
-        if (!imageMatch) {
-          return <span key={`${keyPrefix}-text-${index}`}>{part}</span>;
-        }
-        return (
-          <img
-            key={`${keyPrefix}-image-${index}`}
-            alt={imageMatch[1]}
-            className="markdown-image"
-            loading="lazy"
-            src={parseMarkdownTarget(imageMatch[2])}
-          />
-        );
-      }
-      if (part.startsWith("[") && part.includes("](") && part.endsWith(")")) {
-        const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-        if (!linkMatch) {
-          return <span key={`${keyPrefix}-text-${index}`}>{part}</span>;
-        }
-        const href = parseMarkdownTarget(linkMatch[2]);
-        const isInternal = href.startsWith("/") || href.startsWith("#");
-        return (
-          <a
-            key={`${keyPrefix}-link-${index}`}
-            href={href}
-            rel={isInternal ? undefined : "noreferrer"}
-            target={isInternal ? undefined : "_blank"}
-          >
-            {linkMatch[1]}
-          </a>
-        );
-      }
-      if (part.startsWith("**") && part.endsWith("**")) {
-        return <strong key={`${keyPrefix}-strong-${index}`}>{part.slice(2, -2)}</strong>;
-      }
-      if (part.startsWith("`") && part.endsWith("`")) {
-        return <code key={`${keyPrefix}-code-${index}`}>{part.slice(1, -1)}</code>;
-      }
-      return <span key={`${keyPrefix}-text-${index}`}>{part}</span>;
-    });
-}
-
-function readHeading(line) {
-  const match = String(line || "").trim().match(/^(#{1,6})\s+(.*)$/);
-  if (!match) {
-    return null;
-  }
-  return {
-    level: Math.min(match[1].length, 4),
-    text: match[2].trim(),
-  };
-}
-
-function readOrderedItem(line) {
-  const match = String(line || "").trim().match(/^\d+\.\s+(.*)$/);
-  return match ? match[1].trim() : "";
-}
-
-function readBulletItem(line) {
-  const match = String(line || "").match(/^\s*[-*]\s+(.*)$/);
-  return match ? match[1].trim() : "";
-}
-
-function parseTableCells(line) {
-  const trimmed = String(line || "").trim().replace(/^\||\|$/g, "");
-  return trimmed.split("|").map((cell) => cell.trim());
-}
-
-function isTableDivider(line) {
-  return /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*$/.test(String(line || ""));
-}
-
-function renderMarkdownContent(value, keyPrefix) {
-  const normalized = String(value || "").replace(/\r/g, "").trim();
-  if (!normalized) {
-    return null;
-  }
-
-  const lines = normalized.split("\n");
-  const nodes = [];
-  let index = 0;
-  let blockIndex = 0;
-
-  while (index < lines.length) {
-    const rawLine = lines[index] || "";
-    const trimmedLine = rawLine.trim();
-
-    if (!trimmedLine) {
-      index += 1;
-      continue;
-    }
-
-    if (/^(```|~~~)/.test(trimmedLine)) {
-      const fence = trimmedLine.slice(0, 3);
-      const language = trimmedLine.slice(3).trim();
-      const codeLines = [];
-      index += 1;
-      while (index < lines.length && !String(lines[index] || "").trim().startsWith(fence)) {
-        codeLines.push(lines[index] || "");
-        index += 1;
-      }
-      if (index < lines.length) {
-        index += 1;
-      }
-      nodes.push(
-        <pre key={`${keyPrefix}-code-${blockIndex}`} className="markdown-pre">
-          <code data-language={language || undefined}>{codeLines.join("\n")}</code>
-        </pre>
-      );
-      blockIndex += 1;
-      continue;
-    }
-
-    const heading = readHeading(trimmedLine);
-    if (heading) {
-      const HeadingTag = `h${heading.level}`;
-      nodes.push(
-        <HeadingTag key={`${keyPrefix}-h-${blockIndex}`} id={slugifyHeading(heading.text)}>
-          {renderInlineMarkdown(heading.text, `${keyPrefix}-h-${blockIndex}`)}
-        </HeadingTag>
-      );
-      blockIndex += 1;
-      index += 1;
-      continue;
-    }
-
-    if (index + 1 < lines.length && trimmedLine.includes("|") && isTableDivider(lines[index + 1])) {
-      const headerCells = parseTableCells(trimmedLine);
-      const bodyRows = [];
-      index += 2;
-      while (index < lines.length && String(lines[index] || "").trim().includes("|")) {
-        bodyRows.push(parseTableCells(lines[index]));
-        index += 1;
-      }
-      nodes.push(
-        <div key={`${keyPrefix}-table-${blockIndex}`} className="markdown-table-wrap">
-          <table className="markdown-table">
-            <thead>
-              <tr>
-                {headerCells.map((cell, cellIndex) => (
-                  <th key={`${keyPrefix}-table-${blockIndex}-head-${cellIndex}`}>
-                    {renderInlineMarkdown(cell, `${keyPrefix}-table-${blockIndex}-head-${cellIndex}`)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {bodyRows.map((row, rowIndex) => (
-                <tr key={`${keyPrefix}-table-${blockIndex}-row-${rowIndex}`}>
-                  {row.map((cell, cellIndex) => (
-                    <td key={`${keyPrefix}-table-${blockIndex}-cell-${rowIndex}-${cellIndex}`}>
-                      {renderInlineMarkdown(cell, `${keyPrefix}-table-${blockIndex}-cell-${rowIndex}-${cellIndex}`)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-      blockIndex += 1;
-      continue;
-    }
-
-    if (/^\d+\.\s+/.test(trimmedLine)) {
-      const items = [];
-      while (index < lines.length && /^\d+\.\s+/.test((lines[index] || "").trim())) {
-        items.push(lines[index].trim());
-        index += 1;
-      }
-      nodes.push(
-        <ol key={`${keyPrefix}-ol-${blockIndex}`}>
-          {items.map((line, lineIndex) => (
-            <li key={`${keyPrefix}-ol-${blockIndex}-${lineIndex}`}>
-              {renderInlineMarkdown(readOrderedItem(line), `${keyPrefix}-ol-${blockIndex}-${lineIndex}`)}
-            </li>
-          ))}
-        </ol>
-      );
-      blockIndex += 1;
-      continue;
-    }
-
-    if (/^\s*[-*]\s+/.test(rawLine)) {
-      const items = [];
-      while (index < lines.length && /^\s*[-*]\s+/.test(lines[index] || "")) {
-        items.push(lines[index]);
-        index += 1;
-      }
-      nodes.push(
-        <ul key={`${keyPrefix}-ul-${blockIndex}`}>
-          {items.map((line, lineIndex) => (
-            <li key={`${keyPrefix}-ul-${blockIndex}-${lineIndex}`}>
-              {renderInlineMarkdown(readBulletItem(line), `${keyPrefix}-ul-${blockIndex}-${lineIndex}`)}
-            </li>
-          ))}
-        </ul>
-      );
-      blockIndex += 1;
-      continue;
-    }
-
-    if (/^>/.test(trimmedLine)) {
-      const quoteLines = [];
-      while (index < lines.length && /^>/.test(String(lines[index] || "").trim())) {
-        quoteLines.push(String(lines[index] || "").trim().replace(/^>\s?/, ""));
-        index += 1;
-      }
-      nodes.push(
-        <blockquote key={`${keyPrefix}-quote-${blockIndex}`}>
-          {renderMarkdownContent(quoteLines.join("\n"), `${keyPrefix}-quote-${blockIndex}`)}
-        </blockquote>
-      );
-      blockIndex += 1;
-      continue;
-    }
-
-    if (/^---+$/.test(trimmedLine)) {
-      nodes.push(<hr key={`${keyPrefix}-hr-${blockIndex}`} />);
-      blockIndex += 1;
-      index += 1;
-      continue;
-    }
-
-    const paragraphLines = [];
-    while (index < lines.length) {
-      const currentLine = lines[index] || "";
-      const trimmedCurrentLine = currentLine.trim();
-      if (!trimmedCurrentLine) {
-        index += 1;
-        break;
-      }
-      if (
-        paragraphLines.length &&
-        (
-          /^(```|~~~)/.test(trimmedCurrentLine) ||
-          readHeading(trimmedCurrentLine) ||
-          /^\d+\.\s+/.test(trimmedCurrentLine) ||
-          /^\s*[-*]\s+/.test(currentLine) ||
-          /^>/.test(trimmedCurrentLine) ||
-          /^---+$/.test(trimmedCurrentLine) ||
-          (trimmedCurrentLine.includes("|") && isTableDivider(lines[index + 1]))
-        )
-      ) {
-        break;
-      }
-      paragraphLines.push(trimmedCurrentLine);
-      index += 1;
-    }
-
-    if (paragraphLines.length) {
-      nodes.push(
-        <p key={`${keyPrefix}-p-${blockIndex}`}>
-          {renderInlineMarkdown(paragraphLines.join(" "), `${keyPrefix}-p-${blockIndex}`)}
-        </p>
-      );
-      blockIndex += 1;
-    }
-  }
-
-  return nodes;
 }
 
 function stateLabel(state) {
@@ -384,22 +107,6 @@ function buildKnowledgeTree(documents = []) {
   return root;
 }
 
-function normalizeKnowledgeSource(rawSource) {
-  if (!rawSource) {
-    return null;
-  }
-  if (typeof rawSource === "string") {
-    return {
-      path: rawSource,
-      title: "",
-    };
-  }
-  return {
-    path: rawSource.path || "",
-    title: rawSource.title || "",
-  };
-}
-
 function safeGetBaseline(baselineId = "") {
   if (!baselineId) {
     return null;
@@ -446,7 +153,6 @@ export function LearnWorkspace() {
   const [interactionPreference, setInteractionPreference] = useState("balanced");
   const [session, setSession] = useState(null);
   const [answer, setAnswer] = useState("");
-  const [burdenSignal, setBurdenSignal] = useState("normal");
   const [error, setError] = useState("");
   const [isStarting, setIsStarting] = useState(false);
   const [isAnswering, setIsAnswering] = useState(false);
@@ -542,49 +248,15 @@ export function LearnWorkspace() {
       return docConceptIds.has(entry.conceptId);
     });
   }, [docConceptIds, docTrainingReady, visibleChatTimeline]);
-  const knowledgeTitleMap = useMemo(
-    () => new Map(knowledgeDocuments.map((doc) => [doc.path, doc.title])),
-    [knowledgeDocuments]
-  );
-  const routeDomains = useMemo(() => (
-    (selectedBaseline?.domains || []).map((domain) => {
-      const docsByPath = new Map();
-      for (const item of domain.items || []) {
-        for (const rawSource of item.javaGuideSources || []) {
-          const source = normalizeKnowledgeSource(rawSource);
-          if (!source?.path || docsByPath.has(source.path)) {
-            continue;
-          }
-          docsByPath.set(source.path, {
-            path: source.path,
-            title: knowledgeTitleMap.get(source.path) || source.title || item.title,
-          });
-        }
-      }
-      return {
-        id: domain.id,
-        title: domain.title,
-        docs: [...docsByPath.values()],
-      };
-    }).filter((domain) => domain.docs.length > 0)
-  ), [knowledgeTitleMap, selectedBaseline]);
-  const activeRouteDomain = useMemo(
-    () => routeDomains.find((domain) => (domain.docs || []).some((doc) => doc.path === activeDocPath)) || routeDomains[0] || null,
-    [activeDocPath, routeDomains]
-  );
-  const routeDocuments = useMemo(
-    () => (activeRouteDomain?.docs || []).map((doc) => ({
-      ...doc,
-      domainId: activeRouteDomain.id,
-      domainTitle: activeRouteDomain.title,
-    })),
-    [activeRouteDomain]
-  );
+  const questionProgress = session?.currentQuestionMeta?.progress || null;
+  const trainingTakeaway = session?.latestFeedback?.takeaway || "";
+  const trainingClosed = workspaceMode === "training" && Boolean(session) && !session?.currentProbe;
+  const knowledgeTree = useMemo(() => buildKnowledgeTree(knowledgeDocuments), [knowledgeDocuments]);
   const documentHeadings = useMemo(
     () => buildDocumentHeadings(knowledgeDoc?.markdown || ""),
     [knowledgeDoc?.markdown]
   );
-  const outlineAvailable = documentHeadings.length > 0 || routeDocuments.length > 0;
+  const outlineAvailable = documentHeadings.length > 0 || knowledgeTree.length > 0;
 
   function scrollQaToBottom(behavior = "auto") {
     if (!qaScrollRef.current) {
@@ -769,6 +441,7 @@ export function LearnWorkspace() {
       const nextSession = await postJson("/api/interview/start-target", {
         userId: profile.user.id,
         targetBaselineId,
+        docPath: activeDocPath,
         interactionPreference,
       });
       setSession(nextSession);
@@ -818,7 +491,7 @@ export function LearnWorkspace() {
           sessionId: session.sessionId,
           answer: nextAnswer,
           intent,
-          burdenSignal,
+          burdenSignal: "normal",
           interactionPreference,
         },
         async (event, data) => {
@@ -852,23 +525,6 @@ export function LearnWorkspace() {
     } finally {
       setIsAnswering(false);
       setStreamingTurn(null);
-    }
-  }
-
-  async function focusDomain(domainId) {
-    if (!session?.sessionId) {
-      return;
-    }
-    try {
-      setError("");
-      setOutlineOpen(false);
-      const nextSession = await postJson("/api/interview/focus-domain", {
-        sessionId: session.sessionId,
-        domainId,
-      });
-      setSession(nextSession);
-    } catch (nextError) {
-      setError(nextError.message);
     }
   }
 
@@ -929,7 +585,7 @@ export function LearnWorkspace() {
         <Link className="floating-back-link" href="/">‹</Link>
         <section className="gate-card">
           <h1>先连接学习档案，再进入学习页。</h1>
-          <p>首页会保存你的账号、目标和长期记忆；连接后再回来，这里会直接进入当前路线。</p>
+          <p>首页会保存你的账号、目标和长期记忆；连接后再回来，这里会直接回到学习页。</p>
           <Link className="primary-pill" href="/">返回首页</Link>
         </section>
       </main>
@@ -994,7 +650,7 @@ export function LearnWorkspace() {
               </div>
             </div>
             <div className="reader-tools">
-              <div className="workspace-tabs">
+              <div className="workspace-tabs" aria-label="学习模式">
                 <button
                   type="button"
                   className={workspaceMode === "reading" ? "workspace-tab active" : "workspace-tab"}
@@ -1011,24 +667,25 @@ export function LearnWorkspace() {
                   训练
                 </button>
               </div>
-              <button
-                type="button"
-                className={outlineOpen ? "reader-tool-button active" : "reader-tool-button"}
-                onClick={() => setOutlineOpen((value) => !value)}
-                disabled={!outlineAvailable}
-                data-testid="outline-toggle"
-              >
-                知识目录
-              </button>
-              <span>笔记</span>
-              <button
-                type="button"
-                className={focusMode ? "reader-tool-button active" : "reader-tool-button"}
-                onClick={() => setFocusMode((value) => !value)}
-                data-testid="focus-toggle"
-              >
-                {focusMode ? "退出专注" : "专注"}
-              </button>
+              <div className="reader-action-group" aria-label="阅读工具">
+                <button
+                  type="button"
+                  className={outlineOpen ? "reader-tool-button active" : "reader-tool-button"}
+                  onClick={() => setOutlineOpen((value) => !value)}
+                  disabled={!outlineAvailable}
+                  data-testid="outline-toggle"
+                >
+                  目录
+                </button>
+                <button
+                  type="button"
+                  className={focusMode ? "reader-tool-button active" : "reader-tool-button"}
+                  onClick={() => setFocusMode((value) => !value)}
+                  data-testid="focus-toggle"
+                >
+                  {focusMode ? "退出专注" : "专注"}
+                </button>
+              </div>
             </div>
           </header>
 
@@ -1055,8 +712,8 @@ export function LearnWorkspace() {
               </article>
             ) : (
               <article className="reader-empty">
-                <h2>{selectedBaseline?.title || "准备开始学习"}</h2>
-                <p>{selectedBaseline?.description || "进入学习后，这里会直接展示当前关联的 Markdown 原文。"}
+                <h2>{selectedBaseline?.title || "开始学习"}</h2>
+                <p>{selectedBaseline?.description || "选择节奏后直接进入原文。"}
                 </p>
                 <div className="session-launch-card">
                   <label>
@@ -1068,7 +725,7 @@ export function LearnWorkspace() {
                     </select>
                   </label>
                   <button type="button" className="primary-pill" disabled={isStarting} onClick={() => startSession()}>
-                    {isStarting ? "正在进入..." : "开始这一轮学习"}
+                    {isStarting ? "进入中..." : "进入学习"}
                   </button>
                 </div>
               </article>
@@ -1115,25 +772,18 @@ export function LearnWorkspace() {
                     </div>
                   </section>
                 ) : null}
-                {routeDocuments.length ? (
+                {knowledgeTree.length ? (
                   <section className="outline-section">
-                    <div className="outline-section-title">{activeRouteDomain?.title || "当前路线"}</div>
-                    <div className="outline-items">
-                      {routeDocuments.map((doc) => (
-                        <button
-                          type="button"
-                          key={doc.path}
-                          className={doc.path === activeDocPath ? "outline-domain active" : "outline-domain"}
-                          onClick={() => openDocumentFromCatalog(doc.path)}
-                        >
-                          {doc.title}
-                        </button>
-                      ))}
+                    <div className="outline-catalog-toggle" data-testid="outline-catalog">
+                      <div className="outline-catalog-summary">
+                        全部目录 · {knowledgeDocuments.length} 篇
+                      </div>
+                      <div className="outline-items">{renderKnowledgeTree(knowledgeTree)}</div>
                     </div>
                   </section>
                 ) : !documentHeadings.length ? (
                   <p className="empty-copy">
-                    {docLoading ? "正在整理知识目录..." : "当前路线还没有可展开的文档目录。"}
+                    {docLoading ? "正在整理知识目录..." : "当前还没有可展开的文档目录。"}
                   </p>
                 ) : null}
               </div>
@@ -1144,25 +794,13 @@ export function LearnWorkspace() {
         <aside className={`qa-panel qa-panel-${workspaceMode}`} data-testid="qa-panel">
           <header className="qa-header">
             <div className="qa-title-group">
-              <strong>{workspaceMode === "training" ? "训练模式" : "阅读模式"}</strong>
-              <span className="qa-subtitle">
-                {workspaceMode === "training"
-                  ? (docTrainingReady
-                      ? "训练题会根据你当前文档位置、历史回答和掌握状态实时生成。"
-                      : "当前文档还没有固定训练题，先继续阅读，或直接围绕文档内容提问。")
-                  : "现在可以直接提问、追问原文细节，读完后再进入训练。"}
-              </span>
+              <strong>{workspaceMode === "training" ? "训练" : "阅读"}</strong>
             </div>
             <span className="qa-header-spacer" />
             <div className={`qa-header-controls ${!trainingUnlocked ? "qa-header-controls-locked" : ""}`}>
-              <select className="qa-header-select" value={burdenSignal} onChange={(event) => setBurdenSignal(event.target.value)}>
-                <option value="normal">正常负荷</option>
-                <option value="high">高负荷</option>
-              </select>
               {!trainingUnlocked ? (
                 <button type="button" className="qa-header-lock" disabled={isStarting} onClick={() => unlockTraining()}>
-                  <span className="qa-header-lock-icon" aria-hidden="true">🔒</span>
-                  <span>{isStarting ? "准备中..." : "阅读完成后解锁训练"}</span>
+                  <span>{isStarting ? "准备中..." : "开启训练"}</span>
                 </button>
               ) : null}
             </div>
@@ -1172,12 +810,22 @@ export function LearnWorkspace() {
             <section className="chat-stack">
               {workspaceMode === "training" ? (
                 <article className="training-hero-card">
-                  <div className="training-hero-title">训练已开启</div>
+                  <div className="training-hero-title">训练模式</div>
                   <p>
                     {docTrainingReady
-                      ? "当前训练问题会跟着你这篇文档的阅读位置和历史回答实时调整。你可以直接作答，也可以先点“查看解析”拿到引导。"
-                      : "当前文档没有固定训练题。你可以先继续阅读，或者直接围绕文档内容提问，让系统按当前上下文接着带你练。"}
+                      ? "直接作答，或先看解析。"
+                      : "继续阅读，或直接围绕原文提问。"}
                   </p>
+                  {questionProgress ? (
+                    <p className="muted">
+                      当前节奏：第 {questionProgress.currentRound} / {questionProgress.maxRounds} 轮 · {renderQuestionPhase(session?.currentQuestionMeta)}
+                    </p>
+                  ) : null}
+                  {trainingClosed && trainingTakeaway ? (
+                    <p className="muted">
+                      本题已收口：{trainingTakeaway}
+                    </p>
+                  ) : null}
                 </article>
               ) : null}
 
@@ -1195,6 +843,7 @@ export function LearnWorkspace() {
                         : (entry.bodyParts?.length ? entry.bodyParts : [entry.body]).filter(Boolean).map((block, index) => (
                             <p key={`${entry.id}:${index}`}>{block}</p>
                           ))}
+                      {entry.takeaway ? <p><strong>带走一句：</strong>{entry.takeaway}</p> : null}
                     </div>
                   </article>
                 )
@@ -1231,7 +880,7 @@ export function LearnWorkspace() {
               rows="1"
               value={answer}
               onChange={(event) => setAnswer(event.target.value)}
-              placeholder={session ? "直接提问、回答、追问边界，或者引用文档中的一段内容。" : "开始学习后再输入回答。"}
+              placeholder={session ? "输入回答、追问，或引用原文段落。" : "进入学习后可输入。"}
             />
 
             <div className="question-input-row">
@@ -1239,6 +888,9 @@ export function LearnWorkspace() {
                 <div className="suggested-actions">
                   <button type="button" className="secondary-pill" disabled={!session || isAnswering || !docTrainingReady} onClick={() => submitAnswer({ nextAnswer: "查看解析", intent: "teach" })}>
                     查看解析
+                  </button>
+                  <button type="button" className="secondary-pill" disabled={!session || isAnswering} onClick={() => submitAnswer({ nextAnswer: "总结一下", intent: "summarize" })}>
+                    面试总结
                   </button>
                 </div>
               ) : <div className="suggested-actions" />}

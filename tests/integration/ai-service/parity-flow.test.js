@@ -127,6 +127,7 @@ test("python ai-service preserves core session semantics for teach, advance, and
   assert.equal(aiTeach.latestFeedback.action, legacyTeach.latestFeedback.action);
   assert.equal(aiTeach.latestFeedback.turnResolution.mode, "stay");
   assert.ok(aiTeach.currentProbe.length > 0);
+  assert.equal(aiTeach.currentQuestionMeta?.phase, legacyTeach.currentQuestionMeta?.phase);
 
   const focusedLegacy = await legacyService.focusDomain({
     sessionId: legacyTeach.sessionId,
@@ -155,6 +156,25 @@ test("python ai-service preserves core session semantics for teach, advance, and
   const nextDomainId = (aiAdvanced.concepts || []).find((item) => item.id === aiAdvanced.currentConceptId)?.abilityDomainId
     || (aiAdvanced.concepts || []).find((item) => item.id === aiAdvanced.currentConceptId)?.domainId;
   assert.equal(nextDomainId, "network-http-tcp");
+
+  const legacySummary = await legacyService.answer({
+    sessionId: legacyAdvanced.sessionId,
+    answer: "总结一下",
+    burdenSignal: "normal",
+    interactionPreference: "balanced"
+  });
+  const aiSummary = await postJson(`${aiBaseUrl}/api/interview/answer`, {
+    sessionId: aiAdvanced.sessionId,
+    answer: "总结一下",
+    burdenSignal: "normal",
+    interactionPreference: "balanced"
+  });
+
+  assert.equal(aiSummary.latestFeedback.action, legacySummary.latestFeedback.action);
+  assert.equal(aiSummary.latestFeedback.turnResolution.mode, "stop");
+  assert.equal(aiSummary.currentProbe, "");
+  assert.match(aiSummary.latestFeedback.explanation, /标准答案：/);
+  assert.ok(aiSummary.latestFeedback.takeaway.length > 0);
 });
 
 test("python ai-service matches explain-first and switch-suppression semantics on key turns", async (t) => {

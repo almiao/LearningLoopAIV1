@@ -260,7 +260,46 @@ function moveTypeToUiMode(moveType = "") {
   return "probe";
 }
 
-function createQuestionMeta(concept) {
+function getConceptRoundBudget(concept) {
+  return (concept.importance || "secondary") === "core" ? 3 : 2;
+}
+
+function getCurrentRound(session, concept) {
+  const conceptState = session?.conceptStates?.[concept.id] || {};
+  const consumedRounds = (conceptState.attempts || 0) + (conceptState.teachCount || 0);
+  return Math.min(getConceptRoundBudget(concept), Math.max(1, consumedRounds + 1));
+}
+
+function buildConceptTakeaway(concept) {
+  return String(concept?.summary || concept?.title || "").trim();
+}
+
+function buildInterviewWrapUp({ concept, judge = {}, gap = "", requestedByUser = false, skipped = false }) {
+  const takeaway = buildConceptTakeaway(concept);
+  const lead = requestedByUser
+    ? "这题先收口，我帮你压成面试里能直接带走的版本。"
+    : skipped
+      ? "这题先不硬扛，但别空手离开。"
+      : judge.state === "solid"
+        ? "这题主线已经够面试回答了，我帮你压成一句标准说法。"
+        : judge.state === "partial"
+          ? "这题主线你已经抓到了，我帮你收成一句更稳的面试表述。"
+          : "这题先别继续猜了，先把标准说法带走。";
+  const gapLine = String(gap || concept?.remediationHint || "").trim();
+
+  return {
+    takeaway,
+    explanation: [
+      lead,
+      takeaway ? `标准答案：${takeaway}` : "",
+      gapLine ? `还要补一句：${gapLine}` : ""
+    ]
+      .filter(Boolean)
+      .join("\n\n")
+  };
+}
+
+function createQuestionMeta(concept, { session = null, phase = "" } = {}) {
   if (concept.interviewQuestion || concept.provenance) {
     const source = concept.interviewQuestion || concept.provenance;
     return {
@@ -268,7 +307,12 @@ function createQuestionMeta(concept) {
       label: source.label,
       company: source.company,
       stage: source.stage || "",
-      questionFamily: concept.questionFamily || ""
+      questionFamily: concept.questionFamily || "",
+      phase: phase || "diagnostic",
+      progress: {
+        currentRound: session ? getCurrentRound(session, concept) : 1,
+        maxRounds: getConceptRoundBudget(concept)
+      }
     };
   }
 
@@ -277,7 +321,12 @@ function createQuestionMeta(concept) {
     label: "系统生成诊断题",
     company: "",
     stage: "",
-    questionFamily: concept.questionFamily || ""
+    questionFamily: concept.questionFamily || "",
+    phase: phase || "diagnostic",
+    progress: {
+      currentRound: session ? getCurrentRound(session, concept) : 1,
+      maxRounds: getConceptRoundBudget(concept)
+    }
   };
 }
 
@@ -421,12 +470,13 @@ function hasLearnerTurns(session) {
 function setFocusedConcept(session, concept, actionLabel) {
   session.currentConceptId = concept.id;
   session.currentProbe = createInitialProbe(concept, session);
-  session.currentQuestionMeta = createQuestionMeta(concept);
+  session.currentQuestionMeta = createQuestionMeta(concept, { session, phase: "diagnostic" });
 
   const questionTurn = createQuestionTurn({
     concept,
     content: session.currentProbe,
-    action: "probe"
+    action: "probe",
+    questionMeta: session.currentQuestionMeta
   });
 
   if (!hasLearnerTurns(session)) {
@@ -446,8 +496,7 @@ function setFocusedConcept(session, concept, actionLabel) {
   session.turns.push(questionTurn);
 }
 
-function createQuestionTurn({ concept, content, action = "probe", revisitReason = "" }) {
-  const questionMeta = createQuestionMeta(concept);
+function createQuestionTurn({ concept, content, action = "probe", revisitReason = "", questionMeta = null }) {
   return {
     role: "tutor",
     kind: "question",
@@ -455,7 +504,7 @@ function createQuestionTurn({ concept, content, action = "probe", revisitReason 
     conceptId: concept.id,
     conceptTitle: concept.title,
     content,
-    questionMeta,
+    questionMeta: questionMeta || createQuestionMeta(concept),
     revisitReason,
     timestamp: Date.now()
   };
@@ -483,9 +532,11 @@ function createSessionState({
   };
   const initialConcept = orderedConcepts[0];
   const currentProbe = createInitialProbe(initialConcept, seedSession);
+  const initialQuestionMeta = createQuestionMeta(initialConcept, { session: seedSession, phase: "diagnostic" });
   const initialQuestion = createQuestionTurn({
     concept: initialConcept,
-    content: currentProbe
+    content: currentProbe,
+    questionMeta: initialQuestionMeta
   });
   const initialMemoryEvents =
     mode === "target"
@@ -508,7 +559,7 @@ function createSessionState({
     summary,
     currentConceptId: initialConcept.id,
     currentProbe,
-    currentQuestionMeta: initialQuestion.questionMeta,
+    currentQuestionMeta: initialQuestionMeta,
     lastAnsweredPrompt: currentProbe,
     burdenSignal: "normal",
     interactionPreference: normalizeInteractionPreference(interactionPreference),
@@ -573,6 +624,11 @@ export async function createSession({
 
 function buildLatestFeedback({ concept, tutorMove, controlVerdict = null, memoryAnchor = null }) {
   const followUpQuestion = getMoveFollowUpQuestion(tutorMove);
+  const wrapUp = buildInterviewWrapUp({
+    concept,
+    judge: tutorMove.judge,
+    gap: tutorMove.nextMove?.reason || tutorMove.judge.reasons?.[0] || ""
+  });
   return {
     conceptId: concept.id,
     conceptTitle: concept.title,
@@ -585,7 +641,7 @@ function buildLatestFeedback({ concept, tutorMove, controlVerdict = null, memory
     coachingStep: followUpQuestion,
     candidateCoachingStep: followUpQuestion,
     strength: "",
-    takeaway: "",
+    takeaway: wrapUp.takeaway,
     teachingChunk: "",
     teachingParagraphs: [],
     revisitReason: tutorMove.revisitReason,
@@ -870,6 +926,14 @@ export async function answerSession(
     tutorMove.writebackSuggestion ||
     decisionEnvelope?.writeback_suggestion ||
     createFallbackWritebackSuggestion(concept, tutorMove);
+  if (session.interactionPreference === "explain-first" && tutorMove.moveType === "teach" && concept.checkQuestion) {
+    tutorMove.followUpQuestion = concept.checkQuestion;
+    tutorMove.nextMove = {
+      ...(tutorMove.nextMove || {}),
+      ui_mode: "teach",
+      follow_up_question: concept.checkQuestion
+    };
+  }
   const controlVerdict = buildControlVerdict({
     envelope: {
       runtime_map: tutorMove.runtimeMap,
@@ -1055,7 +1119,12 @@ export async function answerSession(
       ? resolvePromptForConcept({ session, concept: nextConcept, revisit: nextUnit.revisit })
       : getMoveFollowUpQuestion(tutorMove)
     : "";
-  session.currentQuestionMeta = session.currentProbe && nextConcept ? createQuestionMeta(nextConcept) : null;
+  session.currentQuestionMeta = session.currentProbe && nextConcept
+    ? createQuestionMeta(nextConcept, {
+        session,
+        phase: switchedConcept ? (nextUnit.revisit ? "revisit" : "diagnostic") : tutorMove.moveType === "teach" ? "teach-back" : "follow-up"
+      })
+    : null;
   const turnResolution = buildTurnResolution({
     concept,
     nextConcept,
@@ -1078,6 +1147,12 @@ export async function answerSession(
     evidenceReference: concept.excerpt,
     coachingStep: visibleCoachingStep,
     candidateCoachingStep: getMoveFollowUpQuestion(tutorMove),
+    takeaway: buildLatestFeedback({
+      concept,
+      tutorMove,
+      controlVerdict,
+      memoryAnchor: latestMemoryAnchor
+    }).takeaway,
     learningSources: concept.javaGuideSources || [],
     runtimeMap: tutorMove.runtimeMap || null,
     nextMove: visibleNextMove,
@@ -1095,7 +1170,8 @@ export async function answerSession(
         concept: nextConcept,
         content: session.currentProbe,
         action: switchedConcept ? "probe" : tutorMove.moveType,
-        revisitReason: nextUnit.revisitReason || ""
+        revisitReason: nextUnit.revisitReason || "",
+        questionMeta: session.currentQuestionMeta
       })
     );
   }
@@ -1103,17 +1179,18 @@ export async function answerSession(
   const views = buildSessionViews(session);
   session.latestMemoryEvents = [];
   session.latestControlVerdict = controlVerdict;
+  const latestFeedback = buildLatestFeedback({
+    concept,
+    tutorMove,
+    controlVerdict,
+    memoryAnchor: latestMemoryAnchor
+  });
 
   return {
     ...session,
     ...views,
     latestFeedback: {
-      ...buildLatestFeedback({
-        concept,
-        tutorMove,
-        controlVerdict,
-        memoryAnchor: latestMemoryAnchor
-      }),
+      ...latestFeedback,
       coachingStep: visibleCoachingStep,
       candidateCoachingStep: getMoveFollowUpQuestion(tutorMove),
       nextMove: visibleNextMove,
@@ -1199,6 +1276,7 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
   let teachingChunk = "";
   let learningCard = null;
   let latestMemoryEvents = [];
+  let takeaway = "";
 
   if (controlIntent === "teach") {
     const repeatedTeach = priorTeachRequests >= 1;
@@ -1215,16 +1293,50 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
     explanation = buildTeachExplanation(concept, repeatedTeach, learningCard);
     teachingChunk = buildTeachChunk(concept, learningCard);
     coachingStep = learningCard?.checkQuestion || concept.checkQuestion || concept.retryQuestion || "";
+    takeaway = buildConceptTakeaway(concept);
     session.conceptStates[concept.id].teachCount += 1;
     session.conceptStates[concept.id].lastAction = "teach";
+  } else if (controlIntent === "summarize") {
+    const wrapUp = buildInterviewWrapUp({
+      concept,
+      judge: session.conceptStates[concept.id].judge,
+      gap: concept.remediationHint,
+      requestedByUser: true
+    });
+    explanation = wrapUp.explanation;
+    takeaway = wrapUp.takeaway;
+    session.conceptStates[concept.id].completed = true;
+    session.conceptStates[concept.id].lastAction = "summarize";
+    if (session.conceptStates[concept.id].judge.state !== "solid") {
+      enqueueRevisit(session, {
+        concept,
+        reason: "summary-requested",
+        takeaway
+      });
+    }
+    if (session.mode === "target") {
+      latestMemoryEvents = groomPendingWritebacks(session, { conceptId: concept.id });
+      if (latestMemoryEvents.length) {
+        session.memoryEvents.push(...latestMemoryEvents);
+        session.memoryEvents = session.memoryEvents.slice(-10);
+        session.latestMemoryEvents = latestMemoryEvents;
+      }
+    }
   } else {
-    explanation = "好，这个点先不继续卡住你了，我们直接进下一题。";
+    const wrapUp = buildInterviewWrapUp({
+      concept,
+      judge: session.conceptStates[concept.id].judge,
+      gap: concept.remediationHint,
+      skipped: true
+    });
+    explanation = `好，这个点先不继续卡住你了，我们直接进下一题。\n\n${wrapUp.explanation}`;
+    takeaway = wrapUp.takeaway;
     session.conceptStates[concept.id].completed = true;
     session.conceptStates[concept.id].lastAction = "advance";
     enqueueRevisit(session, {
       concept,
       reason: "skipped-by-user",
-      takeaway: ""
+      takeaway
     });
     if (session.mode === "target") {
       latestMemoryEvents = groomPendingWritebacks(session, { conceptId: concept.id });
@@ -1236,7 +1348,10 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
     }
   }
 
-  if (controlIntent !== "teach" || !coachingStep) {
+  if (controlIntent === "summarize") {
+    session.currentProbe = "";
+    session.currentQuestionMeta = null;
+  } else if (controlIntent !== "teach" || !coachingStep) {
     const nextUnit = chooseNextUnit(session, { allowRevisit: false });
     if (nextUnit.concept) {
       session.currentConceptId = nextUnit.concept.id;
@@ -1245,14 +1360,20 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
         concept: nextUnit.concept,
         revisit: nextUnit.revisit
       });
-      session.currentQuestionMeta = createQuestionMeta(nextUnit.concept);
+      session.currentQuestionMeta = createQuestionMeta(nextUnit.concept, {
+        session,
+        phase: nextUnit.revisit ? "revisit" : "diagnostic"
+      });
     } else {
       session.currentProbe = "";
       session.currentQuestionMeta = null;
     }
   } else {
     session.currentProbe = coachingStep;
-    session.currentQuestionMeta = createQuestionMeta(concept);
+    session.currentQuestionMeta = createQuestionMeta(concept, {
+      session,
+      phase: "teach-back"
+    });
   }
   const controlTurnResolution = buildTurnResolution({
     concept,
@@ -1261,7 +1382,12 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
     finalPrompt: session.currentProbe,
     finalQuestionMeta: session.currentQuestionMeta,
     controlVerdict: {
-      reason: controlIntent === "teach" ? "continue_on_current_concept" : "next_move_requests_stop"
+      reason:
+        controlIntent === "teach"
+          ? "continue_on_current_concept"
+          : controlIntent === "summarize"
+            ? "user_requested_summary"
+            : "next_move_requests_stop"
     }
   });
   const visibleCoachingStep = controlTurnResolution.mode === "stay" ? coachingStep : "";
@@ -1276,7 +1402,7 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
     teachingChunk,
     teachingParagraphs: learningCard?.teachingParagraphs || [],
     learningSources: concept.javaGuideSources || [],
-    takeaway: "",
+    takeaway,
     coachingStep: visibleCoachingStep,
     candidateCoachingStep: coachingStep,
     turnResolution: controlTurnResolution,
@@ -1290,7 +1416,8 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
         createQuestionTurn({
           concept: currentConcept,
           content: session.currentProbe,
-          action: controlIntent === "teach" && coachingStep ? "check" : "probe"
+          action: controlIntent === "teach" && coachingStep ? "check" : "probe",
+          questionMeta: session.currentQuestionMeta
         })
       );
     }
@@ -1313,7 +1440,7 @@ async function applyControlIntent(session, { concept, controlIntent, answer, bur
       coachingStep: visibleCoachingStep,
       candidateCoachingStep: coachingStep,
       strength: "",
-      takeaway: "",
+      takeaway,
       teachingChunk,
       teachingParagraphs: learningCard?.teachingParagraphs || [],
       judge: session.conceptStates[concept.id].judge,

@@ -44,13 +44,13 @@ class InterviewAssistRealtimeAsyncTests(unittest.IsolatedAsyncioTestCase):
         framework_seen = asyncio.Event()
 
         def fake_stream_assist_answer(*, emit, **_kwargs):
-            emit("framework_done", {"frameworkPoints": ["确认范围"]})
+            emit("core_done", {"coreMarkdown": "**确认范围**"})
             time.sleep(0.2)
-            emit("answer_ready", {"frameworkPoints": ["确认范围"], "detailBlocks": ["逐层排查"]})
+            emit("answer_ready", {"coreMarkdown": "**确认范围**", "detailMarkdown": "逐层排查"})
 
         async def send_json_event(event, data):
             events.append((event, data))
-            if event == "framework_done":
+            if event == "core_done":
                 framework_seen.set()
 
         with patch("app.main.stream_assist_answer", side_effect=fake_stream_assist_answer):
@@ -64,10 +64,10 @@ class InterviewAssistRealtimeAsyncTests(unittest.IsolatedAsyncioTestCase):
             )
 
             await asyncio.wait_for(framework_seen.wait(), timeout=0.1)
-            self.assertEqual([event for event, _data in events], ["framework_done"])
+            self.assertEqual([event for event, _data in events], ["core_done"])
 
             await task
-            self.assertEqual([event for event, _data in events], ["framework_done", "answer_ready"])
+            self.assertEqual([event for event, _data in events], ["core_done", "answer_ready"])
 
 
 if __name__ == "__main__":
