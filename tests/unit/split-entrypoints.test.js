@@ -10,15 +10,26 @@ test("root package scripts default to split entrypoints without legacy aliases",
   const pkg = JSON.parse(
     await readFile(path.join(root, "package.json"), "utf8")
   );
+  const projectToolsSource = await readFile(
+    path.join(root, "scripts", "project-tools.mjs"),
+    "utf8"
+  );
 
   assert.equal(pkg.scripts.start, "bash start-services.sh");
   assert.equal(pkg.scripts.dev, "bash start-services.sh");
-  assert.match(pkg.scripts.build, /bff\/src\/server\.js/);
-  assert.match(pkg.scripts.build, /superapp-service\/src\/server\.js/);
-  assert.match(pkg.scripts.build, /frontend/);
+  assert.equal(pkg.scripts.build, "node scripts/project-tools.mjs build");
+  assert.equal(pkg.scripts.test, "node scripts/project-tools.mjs test");
+  assert.equal(pkg.scripts["eval:auto"], "node scripts/project-tools.mjs eval:auto");
+  assert.equal(pkg.scripts["eval:sessions"], "node scripts/project-tools.mjs eval:sessions");
+  assert.equal(pkg.scripts["validate:cases"], "node scripts/project-tools.mjs validate:cases");
+  assert.equal(pkg.scripts["smoke:split"], "node scripts/project-tools.mjs smoke:split");
   assert.equal(pkg.scripts["dev:superapp"], "npm run dev --prefix superapp-service");
-  assert.match(pkg.scripts.test, /split-services\.spec\.js/);
-  assert.match(pkg.scripts.test, /parity-flow\.test\.js/);
+  assert.match(projectToolsSource, /bff\/src\/server\.js/);
+  assert.match(projectToolsSource, /superapp-service\/src\/server\.js/);
+  assert.match(projectToolsSource, /split-services\.spec\.js/);
+  assert.match(projectToolsSource, /parity-flow\.test\.js/);
+  assert.match(projectToolsSource, /runAutomatedEval/);
+  assert.match(projectToolsSource, /runSessionReviewBatch/);
   assert.equal("legacy:start" in pkg.scripts, false);
   assert.equal("legacy:dev" in pkg.scripts, false);
   assert.equal("legacy:build" in pkg.scripts, false);

@@ -8,7 +8,6 @@ import {
   createLivekitTransport,
   createRealtimeSession,
   getInterviewAssistBaseUrl,
-  getLivekitRoomDebug,
   uploadVoiceDemo,
 } from "../lib/interview-assist-api";
 import { renderMarkdownContent } from "../lib/render-markdown-content";
@@ -48,13 +47,11 @@ function isPermissionDeniedError(error) {
 function describeRealtimeStartError(error) {
   if (isPermissionDeniedError(error)) {
     return {
-      message: "麦克风权限被拒绝。请先在浏览器里允许麦克风，或直接改用手动输入。",
-      debug: "浏览器拒绝了麦克风权限，请允许后重试，或改用手动输入。",
+      message: "麦克风权限被拒绝。请先在浏览器中允许麦克风访问，或直接改用手动输入。",
     };
   }
   return {
     message: error?.message || "启动实时识别失败。",
-    debug: `启动失败：${error?.message || "unknown"}`,
   };
 }
 
@@ -73,8 +70,6 @@ function createEmptyAnswer(questionText = "", sessionId = "") {
     detailMarkdown: "",
     answerMarkdown: "",
     contextTurns: [],
-    frameworkPoints: [],
-    detailBlocks: [],
   };
 }
 
@@ -82,8 +77,8 @@ function normalizeAnswerPayload(answer) {
   if (!answer) {
     return answer;
   }
-  const coreMarkdown = answer.coreMarkdown || (answer.frameworkPoints || []).join("；");
-  const detailMarkdown = answer.detailMarkdown || (answer.detailBlocks || []).filter(Boolean).join("\n\n");
+  const coreMarkdown = answer.coreMarkdown || "";
+  const detailMarkdown = answer.detailMarkdown || "";
   const answerMarkdown = answer.answerMarkdown || [coreMarkdown, detailMarkdown].filter(Boolean).join("\n\n");
   return {
     ...answer,
@@ -92,42 +87,6 @@ function normalizeAnswerPayload(answer) {
     answerMarkdown,
     contextTurns: answer.contextTurns || [],
   };
-}
-
-function floatTo16BitPCM(float32Array) {
-  const pcmBuffer = new ArrayBuffer(float32Array.length * 2);
-  const view = new DataView(pcmBuffer);
-  let offset = 0;
-  for (let index = 0; index < float32Array.length; index += 1) {
-    const sample = Math.max(-1, Math.min(1, float32Array[index]));
-    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-    offset += 2;
-  }
-  return pcmBuffer;
-}
-
-function downsampleBuffer(buffer, inputSampleRate, outputSampleRate) {
-  if (outputSampleRate >= inputSampleRate) {
-    return buffer;
-  }
-  const sampleRateRatio = inputSampleRate / outputSampleRate;
-  const newLength = Math.round(buffer.length / sampleRateRatio);
-  const result = new Float32Array(newLength);
-  let offsetResult = 0;
-  let offsetBuffer = 0;
-  while (offsetResult < result.length) {
-    const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
-    let accum = 0;
-    let count = 0;
-    for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i += 1) {
-      accum += buffer[i];
-      count += 1;
-    }
-    result[offsetResult] = accum / count;
-    offsetResult += 1;
-    offsetBuffer = nextOffsetBuffer;
-  }
-  return result;
 }
 
 export function InterviewAssistWorkspace() {
@@ -150,11 +109,7 @@ export function InterviewAssistWorkspace() {
   const [transportState, setTransportState] = useState("idle");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [transportDebug, setTransportDebug] = useState("待开始");
-  const [roomDebugSnapshot, setRoomDebugSnapshot] = useState("");
   const [volumeLevel, setVolumeLevel] = useState(0);
-  const [recordedAudioUrl, setRecordedAudioUrl] = useState("");
-  const [recordingStatus, setRecordingStatus] = useState("未录音");
 
   const roomRef = useRef(null);
   const ackedTurnRef = useRef("");
@@ -163,10 +118,7 @@ export function InterviewAssistWorkspace() {
   const settingsPanelRef = useRef(null);
   const monitorStreamRef = useRef(null);
   const monitorAudioContextRef = useRef(null);
-  const monitorAnalyserRef = useRef(null);
   const monitorAnimationRef = useRef(null);
-  const mediaRecorderRef = useRef(null);
-  const recordedChunksRef = useRef([]);
   const manualEntryRef = useRef(null);
 
   function cleanupTransport() {
@@ -184,18 +136,12 @@ export function InterviewAssistWorkspace() {
       window.cancelAnimationFrame(monitorAnimationRef.current);
       monitorAnimationRef.current = null;
     }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
-    }
-    mediaRecorderRef.current = null;
     monitorStreamRef.current?.getTracks?.().forEach((track) => track.stop());
     monitorStreamRef.current = null;
-    monitorAnalyserRef.current = null;
     monitorAudioContextRef.current?.close?.().catch?.(() => {});
     monitorAudioContextRef.current = null;
     setVolumeLevel(0);
     setTransportState("idle");
-    setTransportDebug("传输已清理");
   }
 
   function revealManualFallback() {
@@ -207,14 +153,7 @@ export function InterviewAssistWorkspace() {
     details.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
-  useEffect(() => {
-    return () => {
-      cleanupTransport();
-      if (recordedAudioUrl) {
-        URL.revokeObjectURL(recordedAudioUrl);
-      }
-    };
-  }, [recordedAudioUrl]);
+  useEffect(() => cleanupTransport, []);
 
   useEffect(() => {
     if (!isSettingsOpen) {
@@ -243,7 +182,7 @@ export function InterviewAssistWorkspace() {
   }, [isSettingsOpen]);
 
   useEffect(() => {
-    if (!currentAnswer?.turnId || !(currentAnswer.coreMarkdown || (currentAnswer.frameworkPoints || []).length)) {
+    if (!currentAnswer?.turnId || !currentAnswer.coreMarkdown) {
       return undefined;
     }
     if (ackedTurnRef.current === currentAnswer.turnId) {
@@ -279,7 +218,6 @@ export function InterviewAssistWorkspace() {
   function applyAssistEvent(event, data) {
     if (event === "agent_ready") {
       setTransportState("connected");
-      setTransportDebug("服务端音频桥接已就绪");
       setSocketConnected(true);
       setStatus("listening");
       return;
@@ -313,28 +251,6 @@ export function InterviewAssistWorkspace() {
       setStatus("first_screen_ready");
       return;
     }
-    if (event === "framework_delta") {
-      setCurrentAnswer((prev) => {
-        const base = prev || createEmptyAnswer(data.questionText || transcriptPreview, session?.sessionId || "");
-        const frameworkPoints = [...(base.frameworkPoints || [])];
-        frameworkPoints[data.index] = data.point;
-        const detailBlocks = [...(base.detailBlocks || [])];
-        while (detailBlocks.length < frameworkPoints.length) {
-          detailBlocks.push("");
-        }
-        return { ...base, questionText: data.questionText || base.questionText, frameworkPoints, detailBlocks };
-      });
-      return;
-    }
-    if (event === "framework_done") {
-      setCurrentAnswer((prev) => ({
-        ...(prev || createEmptyAnswer(data.questionText, data.sessionId)),
-        ...data,
-        detailBlocks: prev?.detailBlocks || new Array((data.frameworkPoints || []).length).fill(""),
-      }));
-      setStatus("first_screen_ready");
-      return;
-    }
     if (event === "detail_start") {
       setIsExpanding(true);
       return;
@@ -342,11 +258,6 @@ export function InterviewAssistWorkspace() {
     if (event === "detail_delta") {
       setCurrentAnswer((prev) => {
         const base = prev || createEmptyAnswer("", session?.sessionId || "");
-        if (typeof data.index === "number") {
-          const detailBlocks = [...(base.detailBlocks || [])];
-          detailBlocks[data.index] = `${detailBlocks[data.index] || ""}${data.delta || ""}`;
-          return normalizeAnswerPayload({ ...base, detailBlocks });
-        }
         const detailMarkdown = `${base.detailMarkdown || ""}${data.delta || ""}`;
         return normalizeAnswerPayload({ ...base, detailMarkdown });
       });
@@ -355,12 +266,7 @@ export function InterviewAssistWorkspace() {
     if (event === "detail_done") {
       setCurrentAnswer((prev) => {
         const base = prev || createEmptyAnswer("", session?.sessionId || "");
-        if (data.detailMarkdown) {
-          return normalizeAnswerPayload({ ...base, detailMarkdown: data.detailMarkdown });
-        }
-        const detailBlocks = [...(base.detailBlocks || [])];
-        detailBlocks[data.index] = data.detail || detailBlocks[data.index] || "";
-        return normalizeAnswerPayload({ ...base, detailBlocks });
+        return normalizeAnswerPayload({ ...base, detailMarkdown: data.detailMarkdown || data.detail || "" });
       });
       return;
     }
@@ -375,11 +281,6 @@ export function InterviewAssistWorkspace() {
       const nextError = data.error || "实时识别失败。";
       setError(nextError);
       setTransportState("error");
-      if (String(nextError).includes("NO_VALID_AUDIO_ERROR")) {
-        setTransportDebug("LiveKit 音频已经送达，但阿里云判定音频无效，正在继续调格式。");
-      } else {
-        setTransportDebug(`服务端错误：${nextError}`);
-      }
       setStatus("error");
     }
   }
@@ -459,42 +360,7 @@ export function InterviewAssistWorkspace() {
 
     monitorStreamRef.current = stream;
     monitorAudioContextRef.current = audioContext;
-    monitorAnalyserRef.current = analyser;
     monitorAnimationRef.current = window.requestAnimationFrame(updateLevel);
-
-    if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm")) {
-      recordedChunksRef.current = [];
-      if (recordedAudioUrl) {
-        URL.revokeObjectURL(recordedAudioUrl);
-        setRecordedAudioUrl("");
-      }
-      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-      recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          recordedChunksRef.current.push(event.data);
-        }
-      };
-      recorder.onstop = () => {
-        if (!recordedChunksRef.current.length) {
-          setRecordingStatus("未录到有效音频");
-          return;
-        }
-        const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        const nextUrl = URL.createObjectURL(blob);
-        setRecordedAudioUrl((previousUrl) => {
-          if (previousUrl) {
-            URL.revokeObjectURL(previousUrl);
-          }
-          return nextUrl;
-        });
-        setRecordingStatus("已生成本地录音，可回放");
-      };
-      recorder.start(250);
-      mediaRecorderRef.current = recorder;
-      setRecordingStatus("录音中");
-    } else {
-      setRecordingStatus("当前环境不支持录音回放");
-    }
   }
 
   async function startListening() {
@@ -502,11 +368,9 @@ export function InterviewAssistWorkspace() {
       setError("");
       setStatus("connecting");
       setTransportState("connecting");
-      setTransportDebug("创建会话");
       await startVolumeMonitor();
       const activeSession = await createSessionAndUploadVoiceDemo();
       setIsSettingsOpen(false);
-      setTransportDebug("申请 LiveKit 传输信息");
       const transport = await createLivekitTransport({ sessionId: activeSession.sessionId });
       if (!transport.livekitConfigured || !transport.participantToken || !transport.livekitUrl) {
         throw new Error("LiveKit 传输层未配置完成。");
@@ -515,8 +379,6 @@ export function InterviewAssistWorkspace() {
       const room = new Room();
       roomRef.current = room;
       transcriptSeenRef.current = false;
-      setRoomDebugSnapshot("");
-      setTransportDebug("准备连接 LiveKit 房间");
 
       room.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
         if (topic !== "interview-assist") {
@@ -532,23 +394,16 @@ export function InterviewAssistWorkspace() {
 
       room.on(RoomEvent.Connected, () => {
         setTransportState("room-connected");
-        setTransportDebug("房间已连接，等待麦克风发布");
-      });
-
-      room.on(RoomEvent.ConnectionStateChanged, (nextState) => {
-        setTransportDebug(`连接状态：${String(nextState)}`);
       });
 
       room.on(RoomEvent.MediaDevicesError, (nextError) => {
         setError(nextError?.message || "麦克风设备异常。");
         setTransportState("error");
-        setTransportDebug(`设备错误：${nextError?.message || "unknown"}`);
         setStatus("error");
       });
 
       room.on(RoomEvent.LocalTrackPublished, (publication) => {
         setTransportState("track-published");
-        setTransportDebug(`本地音轨已发布：${publication?.source || publication?.kind || "audio"}`);
       });
 
       room.on(RoomEvent.Disconnected, () => {
@@ -560,33 +415,14 @@ export function InterviewAssistWorkspace() {
       await room.connect(transport.livekitUrl, transport.participantToken);
       setSocketConnected(true);
       setTransportState("room-connected");
-      setTransportDebug("正在打开麦克风");
       await room.localParticipant.setMicrophoneEnabled(true);
       setTransportState("track-published");
-      setTransportDebug("麦克风已启用，等待服务端转写");
       setElapsedSeconds(0);
       audioMonitorTimerRef.current = window.setTimeout(() => {
         if (!transcriptSeenRef.current) {
-          setError("LiveKit 已连通，但 8 秒内仍未收到转写结果。正在检查服务端音频桥接。");
+          setError("实时转写超时，请重试。");
           setTransportState("stalled");
-          setTransportDebug("8 秒内没有收到转写，正在核对房间音轨和 ASR 状态");
           setStatus("error");
-          getLivekitRoomDebug(transport.roomName)
-            .then((snapshot) => {
-              const participants = snapshot.participants || [];
-              const summary = participants
-                .map((participant) => `${participant.identity}:${(participant.tracks || []).length} tracks`)
-                .join(" | ");
-              const hasPublishedTrack = participants.some((participant) => (participant.tracks || []).length > 0);
-              setRoomDebugSnapshot(
-                hasPublishedTrack
-                  ? `房间里已经看到了音轨，当前更像是 ASR 侧还没返回文本。${summary ? ` ${summary}` : ""}`.trim()
-                  : summary || "房间里还没有可见参与者/音轨。",
-              );
-            })
-            .catch((nextError) => {
-              setRoomDebugSnapshot(`拉取房间诊断失败：${nextError.message || "unknown"}`);
-            });
         }
       }, 8000);
     } catch (nextError) {
@@ -594,7 +430,6 @@ export function InterviewAssistWorkspace() {
       const nextState = describeRealtimeStartError(nextError);
       setError(nextState.message);
       setTransportState("error");
-      setTransportDebug(nextState.debug);
       setStatus("error");
       if (isPermissionDeniedError(nextError)) {
         revealManualFallback();
@@ -656,8 +491,8 @@ export function InterviewAssistWorkspace() {
   }
 
   const statusLabel = statusLabels[status] || status;
-  const coreMarkdown = currentAnswer?.coreMarkdown || (currentAnswer?.frameworkPoints || []).join("；");
-  const detailMarkdown = currentAnswer?.detailMarkdown || (currentAnswer?.detailBlocks || []).filter(Boolean).join("\n\n");
+  const coreMarkdown = currentAnswer?.coreMarkdown || "";
+  const detailMarkdown = currentAnswer?.detailMarkdown || "";
   const hasAnswerMarkdown = Boolean(coreMarkdown || detailMarkdown);
   const questionLabel =
     currentAnswer?.questionText || transcriptPreview || questionText || "等待实时识别返回文本。";
@@ -874,16 +709,6 @@ export function InterviewAssistWorkspace() {
             </div>
             <strong>{volumePercent}%</strong>
           </div>
-          <div className="assist-recording-row">
-            <span>录音</span>
-            {recordedAudioUrl ? <audio controls src={recordedAudioUrl} /> : <strong>{recordingStatus}</strong>}
-          </div>
-          {status === "error" || roomDebugSnapshot ? (
-            <>
-              <p className="assist-transport-debug">连接状态：{transportDebug}</p>
-              {roomDebugSnapshot ? <p className="assist-transport-debug">诊断：{roomDebugSnapshot}</p> : null}
-            </>
-          ) : null}
 
           <details className="assist-manual-entry" ref={manualEntryRef}>
             <summary>手动输入</summary>
@@ -911,7 +736,7 @@ export function InterviewAssistWorkspace() {
             </div>
           </details>
           {isPermissionDeniedError(error) ? (
-            <p className="assist-transport-debug">
+            <p className="assist-manual-hint">
               麦克风当前不可用，可以先允许浏览器权限，或直接改用手动输入。
             </p>
           ) : null}

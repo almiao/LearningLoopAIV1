@@ -49,27 +49,12 @@ def _recent_turns(session: Dict[str, Any], limit: int = CONTEXT_WINDOW_TURNS) ->
     return list(session.get("turns") or [])[-limit:]
 
 
-def _legacy_framework_summary(turn: Dict[str, Any]) -> str:
-    points = [_normalize(item) for item in (turn.get("frameworkPoints") or []) if _normalize(item)]
-    if not points:
-        return ""
-    return "；".join(points)
-
-
 def _turn_core_text(turn: Dict[str, Any]) -> str:
-    return _normalize(
-        turn.get("coreMarkdown")
-        or turn.get("answerMarkdown")
-        or _legacy_framework_summary(turn)
-    )
+    return _normalize(turn.get("coreMarkdown"))
 
 
 def _turn_detail_text(turn: Dict[str, Any]) -> str:
-    detail_markdown = _normalize(turn.get("detailMarkdown"))
-    if detail_markdown:
-        return detail_markdown
-    detail_blocks = [_normalize(item) for item in (turn.get("detailBlocks") or []) if _normalize(item)]
-    return " ".join(detail_blocks)
+    return _normalize(turn.get("detailMarkdown"))
 
 
 def _extract_subject_from_text(text: str) -> str:
@@ -548,8 +533,6 @@ def stream_assist_answer(
                 "coreMarkdown": core_markdown,
                 "detailMarkdown": detail_markdown,
                 "answerMarkdown": answer_markdown,
-                "frameworkPoints": [core_markdown],
-                "detailBlocks": [detail_markdown],
                 "questionEndedAt": ended_at,
                 "latencyMs": total_latency_ms,
             }
@@ -564,8 +547,6 @@ def stream_assist_answer(
                 "coreMarkdown": core_markdown,
                 "detailMarkdown": detail_markdown,
                 "answerMarkdown": answer_markdown,
-                "frameworkPoints": [core_markdown],
-                "detailBlocks": [detail_markdown],
                 "frameworkLatencyMs": core_latency_ms,
                 "coreLatencyMs": core_latency_ms,
                 "latencyMs": total_latency_ms,

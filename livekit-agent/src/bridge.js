@@ -1,13 +1,8 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { AccessToken } from "livekit-server-sdk";
 import { AudioStream, Room, RoomEvent, TrackKind } from "@livekit/rtc-node";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const livekitApiKey = process.env.LIVEKIT_API_KEY || "";
 const livekitApiSecret = process.env.LIVEKIT_API_SECRET || "";
-const capturedAudioDir = process.env.INTERVIEW_ASSIST_CAPTURE_DIR || path.join(repoRoot, ".omx", "interview-assist", "captured-audio");
 const speechRmsThreshold = Number(process.env.INTERVIEW_ASSIST_SPEECH_RMS_THRESHOLD || 120);
 const speechPeakThreshold = Number(process.env.INTERVIEW_ASSIST_SPEECH_PEAK_THRESHOLD || 900);
 const silenceFramesToStop = Number(process.env.INTERVIEW_ASSIST_SILENCE_FRAMES_TO_STOP || 0);
@@ -64,59 +59,6 @@ function int16ToLittleEndianBuffer(int16Samples) {
 
 export function shouldStopAfterSilence({ speechDetected, silenceFrameCount, threshold = silenceFramesToStop }) {
   return threshold > 0 && speechDetected && silenceFrameCount >= threshold;
-}
-
-function wavHeader({ dataSize, sampleRate, channels, bitsPerSample }) {
-  const header = Buffer.alloc(44);
-  const blockAlign = channels * bitsPerSample / 8;
-  const byteRate = sampleRate * blockAlign;
-  header.write("RIFF", 0, 4, "ascii");
-  header.writeUInt32LE(36 + dataSize, 4);
-  header.write("WAVE", 8, 4, "ascii");
-  header.write("fmt ", 12, 4, "ascii");
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(channels, 22);
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(byteRate, 28);
-  header.writeUInt16LE(blockAlign, 32);
-  header.writeUInt16LE(bitsPerSample, 34);
-  header.write("data", 36, 4, "ascii");
-  header.writeUInt32LE(dataSize, 40);
-  return header;
-}
-
-async function persistCapturedAudioCase({ sessionId, pcmChunks }) {
-  if (!pcmChunks.length) {
-    return null;
-  }
-  await mkdir(capturedAudioDir, { recursive: true });
-  const pcmBuffer = Buffer.concat(pcmChunks);
-  const pcmPath = path.join(capturedAudioDir, `${sessionId}.pcm`);
-  const wavPath = path.join(capturedAudioDir, `${sessionId}.wav`);
-  const metaPath = path.join(capturedAudioDir, `${sessionId}.json`);
-  const wavBuffer = Buffer.concat([
-    wavHeader({
-      dataSize: pcmBuffer.byteLength,
-      sampleRate: 16000,
-      channels: 1,
-      bitsPerSample: 16,
-    }),
-    pcmBuffer,
-  ]);
-  await Promise.all([
-    writeFile(pcmPath, pcmBuffer),
-    writeFile(wavPath, wavBuffer),
-    writeFile(metaPath, JSON.stringify({
-      sessionId,
-      sampleRate: 16000,
-      channels: 1,
-      bitsPerSample: 16,
-      bytes: pcmBuffer.byteLength,
-      createdAt: new Date().toISOString(),
-    }, null, 2)),
-  ]);
-  return { pcmPath, wavPath, metaPath, bytes: pcmBuffer.byteLength };
 }
 
 async function publishEvent(room, destinationIdentity, event, data, reliable = true) {
@@ -320,7 +262,6 @@ async function bridgeTrackToAi({ aiServiceUrl, track, room, sessionId, destinati
   }
   relayState.started = true;
   relayState.stopped = false;
-  const capturedPcmChunks = [];
 
   logBridge("bridge_audio_started", {
     sessionId,
@@ -401,7 +342,6 @@ async function bridgeTrackToAi({ aiServiceUrl, track, room, sessionId, destinati
         const payload = flushPending();
         if (payload) {
           batchIndex += 1;
-          capturedPcmChunks.push(payload);
           logBridge("bridge_audio_batch_sent", {
             sessionId,
             batchIndex,
@@ -425,7 +365,6 @@ async function bridgeTrackToAi({ aiServiceUrl, track, room, sessionId, destinati
     const finalPayload = flushPending(true);
     if (finalPayload && ws.readyState === WebSocket.OPEN && !relayState.stopped) {
       batchIndex += 1;
-      capturedPcmChunks.push(finalPayload);
       logBridge("bridge_audio_batch_sent", {
         sessionId,
         batchIndex,
@@ -444,24 +383,6 @@ async function bridgeTrackToAi({ aiServiceUrl, track, room, sessionId, destinati
       error: error.message || "LiveKit audio relay failed.",
     });
   } finally {
-    const persistedCase = await persistCapturedAudioCase({
-      sessionId,
-      pcmChunks: capturedPcmChunks,
-    }).catch((error) => {
-      logBridge("bridge_audio_case_save_error", {
-        sessionId,
-        error: error.message || String(error),
-      });
-      return null;
-    });
-    if (persistedCase) {
-      logBridge("bridge_audio_case_saved", {
-        sessionId,
-        pcmPath: persistedCase.pcmPath,
-        wavPath: persistedCase.wavPath,
-        bytes: persistedCase.bytes,
-      });
-    }
     await stopAiRelay(relayState);
   }
 }
@@ -650,21 +571,4 @@ export async function closeBridge(roomName) {
   try {
     await bridge.room.disconnect();
   } catch {}
-}
-
-export function getBridgeDebug(roomName) {
-  const bridge = bridges.get(roomName);
-  if (!bridge) {
-    return null;
-  }
-  return {
-    roomName,
-    sessionId: bridge.sessionId,
-    participantIdentity: bridge.participantIdentity,
-    bridgeIdentity: bridge.bridgeIdentity,
-    status: bridge.status,
-    lastError: bridge.lastError,
-    relayStarted: bridge.relayState.started,
-    relayStopped: bridge.relayState.stopped,
-  };
 }

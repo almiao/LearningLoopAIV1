@@ -26,7 +26,7 @@ start_bg() {
 }
 
 start_bg "AI service" python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --app-dir ai-service
-start_bg "LiveKit session server + worker" env PORT=4200 AI_SERVICE_URL=http://127.0.0.1:8000 npm run start --prefix livekit-agent
+start_bg "LiveKit bridge server" env PORT=4200 AI_SERVICE_URL=http://127.0.0.1:8000 npm run start --prefix livekit-agent
 start_bg "Frontend" bash -lc "cd frontend && exec env PORT=3002 NEXT_PUBLIC_INTERVIEW_ASSIST_API_BASE_URL=http://127.0.0.1:4200 npx next start -p 3002"
 
 echo

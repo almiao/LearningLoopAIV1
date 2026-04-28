@@ -8,7 +8,7 @@ This directory contains the local self-hosted LiveKit development setup for the 
 - local development API credentials:
   - `LIVEKIT_API_KEY=devkey`
   - `LIVEKIT_API_SECRET=secret`
-- `livekit-agent` session server + LiveKit Agents worker on `http://127.0.0.1:4200`
+- `livekit-agent` bridge server on `http://127.0.0.1:4200`
 - AI service on `http://127.0.0.1:8000`
 - frontend preview on `http://127.0.0.1:3002`
 
@@ -30,15 +30,6 @@ Install the server binary:
 ```bash
 brew install livekit
 ```
-
-Download LiveKit Agents local model files:
-
-```bash
-cd livekit-agent
-node src/worker.js download-files
-```
-
-The model files are cached under `~/.cache/huggingface`.
 
 ## Start Only LiveKit Server
 
@@ -73,4 +64,4 @@ kill $(lsof -tiTCP:3002 -sTCP:LISTEN) 2>/dev/null || true
 
 - The API key/secret here are local dev credentials only.
 - The frontend no longer uses browser `SpeechRecognition`; mic audio is published to LiveKit over WebRTC.
-- The LiveKit Agent does server-side STT and turn detection, then calls the interview-assist LLM stream.
+- The LiveKit bridge relays browser audio to the interview-assist realtime service and returns structured events.

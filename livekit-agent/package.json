@@ -5,14 +5,10 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
-    "start:server": "node src/server.js",
-    "start:worker": "node src/worker.js"
+    "start:server": "node src/server.js"
   },
   "dependencies": {
-    "@livekit/agents": "^1.2.7",
-    "@livekit/agents-plugin-livekit": "^1.2.7",
-    "@livekit/agents-plugin-silero": "^1.2.7",
-    "@livekit/protocol": "^1.45.3",
+    "@livekit/rtc-node": "^0.13.25",
     "livekit-server-sdk": "^2.15.1"
   }
 }

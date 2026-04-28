@@ -8,8 +8,6 @@
     "start": "next start -p 3000"
   },
   "dependencies": {
-    "@livekit/components-react": "^2.9.20",
-    "@livekit/components-styles": "^1.2.0",
     "livekit-client": "^2.18.2",
     "next": "15.4.5",
     "react": "19.1.0",

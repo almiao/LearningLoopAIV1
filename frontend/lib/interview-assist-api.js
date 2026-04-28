@@ -30,11 +30,6 @@ export function getInterviewAssistTransportBaseUrl() {
   return assistTransportBaseUrl;
 }
 
-export function getInterviewAssistWebSocketUrl(sessionId) {
-  const base = assistBaseUrl.replace(/^http/, "ws");
-  return `${base}/ws/interview-assist/${encodeURIComponent(sessionId)}`;
-}
-
 export async function createRealtimeSession(payload) {
   return assistFetch("/api/interview-assist/realtime-session", {
     method: "POST",
@@ -66,18 +61,6 @@ export async function createLivekitTransport(payload) {
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.error || data.detail || "Interview assist transport request failed");
-  }
-  return data;
-}
-
-export async function getLivekitRoomDebug(roomName) {
-  const response = await fetch(`${assistTransportBaseUrl}/api/interview-assist/livekit-room-debug?roomName=${encodeURIComponent(roomName)}`, {
-    method: "GET",
-    cache: "no-store",
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || data.detail || "Interview assist room debug request failed");
   }
   return data;
 }

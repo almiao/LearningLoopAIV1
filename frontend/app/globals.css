@@ -2792,37 +2792,20 @@ button {
   font-weight: 800;
 }
 
-.assist-transport-debug {
-  margin: 0;
-  color: #6b7280;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.45;
-}
-
 .assist-volume-row {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.assist-recording-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .assist-volume-row span,
-.assist-volume-row strong,
-.assist-recording-row span,
-.assist-recording-row strong {
+.assist-volume-row strong {
   color: #4b5563;
   font-size: 11px;
   font-weight: 700;
 }
 
-.assist-volume-row strong,
-.assist-recording-row strong {
+.assist-volume-row strong {
   min-width: 36px;
 }
 
@@ -2842,15 +2825,18 @@ button {
   transition: width 80ms linear;
 }
 
-.assist-recording-row audio {
-  width: min(320px, 100%);
-  height: 30px;
-}
-
 .assist-manual-entry {
   color: #4b5563;
   font-size: 12px;
   font-weight: 700;
+}
+
+.assist-manual-hint {
+  margin: 0;
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
 }
 
 .assist-manual-entry summary {

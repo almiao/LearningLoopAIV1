@@ -51,6 +51,8 @@ test("interview assist answer stream returns markdown core before detail for can
     assert.match(answerReady.coreMarkdown, /\*\*核心点：\*\*/);
     assert.match(answerReady.detailMarkdown, /项目经验/);
     assert.match(answerReady.answerMarkdown, /核心点/);
+    assert.equal(answerReady.frameworkPoints, undefined);
+    assert.equal(answerReady.detailBlocks, undefined);
   }, { aiPort: 18201 });
 });
 
