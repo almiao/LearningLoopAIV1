@@ -4,7 +4,6 @@
   "documentCount": 304,
   "assetCount": 134,
   "folderLabels": {
-    "about-the-author": "作者相关",
     "ai": "AI",
     "books": "书籍",
     "concurrent": "并发",
@@ -24,132 +23,9 @@
     "open-source-project": "开源项目",
     "redis": "Redis",
     "spring": "Spring",
-    "system-design": "系统设计",
-    "tools": "工具",
-    "zhuanlan": "专栏"
+    "system-design": "系统设计"
   },
   "docs": [
-    {
-      "path": "docs/about-the-author/deprecated-java-technologies.md",
-      "title": "已经淘汰的 Java 技术，不要再学了！",
-      "titleSource": "frontmatter",
-      "folderSegments": [
-        "about-the-author"
-      ],
-      "folderLabels": [
-        "作者相关"
-      ]
-    },
-    {
-      "path": "docs/about-the-author/dog-that-copies-other-people-essay.md",
-      "title": "抄袭狗，你冬天睡觉脚必冷！！！",
-      "titleSource": "frontmatter",
-      "folderSegments": [
-        "about-the-author"
-      ],
-      "folderLabels": [
-        "作者相关"
-      ]
-    },
-    {
-      "path": "docs/about-the-author/feelings-after-one-month-of-induction-training.md",
-      "title": "入职培训一个月后的感受",
-      "titleSource": "frontmatter",
-      "folderSegments": [
-        "about-the-author"
-      ],
-      "folderLabels": [
-        "作者相关"
-      ]
-    },
-    {
-      "path": "docs/about-the-author/feelings-of-half-a-year-from-graduation-to-entry.md",
-      "title": "从毕业到入职半年的感受",
-      "titleSource": "frontmatter",
-      "folderSegments": [
-        "about-the-author"
-      ],
-      "folderLabels": [
-        "作者相关"
-      ]
-    },
-    {
-      "path": "docs/about-the-author/internet-addiction-teenager.md",
-      "title": "我曾经也是网瘾少年",
-      "titleSource": "frontmatter",
-      "folderSegments": [
-        "about-the-author"
-      ],
-      "folderLabels": [
-        "作者相关"
-      ]
-    },
-    {
-      "path": "docs/about-the-author/javaguide-100k-star.md",
-      "title": "JavaGuide 开源项目 100K Star 了！",
-      "titleSource": "frontmatter",
-      "folderSegments": [
-        "about-the-author"
-      ],
-      "folderLabels": [
-        "作者相关"
-      ]
-    },
-    {
-      "path": "docs/about-the-author/my-article-was-stolen-and-made-into-video-and-it-became-popular.md",
-      "title": "某培训机构盗我文章做成视频还上了B站热门",
-      "titleSource": "frontmatter",
-      "folderSegments": [
-        "about-the-author"
-      ],
-      "folderLabels": [
-        "作者相关"
-      ]
-    },
-    {
-      "path": "docs/about-the-author/my-college-life.md",
-      "title": "害，毕业三年了！",
-      "titleSource": "frontmatter",
-      "folderSegments": [
-        "about-the-author"
-      ],
-      "folderLabels": [
-        "作者相关"
-      ]
-    },
-    {
-      "path": "docs/about-the-author/README.md",
-      "title": "个人介绍 Q&A",
-      "titleSource": "frontmatter",
-      "folderSegments": [
-        "about-the-author"
-      ],
-      "folderLabels": [
-        "作者相关"
-      ]
-    },
-    {
-      "path": "docs/about-the-author/writing-technology-blog-six-years.md",
-      "title": "坚持写技术博客六年了!",
-      "titleSource": "frontmatter",
-      "folderSegments": [
-        "about-the-author"
-      ],
-      "folderLabels": [
-        "作者相关"
-      ]
-    },
-    {
-      "path": "docs/about-the-author/zhishixingqiu-two-years.md",
-      "title": "我的知识星球 6 岁了！",
-      "titleSource": "frontmatter",
-      "folderSegments": [
-        "about-the-author"
-      ],
-      "folderLabels": [
-        "作者相关"
-      ]
-    },
     {
       "path": "docs/ai/agent/agent-basis.md",
       "title": "一文搞懂 AI Agent 核心概念：Agent Loop、Context Engineering、Tools 注册",

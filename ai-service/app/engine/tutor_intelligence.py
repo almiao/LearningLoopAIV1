@@ -1063,6 +1063,41 @@ class HeuristicTutorIntelligence:
             reason="test_double_without_provider_credentials",
         )
 
+    def decompose_source(self, source: Dict[str, Any]) -> Dict[str, Any]:
+        title = ensure_string(source.get("title"), "测试材料")
+        content = ensure_string(source.get("content"))
+        sentences = [part.strip() for part in content.replace("\n", "。").split("。") if part.strip()]
+        seeds = sentences[:3] or [title, content[:80] or title, "请围绕材料主线复述一个具体机制"]
+        units = []
+        for index, seed in enumerate(seeds[:3]):
+            unit_title = ensure_string(seed[:32], f"{title} 训练点 {index + 1}")
+            units.append(
+                {
+                    "id": f"test-doc-unit-{index + 1}",
+                    "title": unit_title,
+                    "summary": ensure_string(seed, title),
+                    "excerpt": ensure_string(seed, title),
+                    "keywords": [keyword for keyword in title.lower().split()[:4] if keyword],
+                    "sourceAnchors": [ensure_string(seed, title)],
+                    "misconception": "容易脱离当前材料泛泛回答。",
+                    "importance": "core" if index == 0 else "secondary",
+                    "coverage": "high" if index == 0 else "medium",
+                    "diagnosticQuestion": f"根据当前材料，{unit_title} 这个点你会怎么解释？",
+                    "retryQuestion": f"先收窄到一个点：{unit_title} 的关键机制是什么？",
+                    "stretchQuestion": f"如果继续追问，{unit_title} 最容易答偏的边界在哪里？",
+                    "checkQuestion": f"用你自己的话复述：{unit_title} 的核心结论是什么？",
+                    "remediationHint": ensure_string(seed, title),
+                }
+            )
+        return {
+            "concepts": units,
+            "summary": {
+                "sourceTitle": title,
+                "keyThemes": [unit["title"] for unit in units[:3]],
+                "framing": f"测试环境从《{title}》里生成最小训练单元。",
+            },
+        }
+
     def _classify_signal(self, *, concept: Dict[str, Any], answer: str, forced_action: str | None = None) -> str:
         text = ensure_string(answer)
         lowered = text.lower()

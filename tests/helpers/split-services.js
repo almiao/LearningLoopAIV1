@@ -75,7 +75,10 @@ export async function withSplitServices(t, fn, { aiPort, bffPort } = {}) {
       cwd: process.cwd(),
       env: {
         ...process.env,
-        ...localEnv
+        ...localEnv,
+        APP_ENV: "test",
+        LLAI_LLM_ENABLED: "false",
+        LLAI_ENABLE_AI_SERVICE_HEURISTIC_TEST_DOUBLE: "1"
       }
     }
   );

@@ -20,7 +20,6 @@ test("root package scripts default to split entrypoints without legacy aliases",
   assert.equal(pkg.scripts.build, "node scripts/project-tools.mjs build");
   assert.equal(pkg.scripts.test, "node scripts/project-tools.mjs test");
   assert.equal(pkg.scripts["eval:auto"], "node scripts/project-tools.mjs eval:auto");
-  assert.equal(pkg.scripts["eval:sessions"], "node scripts/project-tools.mjs eval:sessions");
   assert.equal(pkg.scripts["validate:cases"], "node scripts/project-tools.mjs validate:cases");
   assert.equal(pkg.scripts["smoke:split"], "node scripts/project-tools.mjs smoke:split");
   assert.equal(pkg.scripts["dev:superapp"], "npm run dev --prefix superapp-service");
@@ -29,10 +28,12 @@ test("root package scripts default to split entrypoints without legacy aliases",
   assert.match(projectToolsSource, /split-services\.spec\.js/);
   assert.match(projectToolsSource, /parity-flow\.test\.js/);
   assert.match(projectToolsSource, /runAutomatedEval/);
-  assert.match(projectToolsSource, /runSessionReviewBatch/);
   assert.equal("legacy:start" in pkg.scripts, false);
   assert.equal("legacy:dev" in pkg.scripts, false);
   assert.equal("legacy:build" in pkg.scripts, false);
   assert.equal("legacy:test" in pkg.scripts, false);
   assert.equal("legacy:eval:sessions" in pkg.scripts, false);
+  assert.equal("eval:sessions" in pkg.scripts, false);
+  assert.doesNotMatch(projectToolsSource, /runSessionReviewBatch/);
+  assert.doesNotMatch(projectToolsSource, /LLAI_ENABLE_JS_HEURISTIC_TEST_DOUBLE/);
 });

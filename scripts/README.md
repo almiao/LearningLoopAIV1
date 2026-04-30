@@ -14,7 +14,7 @@ This directory intentionally stays small.
 
 | File | Purpose |
 | --- | --- |
-| `project-tools.mjs` | Consolidated `build`, `test`, `smoke:split`, `validate:cases`, `eval:auto`, and `eval:sessions` entrypoint |
+| `project-tools.mjs` | Consolidated `build`, `test`, `smoke:split`, `validate:cases`, and `eval:auto` entrypoint |
 
 ## Removed surface
 

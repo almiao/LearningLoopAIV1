@@ -19,7 +19,6 @@
     "deliver:real": "npm run restart:full && npm run verify:real",
     "test": "node scripts/project-tools.mjs test",
     "eval:auto": "node scripts/project-tools.mjs eval:auto",
-    "eval:sessions": "node scripts/project-tools.mjs eval:sessions",
     "validate:cases": "node scripts/project-tools.mjs validate:cases",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev:bff": "npm run dev --prefix bff",

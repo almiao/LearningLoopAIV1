@@ -5,13 +5,13 @@ AI interview tutoring project with a split runtime:
 - `frontend/`: Next.js web client
 - `bff/`: Node.js BFF and orchestration layer
 - `ai-service/`: FastAPI-based AI service
-- `src/`: shared JavaScript domain engine still used by BFF, tests, scripts, and parts of the frontend
+- `src/`: shared JavaScript domain helpers still used by BFF, tests, scripts, and parts of the frontend
 
 ## Runtime boundary
 
 Training content generation, question generation, answer diagnosis, and answer evaluation are LLM responsibilities and run through the Python `ai-service/` with a configured provider. Progress, aggregation, sorting, and status display can stay deterministic rule logic.
 
-The old JavaScript heuristic tutor is not a production fallback. It is retained only as an explicit test double for regression coverage and must be enabled with test-only environment flags.
+The old JavaScript heuristic tutor has been removed. If no LLM provider is configured, production training fails clearly instead of generating rule-based tutor content.
 
 ## Quick start
 
@@ -78,7 +78,7 @@ npm test
 npm run build
 npm run smoke:split
 npm run eval:auto
-npm run eval:sessions
+npm run eval:auto
 npm run validate:cases
 ```
 
@@ -88,11 +88,11 @@ npm run validate:cases
 | --- | --- |
 | `ai-service/` | Python service, request parsing, tutor engine bridge, observability |
 | `archive/` | Archived historical scripts, legacy artifacts, and old generated review snapshots |
-| `bff/` | BFF API layer and integration with shared JS engine |
+| `bff/` | BFF API layer, profile persistence, knowledge-doc lookup, and AI service proxying |
 | `contracts/` | API contracts and cross-service interface documents |
 | `frontend/` | Next.js routes, UI shell, and browser-side API helpers |
 | `scripts/` | Manual utilities, smoke scripts, evaluation runners, and maintenance scripts |
-| `src/` | Shared JS tutoring engine, source ingestion, baseline packs, and session projection |
+| `src/` | Shared JS domain helpers for baseline packs, ingestion, user profiles, and view projection |
 | `tests/` | Unit, integration, e2e, evaluation, personas, and fixtures |
 
 Each main directory now has its own `README.md` with a more detailed folder breakdown.
@@ -105,6 +105,5 @@ Each main directory now has its own `README.md` with a more detailed folder brea
 
 ## Notes
 
-- `src/` is still active. It is not dead code; the BFF, tests, scripts, and some frontend projection logic import it directly.
-- `src/tutor/tutor-intelligence.js` contains test-double compatibility code only. Do not add new product training behavior there; add LLM-backed behavior in `ai-service/`.
+- `src/` is still active, but it no longer contains a JavaScript tutor engine. Production training generation and answer evaluation live in `ai-service/`.
 - `tests/eval/generated/` is treated as a runtime output directory. The previously committed snapshots were moved to `archive/`.

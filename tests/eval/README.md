@@ -1,28 +1,27 @@
-# Session Review Loop
+# Automated Evaluation
 
-This directory contains deterministic evaluation tooling for the shared tutoring engine.
+This directory contains automated persona evaluation tooling for the split-service training flow.
 
 ## Boundary
 
-- Product logic lives in `src/`, `bff/`, and `ai-service/`.
-- Review, replay, scoring, and dossier generation live in `tests/eval/` and `scripts/`.
-- The review loop drives the public app-service surface instead of reaching into private internals.
+- Product training logic lives in `ai-service/`.
+- BFF-facing automated evaluations live in `tests/eval/` and `scripts/`.
 - Review flags and scorecards are human aids, not runtime product behavior.
 
 ## What lives here
 
 | File or directory | Purpose |
 | --- | --- |
-| `scenarios.js` | Deterministic review scenarios |
-| `session-dossier.js` | Replay helpers, non-product heuristic scoring aids, and artifact writers |
-| `generated/` | Runtime output directory for generated dossiers |
+| `scenarios.js` | Curated scenario descriptions used by review and future eval work |
+| `automated-eval.js` | Persona-driven BFF evaluation runner |
+| `generated/` | Runtime output directory for generated evaluation artifacts |
 
 ## Workflow
 
-1. Run `npm run eval:sessions`.
-2. Review `tests/eval/generated/index.md` and the per-scenario dossiers generated in the same folder.
-3. Compare outputs against `tests/cases/user-case-rubric.md`.
-4. Fix product behavior in active code, then rerun the review loop.
+1. Start the split services.
+2. Run `npm run eval:auto`.
+3. Review the generated output directory and compare weak runs against `tests/cases/user-case-rubric.md`.
+4. Fix product behavior in `ai-service/`, then rerun the evaluation.
 
 ## Archiving policy
 

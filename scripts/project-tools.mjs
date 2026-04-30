@@ -1,14 +1,9 @@
 #!/usr/bin/env node
 
-import { mkdir, readdir, readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { sessionReviewScenarios } from "../tests/eval/scenarios.js";
 import { runAutomatedEval } from "../tests/eval/automated-eval.js";
-import {
-  runSessionReviewBatch,
-  writeSessionReviewArtifacts,
-} from "../tests/eval/session-dossier.js";
 import {
   buildFrontend,
   ensureFrontendDependencies,
@@ -102,7 +97,6 @@ function printHelp() {
       "  smoke:split      Run the split-services smoke check",
       "  validate:cases   Validate tests/cases JSON documents",
       "  eval:auto        Run automated persona evaluations",
-      "  eval:sessions    Generate deterministic session dossiers",
     ].join("\n"),
   );
 }
@@ -150,8 +144,8 @@ async function runTests() {
       cwd: rootDir,
       env: {
         ...runtimeEnv,
-        LLAI_ENABLE_JS_HEURISTIC_TEST_DOUBLE: "1",
         APP_ENV: "test",
+        LLAI_LLM_ENABLED: "false",
         LLAI_ENABLE_AI_SERVICE_HEURISTIC_TEST_DOUBLE: "1",
       },
     });
@@ -325,46 +319,12 @@ async function runAutomatedEvalCommand(args) {
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function runSessionDossiersCommand(args) {
-  const concurrency = Number(args.concurrency || 4);
-  const outputDir = args.output
-    ? path.resolve(process.cwd(), args.output)
-    : path.resolve(__dirname, "../tests/eval/generated");
-
-  const dossiers = await runSessionReviewBatch(sessionReviewScenarios, {
-    concurrency,
-  });
-
-  await mkdir(outputDir, { recursive: true });
-  await writeSessionReviewArtifacts(dossiers, {
-    outputDir,
-  });
-
-  console.log(
-    JSON.stringify(
-      {
-        outputDir,
-        scenarios: dossiers.length,
-        flagged: dossiers.filter((dossier) => dossier.reviewFlags.length > 0).length,
-        scores: dossiers.map((dossier) => ({
-          scenarioId: dossier.scenario.id,
-          totalScore: dossier.totalScore,
-          flags: dossier.reviewFlags.length,
-        })),
-      },
-      null,
-      2,
-    ),
-  );
-}
-
 const commands = {
   build: () => runBuild(),
   test: () => runTests(),
   "smoke:split": () => runSplitSmoke(),
   "validate:cases": () => validateCases(),
   "eval:auto": (args) => runAutomatedEvalCommand(args),
-  "eval:sessions": (args) => runSessionDossiersCommand(args),
 };
 
 async function main() {

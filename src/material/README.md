@@ -1,5 +1,5 @@
 # material
 
-Legacy/test helpers for converting source material into concept-level teaching units and readable snippets.
+Source normalization primitives used by ingestion and baseline pack construction.
 
-Production document decomposition should be LLM-backed in `ai-service/`. Do not extend these heuristics for product training behavior.
+Production document decomposition is LLM-backed in `ai-service/`; the old JavaScript concept decomposer has been removed.
