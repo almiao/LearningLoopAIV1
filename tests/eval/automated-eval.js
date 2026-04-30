@@ -69,18 +69,18 @@ async function loadPersonas(personasDir) {
 function personaControlOdds(persona) {
   const tendency = String(persona.control_tendency || "");
   if (/高概率/.test(tendency)) {
-    return { advance: 0.38, teach: 0.2, summarize: 0.04 };
+    return { advance: 0.42, teach: 0.2 };
   }
   if (/中等概率/.test(tendency)) {
-    return { advance: 0.18, teach: 0.16, summarize: 0.05 };
+    return { advance: 0.23, teach: 0.16 };
   }
-  return { advance: 0.08, teach: 0.12, summarize: 0.04 };
+  return { advance: 0.12, teach: 0.12 };
 }
 
 function buildHeuristicLearnerAnswer({ persona, session, rng }) {
   const currentConcept = (session.concepts || []).find((item) => item.id === session.currentConceptId) || {};
-  const keywords = (currentConcept.keywords || []).slice(0, 4);
   const summary = String(currentConcept.summary || "");
+  const discriminators = (currentConcept.discriminators || []).slice(0, 2);
   const checkQuestion = String(session.currentProbe || "");
   const odds = personaControlOdds(persona);
   const roll = rng();
@@ -99,14 +99,6 @@ function buildHeuristicLearnerAnswer({ persona, session, rng }) {
       rationale: "persona_teach_request"
     };
   }
-  if (roll < odds.advance + odds.teach + odds.summarize) {
-    return {
-      answer: "总结一下",
-      mode: "control",
-      rationale: "persona_summary_request"
-    };
-  }
-
   if (/不知道|不清楚|不会|为什么/.test(checkQuestion) && rng() < 0.35) {
     return {
       answer: sample(rng, ["不知道", "不太清楚", "我只记得一点关键词"]),
@@ -116,8 +108,8 @@ function buildHeuristicLearnerAnswer({ persona, session, rng }) {
   }
 
   const answerFragments = [];
-  if (keywords.length) {
-    answerFragments.push(`我理解这个点主要跟 ${keywords.slice(0, 2).join("、")} 有关`);
+  if (discriminators.length) {
+    answerFragments.push(`我理解这个点要能讲清 ${discriminators.join("、")}`);
   }
   if (summary) {
     const condensed = summary.replace(/。+/g, "，").split("，").slice(0, 2).join("，");
@@ -179,9 +171,6 @@ function getControlIntent(answer) {
   }
   if (normalized === "下一题") {
     return "advance";
-  }
-  if (normalized === "总结一下") {
-    return "summarize";
   }
   return "answer";
 }
@@ -430,7 +419,7 @@ export async function runAutomatedEval({
         `- Persona: ${persona.name} (${persona.id})`,
         `- Interaction preference: ${interactionPreference}`,
         `- Total rounds: ${analysis.metrics.totalRounds}`,
-        `- Trace coverage: ${Math.round(analysis.metrics.traceCoverage * 100)}%`,
+        `- Trace completeness: ${Math.round(analysis.metrics.traceCoverage * 100)}%`,
         "",
         "## Summary",
         analysis.summary,

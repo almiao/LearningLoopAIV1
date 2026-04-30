@@ -19,6 +19,16 @@ function buildWorkspaceLabel(turn) {
   return turn.conceptTitle ? `已切换到：${turn.conceptTitle}` : "已更新当前面试上下文";
 }
 
+function buildCheckpointTransitionLabel(turn) {
+  if (turn.checkpointStatement) {
+    return `进入子项：${turn.checkpointStatement}`;
+  }
+  if (turn.checkpointId) {
+    return `进入子项：${turn.checkpointId}`;
+  }
+  return "进入下一个子项";
+}
+
 function buildUserIntentLabel(turn) {
   if (turn.kind !== "control") {
     return "";
@@ -30,10 +40,6 @@ function buildUserIntentLabel(turn) {
 
   if (turn.action === "advance") {
     return "切到下一题";
-  }
-
-  if (turn.action === "summarize") {
-    return "请求总结";
   }
 
   return "";
@@ -67,6 +73,7 @@ function buildAssistantEntry(turn, index) {
 
 export function buildChatTimeline(turns = [], { limit = 24 } = {}) {
   const timeline = [];
+  let lastCheckpointId = "";
 
   for (let index = 0; index < turns.length; index += 1) {
     const turn = turns[index];
@@ -102,6 +109,18 @@ export function buildChatTimeline(turns = [], { limit = 24 } = {}) {
 
     if (turn.role !== "tutor") {
       continue;
+    }
+
+    if (turn.kind === "question" && turn.checkpointId && turn.checkpointId !== lastCheckpointId) {
+      timeline.push({
+        id: `${createEntryId(turn, index)}:checkpoint`,
+        type: "event",
+        conceptId: turn.conceptId || "",
+        label: buildCheckpointTransitionLabel(turn),
+        conceptTitle: turn.conceptTitle || "",
+        timestamp: turn.timestamp || index
+      });
+      lastCheckpointId = turn.checkpointId;
     }
 
     if (turn.kind === "feedback") {

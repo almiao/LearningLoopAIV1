@@ -11,6 +11,8 @@ AI interview tutoring project with a split runtime:
 
 Training content generation, question generation, answer diagnosis, and answer evaluation are LLM responsibilities and run through the Python `ai-service/` with a configured provider. Progress, aggregation, sorting, and status display can stay deterministic rule logic.
 
+Document decomposition is intentionally structural: it extracts compact concept anchors instead of pre-generating the full question set. The active question for each training turn is generated from the current session state so it can adapt to the learner's answer, memory, revisit state, and recent teaching.
+
 The old JavaScript heuristic tutor has been removed. If no LLM provider is configured, production training fails clearly instead of generating rule-based tutor content.
 
 ## Quick start

@@ -1,4 +1,5 @@
 import { createBaselinePackDecomposition, defaultBaselinePackId, getBaselinePackById } from "../baseline/baseline-packs.js";
+import { buildTrainingPointsFromDecomposition } from "../training/training-model.js";
 
 const reminderCategoryPriority = [
   "yesterday_gap_followup",
@@ -24,7 +25,7 @@ function buildConceptLookup(pack) {
   return {
     pack,
     decomposition,
-    concepts: decomposition.concepts || [],
+    trainingPoints: buildTrainingPointsFromDecomposition(decomposition),
   };
 }
 
@@ -88,22 +89,23 @@ function buildEstimatedMinutes(category) {
 }
 
 function buildMaterialContext(concept) {
-  return concept.remediationHint || concept.summary || concept.excerpt || "";
+  return concept.remediationHint || concept.summary || concept.evidenceSnippet || "";
 }
 
 export function buildReminderCandidate({ user, memoryProfile }) {
   const targetRecord = resolveTargetRecord(user);
   const pack = targetRecord ? getBaselinePackById(targetRecord.targetBaselineId) : getBaselinePackById(defaultBaselinePackId);
-  const { concepts } = buildConceptLookup(pack);
+  const { trainingPoints } = buildConceptLookup(pack);
 
-  const ranked = concepts
-    .map((concept) => {
-      const memoryItem = memoryProfile?.abilityItems?.[concept.id] || null;
+  const ranked = trainingPoints
+    .flatMap((point) => (point.checkpoints || []).map((checkpoint) => {
+      const memoryItem = memoryProfile?.abilityItems?.[checkpoint.id] || memoryProfile?.abilityItems?.[point.id] || null;
       const category = deriveReminderCategory({ memoryItem, targetRecord });
       const evidenceCount = memoryItem?.evidenceCount || 0;
       const state = memoryItem?.state || "不可判";
       return {
-        concept,
+        point,
+        checkpoint,
         memoryItem,
         category,
         score: [
@@ -112,7 +114,7 @@ export function buildReminderCandidate({ user, memoryProfile }) {
           evidenceCount > 0 ? 0 : 1,
         ].join(":"),
       };
-    })
+    }))
     .sort((left, right) => left.score.localeCompare(right.score));
 
   const selected = ranked[0];
@@ -120,23 +122,25 @@ export function buildReminderCandidate({ user, memoryProfile }) {
     return null;
   }
 
-  const { concept, category, memoryItem } = selected;
+  const { point, checkpoint, category, memoryItem } = selected;
   return {
     userId: user.id,
     targetBaselineId: targetRecord?.targetBaselineId || pack.id,
     candidate: {
-      taskId: `${user.id}:${concept.id}:${category}`,
+      taskId: `${user.id}:${checkpoint.id}:${category}`,
       category,
-      title: buildTaskTitle({ category, concept }),
-      reason: buildReminderReason({ category, concept, memoryItem, targetRecord }),
+      title: buildTaskTitle({ category, concept: point }),
+      reason: buildReminderReason({ category, concept: point, memoryItem, targetRecord }),
       estimatedMinutes: buildEstimatedMinutes(category),
-      conceptId: concept.id,
-      conceptTitle: concept.title,
-      conceptSummary: concept.summary || "",
-      diagnosticQuestion: concept.diagnosticQuestion || concept.checkQuestion || "",
-      materialContext: buildMaterialContext(concept),
-      sourcePath: concept.javaGuideSources?.[0]?.path || "",
-      sourceTitle: concept.javaGuideSources?.[0]?.title || "",
+      conceptId: point.id,
+      conceptTitle: point.title,
+      conceptSummary: point.summary || "",
+      checkpointId: checkpoint.id,
+      checkpointStatement: checkpoint.statement,
+      diagnosticQuestion: checkpoint.diagnosticQuestion || checkpoint.statement || "",
+      materialContext: checkpoint.statement || buildMaterialContext(point),
+      sourcePath: point.javaGuideSources?.[0]?.path || "",
+      sourceTitle: point.javaGuideSources?.[0]?.title || "",
       targetTitle: pack.title,
       lastActivityAt: toIsoOrEmpty(targetRecord?.lastActivityAt),
     },

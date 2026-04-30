@@ -29,7 +29,6 @@ const pythonFiles = [
   "ai-service/app/domain/interview/parsers.py",
   "ai-service/app/domain/interview/validators.py",
   "ai-service/app/engine/control_intents.py",
-  "ai-service/app/engine/tutor_policy.py",
   "ai-service/app/engine/context_packet.py",
   "ai-service/app/engine/turn_envelope.py",
   "ai-service/app/engine/tutor_intelligence.py",

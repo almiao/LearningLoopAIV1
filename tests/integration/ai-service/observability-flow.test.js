@@ -118,9 +118,14 @@ function handleMockProviderRequest(request, response, envelopePayload) {
     rawBody += chunk.toString("utf8");
   });
   request.on("end", () => {
-    const payload = rawBody.includes("learning diagnosis engine")
-      ? createTurnDiagnosisPayload()
-      : envelopePayload;
+    const payload = rawBody.includes("Generate exactly one learner-facing question")
+      ? {
+          question: "动态诊断：如果 ReentrantLock 建在 AQS 之上，独占 acquire/release 主链路你会怎么解释？",
+          intent: "验证用户是否能把 state、入队、阻塞和 release 唤醒串起来。"
+        }
+      : rawBody.includes("learning diagnosis engine")
+        ? createTurnDiagnosisPayload()
+        : envelopePayload;
     writeDeepSeekChatResponse(response, payload);
   });
 }

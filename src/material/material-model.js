@@ -101,18 +101,14 @@ export function createConcept({
   id,
   title,
   summary,
-  excerpt,
-  keywords = [],
-  sourceAnchors = [],
+  evidenceSnippet,
   ...extras
 }) {
   return {
     id,
     title,
     summary: normalizeWhitespace(summary),
-    excerpt: safeSnippet(excerpt),
-    keywords: [...new Set(keywords.map((keyword) => keyword.toLowerCase()))],
-    sourceAnchors,
+    evidenceSnippet: safeSnippet(evidenceSnippet),
     ...extras
   };
 }

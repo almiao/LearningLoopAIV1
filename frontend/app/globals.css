@@ -2597,6 +2597,223 @@ button {
   font-size: 12px;
 }
 
+.training-progress-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.training-progress-note {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.training-current-checkpoint {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.training-point-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.checkpoint-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0 0;
+  border-top: 1px solid rgba(31, 79, 163, 0.12);
+}
+
+.checkpoint-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.checkpoint-panel-head strong {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.checkpoint-panel-head span {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.checkpoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.checkpoint-chip {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid rgba(215, 226, 243, 0.9);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.checkpoint-chip.active {
+  border-color: #c3d9ff;
+  background: linear-gradient(180deg, #ffffff 0%, #eef5ff 100%);
+}
+
+.checkpoint-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #edf4ff;
+  color: #1f4fa3;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.checkpoint-chip.active .checkpoint-order {
+  background: #2b67c8;
+  color: #ffffff;
+}
+
+.checkpoint-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.checkpoint-name {
+  color: #111827;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.checkpoint-meta {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.training-point-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.training-point-panel-head strong {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.training-point-panel-head span {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.training-point-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.training-point-chip {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d7e2f3;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #1f2937;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+
+.training-point-chip:hover {
+  transform: translateY(-1px);
+  border-color: #bfd3f6;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(30, 64, 122, 0.06);
+}
+
+.training-point-chip:disabled {
+  transform: none;
+  box-shadow: none;
+  opacity: 0.72;
+  cursor: default;
+}
+
+.training-point-chip.active {
+  border-color: #c3d9ff;
+  background: linear-gradient(180deg, #ffffff 0%, #eef5ff 100%);
+  box-shadow: 0 12px 26px rgba(43, 103, 200, 0.08);
+}
+
+.training-point-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #edf4ff;
+  color: #1f4fa3;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.training-point-chip.active .training-point-order {
+  background: #2b67c8;
+  color: #ffffff;
+}
+
+.training-point-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.training-point-name {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training-point-meta {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .lock-cta {
   align-self: flex-start;
   min-height: 40px;

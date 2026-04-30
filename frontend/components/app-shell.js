@@ -62,6 +62,17 @@ function renderQuestionPhase(meta) {
   }
 }
 
+function getTrainingPointProgress(points = [], currentPointId = "") {
+  if (!points.length) {
+    return null;
+  }
+  const currentIndex = Math.max(0, points.findIndex((point) => point.id === currentPointId));
+  return {
+    currentIndex: currentIndex + 1,
+    total: points.length
+  };
+}
+
 export function AppShell() {
   const [handle, setHandle] = useState("");
   const [pin, setPin] = useState("");
@@ -84,6 +95,7 @@ export function AppShell() {
   const questionProgress = session?.currentQuestionMeta?.progress || null;
   const sessionTakeaway = session?.latestFeedback?.takeaway || "";
   const sessionClosed = Boolean(session) && !session?.currentProbe;
+  const trainingPointProgress = getTrainingPointProgress(session?.trainingPoints || [], session?.currentTrainingPointId || "");
 
   useEffect(() => {
     (async () => {
@@ -153,7 +165,7 @@ export function AppShell() {
     if (!session?.sessionId) {
       return;
     }
-    const currentConcept = session.concepts?.find((concept) => concept.id === session.currentConceptId);
+    const currentConcept = session.concepts?.find((concept) => concept.id === session.currentCheckpointId);
     try {
       setError("");
       setIsAnswering(true);
@@ -332,7 +344,7 @@ export function AppShell() {
               </div>
               <div className="chat-status">
                 <span className="chip subtle-chip session-chip">会话 ID：{session.sessionId}</span>
-                <span className="chip">当前点：{session.currentConceptId || "未定位"}</span>
+                <span className="chip">当前训练点：{session.currentTrainingPointId || "未定位"}</span>
               </div>
             </div>
 
@@ -454,14 +466,6 @@ export function AppShell() {
                   <button
                     type="button"
                     className="secondary"
-                    disabled={isAnswering || !session}
-                    onClick={() => submitAnswer({ answer: "总结一下", intent: "summarize" })}
-                  >
-                    面试总结
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
                     disabled={isAnswering}
                     onClick={() => submitAnswer({ answer: "下一题", intent: "advance" })}
                   >
@@ -484,7 +488,8 @@ export function AppShell() {
                 <p>{session.currentProbe || "当前没有待回答问题。"}</p>
                 {questionProgress ? (
                   <p className="muted">
-                    当前轮次：第 {questionProgress.currentRound} / {questionProgress.maxRounds} 轮 · {renderQuestionPhase(session.currentQuestionMeta)}
+                    {trainingPointProgress ? `训练点 ${trainingPointProgress.currentIndex} / ${trainingPointProgress.total} · ` : ""}
+                    本题第 {questionProgress.currentRound} / {questionProgress.maxRounds} 次交互 · {renderQuestionPhase(session.currentQuestionMeta)}
                   </p>
                 ) : null}
                 {session.latestFeedback?.turnResolution ? (

@@ -10,7 +10,6 @@ test("interview assist service stays independent from generic tutor session modu
   const source = await readFile(`${root}/ai-service/app/interview_assist/service.py`, "utf8");
 
   assert.doesNotMatch(source, /session_engine/);
-  assert.doesNotMatch(source, /tutor_policy/);
   assert.doesNotMatch(source, /context_packet/);
   assert.doesNotMatch(source, /topic_knowledge/);
   assert.doesNotMatch(source, /_detect_question_type/);

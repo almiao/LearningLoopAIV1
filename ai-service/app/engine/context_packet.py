@@ -178,6 +178,11 @@ def _create_raw_evidence_point(session: Dict[str, Any], concept: Dict[str, Any],
     }
 
 
+def _get_consumed_rounds(session: Dict[str, Any], concept: Dict[str, Any]) -> int:
+    concept_state = ((session.get("conceptStates") or {}).get(concept.get("id", ""), {}) or {})
+    return int(concept_state.get("attempts", 0) or 0) + int(concept_state.get("teachCount", 0) or 0)
+
+
 def build_context_packet(
     *,
     session: Dict[str, Any],
@@ -203,7 +208,7 @@ def build_context_packet(
         budgets["reference"] = 0
 
     max_probe_turns = 3 if concept.get("importance", "secondary") == "core" else 2
-    probe_turns_used = (((session.get("conceptStates") or {}).get(concept.get("id"), {}) or {}).get("attempts", 0))
+    probe_turns_used = _get_consumed_rounds(session, concept)
     teach_turns_used = (((session.get("conceptStates") or {}).get(concept.get("id"), {}) or {}).get("teachCount", 0))
 
     return {

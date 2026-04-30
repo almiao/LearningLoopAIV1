@@ -5,6 +5,8 @@
 ## Runtime boundary
 
 - Training content generation, question generation, answer diagnosis, and answer evaluation belong here.
+- Document decomposition produces compact concept anchors only: title, summary, evidence snippet, misconception anchors, discriminators, and importance.
+- Learner-facing questions are generated at runtime from the current session state; any pre-authored diagnostic/check questions are compatibility fallbacks, not the primary prompt source.
 - A configured LLM provider is required in production.
 - Heuristic tutor intelligence is available only as a test double under test-only environment flags.
 

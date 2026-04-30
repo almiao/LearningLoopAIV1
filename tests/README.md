@@ -12,7 +12,7 @@ This directory groups product verification, evaluation tooling, and human review
 | `eval/generated/` | Runtime output directory for generated evaluation artifacts |
 | `fixtures/` | Shared test materials |
 | `helpers/` | Shared helpers used by tests |
-| `integration/` | Cross-module and cross-service integration coverage |
+| `integration/` | Cross-module and cross-service integration tests |
 | `integration/ai-service/` | Split runtime parity and observability checks |
 | `integration/ingestion/` | Source normalization and ingestion behavior |
 | `integration/user/` | User/profile integration tests |

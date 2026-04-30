@@ -21,5 +21,4 @@ Use this rubric when validating new tutor output against real user transcripts.
 
 - The tutor asks multiple near-duplicate questions after the learner says "不知道"
 - The tutor relies on analogy without giving the actual mechanism
-- "总结一下" does not produce a real summary
 - The learner cannot extract a one-sentence takeaway from the reply

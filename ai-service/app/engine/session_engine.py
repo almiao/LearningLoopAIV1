@@ -11,12 +11,7 @@ from fastapi import HTTPException
 from app.engine.context_packet import build_context_packet
 from app.core.config import versions
 from app.engine.control_intents import detect_control_intent
-from app.engine.tutor_intelligence import create_tutor_intelligence, describe_tutor_intelligence
-from app.engine.tutor_policy import (
-    build_prompt_for_action,
-    choose_next_action,
-    normalize_interaction_preference,
-)
+from app.engine.tutor_intelligence import create_tutor_intelligence, describe_tutor_intelligence, normalize_decomposition_payload
 from app.observability import events
 from app.observability.logger import logger
 from app.core.tracing import trace_id_var
@@ -46,6 +41,7 @@ STATE_RANK = {
 
 SESSIONS: Dict[str, Dict[str, Any]] = {}
 _TUTOR_INTELLIGENCE = None
+ALLOWED_INTERACTION_PREFERENCES = {"probe-heavy", "balanced", "explain-first"}
 
 
 def now_iso() -> str:
@@ -59,13 +55,21 @@ def get_tutor_intelligence():
     return _TUTOR_INTELLIGENCE
 
 
+def normalize_interaction_preference(value: str = "balanced") -> str:
+    return value if value in ALLOWED_INTERACTION_PREFERENCES else "balanced"
+
+
 def get_concept_round_budget(concept: Dict[str, Any]) -> int:
     return 3 if (concept.get("importance") or "secondary") == "core" else 2
 
 
-def get_current_round(session: Optional[Dict[str, Any]], concept: Dict[str, Any]) -> int:
+def get_consumed_rounds(session: Optional[Dict[str, Any]], concept: Dict[str, Any]) -> int:
     concept_state = ((session or {}).get("conceptStates") or {}).get(concept.get("id", ""), {}) or {}
-    consumed_rounds = int(concept_state.get("attempts", 0) or 0) + int(concept_state.get("teachCount", 0) or 0)
+    return int(concept_state.get("attempts", 0) or 0) + int(concept_state.get("teachCount", 0) or 0)
+
+
+def get_current_round(session: Optional[Dict[str, Any]], concept: Dict[str, Any]) -> int:
+    consumed_rounds = get_consumed_rounds(session, concept)
     return min(get_concept_round_budget(concept), max(1, consumed_rounds + 1))
 
 
@@ -73,19 +77,115 @@ def build_concept_takeaway(concept: Dict[str, Any]) -> str:
     return str(concept.get("summary") or concept.get("title") or "").strip()
 
 
+def get_training_point_map(session: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    return {point["id"]: point for point in session.get("trainingPoints") or []}
+
+
+def get_checkpoint_point(session: Dict[str, Any], checkpoint_id: str) -> Optional[Dict[str, Any]]:
+    for point in session.get("trainingPoints") or []:
+        if any(checkpoint.get("id") == checkpoint_id for checkpoint in point.get("checkpoints") or []):
+            return point
+    return None
+
+
+def get_checkpoint_from_point(point: Optional[Dict[str, Any]], checkpoint_id: str) -> Optional[Dict[str, Any]]:
+    if not point:
+        return None
+    return next((checkpoint for checkpoint in point.get("checkpoints") or [] if checkpoint.get("id") == checkpoint_id), None)
+
+
+def get_current_training_point(session: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    return get_training_point_map(session).get(session.get("currentTrainingPointId", ""))
+
+
+def get_current_checkpoint_point(session: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    return get_checkpoint_point(session, session.get("currentCheckpointId", ""))
+
+
+def get_current_checkpoint_concept(session: Dict[str, Any]) -> Dict[str, Any]:
+    checkpoint_id = session["currentCheckpointId"]
+    return next(item for item in session["concepts"] if item["id"] == checkpoint_id)
+
+
+def terminal_checkpoint_status(checkpoint_state: Dict[str, Any]) -> bool:
+    return bool(checkpoint_state.get("completed"))
+
+
+def compute_training_point_state(session: Dict[str, Any], point: Dict[str, Any]) -> Dict[str, Any]:
+    checkpoint_states = session.get("conceptStates") or {}
+    checkpoint_ids = [checkpoint["id"] for checkpoint in point.get("checkpoints") or []]
+    checkpoint_statuses = [checkpoint_states.get(checkpoint_id, {}) for checkpoint_id in checkpoint_ids]
+    completed_count = sum(1 for state in checkpoint_statuses if terminal_checkpoint_status(state))
+    if checkpoint_statuses and completed_count == len(checkpoint_statuses):
+        result = "passed" if all((state.get("result") == "passed") for state in checkpoint_statuses) else "completed_with_gaps"
+        completed = True
+    elif any((state.get("attempts", 0) or state.get("teachCount", 0)) > 0 for state in checkpoint_statuses):
+        result = "in_progress"
+        completed = False
+    else:
+        result = "unseen"
+        completed = False
+    return {
+        "pointId": point["id"],
+        "completed": completed,
+        "result": result,
+        "completedCheckpoints": completed_count,
+        "totalCheckpoints": len(checkpoint_ids),
+    }
+
+
+def classify_checkpoint_outcome(*, diagnosis: Dict[str, Any], tutor_move: Dict[str, Any], answer: str, burden_signal: str = "normal") -> str:
+    normalized_answer = str(answer or "").strip()
+    evidence_quality = str((diagnosis or {}).get("evidence_quality") or "weak")
+    has_misconception = bool((diagnosis or {}).get("has_misconception"))
+    signal = str((tutor_move or {}).get("signal") or "noise")
+    misunderstandings = ((tutor_move or {}).get("runtimeMap") or {}).get("misunderstandings") or []
+
+    if has_misconception or signal == "negative" or misunderstandings:
+        return "wrong"
+    if not normalized_answer or evidence_quality in {"none", "weak"} or burden_signal == "high":
+        return "empty"
+    if evidence_quality == "strong" or ((tutor_move.get("judge") or {}).get("state") == "solid"):
+        return "full"
+    return "partial"
+
+
+def map_checkpoint_result(outcome: str = "") -> str:
+    if outcome == "full":
+        return "passed"
+    if outcome in {"partial", "empty"}:
+        return "partial"
+    if outcome == "wrong":
+        return "incomplete"
+    return "partial"
+
+
+def next_checkpoint_after_completion(session: Dict[str, Any], concept: Dict[str, Any], point: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    next_unit = choose_next_unit(session)
+    next_concept = next_unit.get("concept")
+    next_point = get_checkpoint_point(session, next_concept["id"]) if next_concept else None
+    session["currentTrainingPointId"] = next_point["id"] if next_point else session.get("currentTrainingPointId", "")
+    session["currentCheckpointId"] = next_concept["id"] if next_concept else session["currentCheckpointId"]
+    session["currentConceptId"] = next_concept["id"] if next_concept else concept["id"]
+    session["currentProbe"] = resolve_prompt_for_concept(session=session, concept=next_concept, revisit=bool(next_unit.get("revisit"))) if next_concept else ""
+    session["currentQuestionMeta"] = create_question_meta(next_concept, session=session, phase="diagnostic" if not next_unit.get("revisit") else "revisit") if next_concept else None
+    return {
+        "next_unit": next_unit,
+        "next_concept": next_concept,
+        "next_point": next_point,
+    }
+
+
 def build_interview_wrap_up(
     *,
     concept: Dict[str, Any],
     judge: Optional[Dict[str, Any]] = None,
     gap: str = "",
-    requested_by_user: bool = False,
     skipped: bool = False,
 ) -> Dict[str, str]:
     takeaway = build_concept_takeaway(concept)
     state = str((judge or {}).get("state") or "")
-    if requested_by_user:
-        lead = "这题先收口，我帮你压成面试里能直接带走的版本。"
-    elif skipped:
+    if skipped:
         lead = "这题先不硬扛，但别空手离开。"
     elif state == "solid":
         lead = "这题主线已经够面试回答了，我帮你压成一句标准说法。"
@@ -135,7 +235,7 @@ def create_question_meta(concept: Dict[str, Any], *, session: Optional[Dict[str,
     }
 
 
-def initial_probe(concept: Dict[str, Any], session: Optional[Dict[str, Any]] = None) -> str:
+def static_probe_for_concept(concept: Dict[str, Any], session: Optional[Dict[str, Any]] = None, *, revisit: bool = False) -> str:
     if concept.get("interviewAnchor", {}).get("prompt"):
         return concept["interviewAnchor"]["prompt"]
 
@@ -147,7 +247,7 @@ def initial_probe(concept: Dict[str, Any], session: Optional[Dict[str, Any]] = N
         or concept_state.get("teachCount", 0) > 0
         or (concept_state.get("lastAction") and concept_state.get("lastAction") != "probe")
     )
-    if memory_anchor or has_prior_interaction:
+    if revisit or memory_anchor or has_prior_interaction:
         question = concept.get("retryQuestion") or concept.get("checkQuestion") or concept.get("diagnosticQuestion")
         if not question:
             raise HTTPException(status_code=502, detail="AI tutor did not generate a follow-up question for this concept.")
@@ -157,6 +257,44 @@ def initial_probe(concept: Dict[str, Any], session: Optional[Dict[str, Any]] = N
     if not question:
         raise HTTPException(status_code=502, detail="AI tutor did not generate an initial question for this concept.")
     return question
+
+
+def generate_prompt_for_concept(
+    *,
+    session: Optional[Dict[str, Any]],
+    concept: Dict[str, Any],
+    phase: str = "diagnostic",
+    revisit: bool = False,
+    intelligence_override: Any = None,
+) -> str:
+    if concept.get("interviewAnchor", {}).get("prompt"):
+        return concept["interviewAnchor"]["prompt"]
+
+    intelligence = intelligence_override or get_tutor_intelligence()
+    if session and intelligence and getattr(intelligence, "configured", False) and hasattr(intelligence, "generate_probe_question"):
+        context_packet = build_context_packet(
+            session=session,
+            concept=concept,
+            answer="",
+            burden_signal=session.get("burdenSignal", "normal"),
+            prior_evidence=((session.get("ledger") or {}).get(concept.get("id", "")) or {}).get("entries", []),
+        )
+        generated = intelligence.generate_probe_question(
+            concept=concept,
+            context_packet=context_packet,
+            phase=phase,
+            revisit=revisit,
+        )
+        question = str((generated or {}).get("question") or "").strip()
+        if question:
+            return question
+        raise HTTPException(status_code=502, detail="AI tutor did not generate a runtime question for this concept.")
+
+    return static_probe_for_concept(concept, session, revisit=revisit)
+
+
+def initial_probe(concept: Dict[str, Any], session: Optional[Dict[str, Any]] = None) -> str:
+    return generate_prompt_for_concept(session=session, concept=concept, phase="diagnostic")
 
 
 def rank_state(state: str) -> int:
@@ -307,7 +445,9 @@ def build_mastery_map(session: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def project_session(session: Dict[str, Any], latest_feedback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    current_concept_id = session["currentConceptId"]
+    current_concept_id = session["currentCheckpointId"]
+    current_training_point_id = session.get("currentTrainingPointId", "")
+    point_states = [compute_training_point_state(session, point) for point in session.get("trainingPoints") or []]
     return {
         "sessionId": session["id"],
         "userId": session.get("userId", ""),
@@ -318,6 +458,10 @@ def project_session(session: Dict[str, Any], latest_feedback: Optional[Dict[str,
             "metadata": deepcopy(session["source"].get("metadata") or {}),
         },
         "summary": session["summary"],
+        "trainingPoints": session.get("trainingPoints") or [],
+        "trainingPointStates": point_states,
+        "currentTrainingPointId": current_training_point_id,
+        "currentCheckpointId": current_concept_id,
         "concepts": session["concepts"],
         "currentConceptId": current_concept_id,
         "currentProbe": session.get("currentProbe", ""),
@@ -359,7 +503,7 @@ def is_concept_in_scope(session: Dict[str, Any], concept: Dict[str, Any]) -> boo
     if scope["type"] == "domain":
         return (concept.get("abilityDomainId") or concept.get("domainId")) == scope["id"]
     if scope["type"] == "concept":
-        return concept["id"] == scope["id"]
+        return concept.get("trainingPointId") == scope["id"]
     return True
 
 
@@ -384,7 +528,7 @@ def choose_next_unit(session: Dict[str, Any], *, allow_revisit: bool = True) -> 
     if allow_revisit:
         revisit = next((item for item in session["revisitQueue"] if not item.get("done")), None)
         if revisit:
-            concept = next((item for item in session["concepts"] if item["id"] == revisit["conceptId"]), None)
+            concept = next((item for item in session["concepts"] if item["id"] == revisit["checkpointId"]), None)
             if concept and is_concept_in_scope(session, concept):
                 revisit["done"] = True
                 session["conceptStates"][concept["id"]]["completed"] = False
@@ -394,22 +538,25 @@ def choose_next_unit(session: Dict[str, Any], *, allow_revisit: bool = True) -> 
 
 
 def resolve_prompt_for_concept(*, session: Optional[Dict[str, Any]] = None, concept: Dict[str, Any], revisit: bool = False) -> str:
-    if revisit:
-        question = concept.get("retryQuestion") or concept.get("checkQuestion") or concept.get("diagnosticQuestion")
-        if not question:
-            raise HTTPException(status_code=502, detail="AI tutor did not generate a revisit question for this concept.")
-        return question
-    return initial_probe(concept, session)
+    return generate_prompt_for_concept(
+        session=session,
+        concept=concept,
+        phase="revisit" if revisit else "diagnostic",
+        revisit=revisit,
+    )
 
 
 def build_turn_resolution(*, concept: Dict[str, Any], next_concept: Optional[Dict[str, Any]], switched_concept: bool, final_prompt: str, final_question_meta: Optional[Dict[str, Any]], control_verdict: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    current_point_title = concept.get("trainingPointTitle") or concept.get("title", "")
     if switched_concept and next_concept:
         return {
             "mode": "switch",
             "reason": "concept_completed",
             "finalPrompt": final_prompt,
-            "finalConceptId": next_concept["id"],
-            "finalConceptTitle": next_concept["title"],
+            "finalConceptId": next_concept.get("trainingPointId") or next_concept["id"],
+            "finalConceptTitle": next_concept.get("trainingPointTitle") or next_concept["title"],
+            "finalCheckpointId": next_concept["id"],
+            "finalCheckpointStatement": next_concept.get("checkpointStatement", next_concept["title"]),
             "finalQuestionMeta": final_question_meta,
         }
     if final_prompt:
@@ -417,16 +564,20 @@ def build_turn_resolution(*, concept: Dict[str, Any], next_concept: Optional[Dic
             "mode": "stay",
             "reason": (control_verdict or {}).get("reason") or "continue_on_current_concept",
             "finalPrompt": final_prompt,
-            "finalConceptId": concept["id"],
-            "finalConceptTitle": concept["title"],
+            "finalConceptId": concept.get("trainingPointId") or concept["id"],
+            "finalConceptTitle": current_point_title,
+            "finalCheckpointId": concept["id"],
+            "finalCheckpointStatement": concept.get("checkpointStatement", concept["title"]),
             "finalQuestionMeta": final_question_meta,
         }
     return {
         "mode": "stop",
         "reason": (control_verdict or {}).get("reason") or "no_followup_prompt",
         "finalPrompt": "",
-        "finalConceptId": concept["id"],
-        "finalConceptTitle": concept["title"],
+        "finalConceptId": concept.get("trainingPointId") or concept["id"],
+        "finalConceptTitle": current_point_title,
+        "finalCheckpointId": concept["id"],
+        "finalCheckpointStatement": concept.get("checkpointStatement", concept["title"]),
         "finalQuestionMeta": None,
     }
 
@@ -443,7 +594,7 @@ def create_memory_event(event_type: str, concept: Dict[str, Any], summary: str, 
         "summary": summary,
         "message": summary,
         "assessmentHandle": assessment_handle,
-        "evidenceReference": evidence_reference or concept.get("excerpt", ""),
+        "evidenceReference": evidence_reference or concept.get("evidenceSnippet", ""),
         "timestamp": timestamp or now_iso(),
     }
 
@@ -557,35 +708,6 @@ def apply_writeback_suggestion(*, session: Dict[str, Any], concept: Dict[str, An
     return {"applied": True, "assessmentHandle": assessment_handle}
 
 
-def evaluate_answer(concept: Dict[str, Any], answer: str, attempts: int) -> Dict[str, Any]:
-    normalized = (answer or "").strip()
-    lower = normalized.lower()
-    keywords = [str(item).lower() for item in concept.get("keywords", [])]
-    hits = sum(1 for keyword in keywords if keyword and keyword in lower)
-    if not normalized:
-        state = "weak"
-        confidence = 0.2
-        reasons = ["用户没有提供可判断内容。"]
-    elif hits >= 2 or (hits >= 1 and len(normalized) >= 24):
-        state = "solid" if attempts >= 1 or hits >= 3 else "partial"
-        confidence = 0.82 if state == "solid" else 0.62
-        reasons = [f"回答命中了 {hits} 个关键机制线索。"]
-    elif hits == 1 or len(normalized) >= 16:
-        state = "partial"
-        confidence = 0.48
-        reasons = ["回答有方向，但机制链路还不够完整。"]
-    else:
-        state = "weak"
-        confidence = 0.28
-        reasons = ["回答过于笼统，还没形成可验证的机制表达。"]
-    return {
-        "state": state,
-        "confidence": confidence,
-        "confidenceLevel": "high" if confidence >= 0.75 else "medium" if confidence >= 0.45 else "low",
-        "reasons": reasons,
-    }
-
-
 def _source_doc_reference(source: Dict[str, Any]) -> Dict[str, str] | None:
     metadata = source.get("metadata") or {}
     doc_path = str(metadata.get("docPath") or "").strip()
@@ -608,18 +730,36 @@ def _attach_source_reference(concepts: list[Dict[str, Any]], source: Dict[str, A
     return concepts
 
 
+def _attach_source_reference_to_points(training_points: list[Dict[str, Any]], source: Dict[str, Any]) -> list[Dict[str, Any]]:
+    source_ref = _source_doc_reference(source)
+    if not source_ref:
+        return training_points
+    for point in training_points:
+        existing = point.get("javaGuideSources") or []
+        if not any((item or {}).get("path") == source_ref["path"] for item in existing):
+            point["javaGuideSources"] = [source_ref, *existing]
+    return training_points
+
+
 def _resolve_decomposition(payload: Any) -> Dict[str, Any]:
     if payload.decomposition:
-        return deepcopy(payload.decomposition)
+        decomposition = deepcopy(payload.decomposition)
+        if not decomposition.get("trainingPoints"):
+            return normalize_decomposition_payload(decomposition, payload.source)
+        return decomposition
 
     intelligence = get_tutor_intelligence()
     if not intelligence or not hasattr(intelligence, "decompose_source"):
         raise HTTPException(status_code=503, detail="AI tutor decomposition is required but no AI provider is configured.")
-    return intelligence.decompose_source(payload.source)
+    decomposition = intelligence.decompose_source(payload.source)
+    if not decomposition.get("trainingPoints"):
+        return normalize_decomposition_payload(decomposition, payload.source)
+    return decomposition
 
 
 def create_session(payload: Any) -> Dict[str, Any]:
     decomposition = _resolve_decomposition(payload)
+    training_points = _attach_source_reference_to_points(deepcopy(decomposition["trainingPoints"]), payload.source)
     concepts = _attach_source_reference(deepcopy(decomposition["concepts"]), payload.source)
     concept_states = {}
     for concept in concepts:
@@ -629,6 +769,8 @@ def create_session(payload: Any) -> Dict[str, Any]:
             "completed": False,
             "teachCount": 0,
             "lastAction": "probe",
+            "result": "unseen",
+            "wrongFollowupCount": 0,
             "anchorState": create_empty_anchor_state(),
             "judge": {
                 "state": remembered.get("state", "不可判"),
@@ -638,6 +780,7 @@ def create_session(payload: Any) -> Dict[str, Any]:
             },
         }
     first_concept = concepts[0]
+    first_point = get_checkpoint_point({"trainingPoints": training_points}, first_concept["id"]) or training_points[0]
     session_id = str(uuid4())
     session = {
         "id": session_id,
@@ -645,9 +788,12 @@ def create_session(payload: Any) -> Dict[str, Any]:
         "userId": payload.userId,
         "source": deepcopy(payload.source),
         "summary": deepcopy(decomposition["summary"]),
+        "trainingPoints": training_points,
         "concepts": concepts,
         "conceptStates": concept_states,
         "ledger": create_evidence_ledger(concepts),
+        "currentTrainingPointId": first_point["id"],
+        "currentCheckpointId": first_concept["id"],
         "currentConceptId": first_concept["id"],
         "currentProbe": "",
         "currentQuestionMeta": None,
@@ -679,8 +825,10 @@ def create_session(payload: Any) -> Dict[str, Any]:
             "role": "tutor",
             "kind": "question",
             "action": "probe",
-            "conceptId": first_concept["id"],
-            "conceptTitle": first_concept["title"],
+            "conceptId": first_point["id"],
+            "conceptTitle": first_point["title"],
+            "checkpointId": first_concept["id"],
+            "checkpointStatement": first_concept.get("checkpointStatement", first_concept["title"]),
             "content": session["currentProbe"],
             "questionMeta": session["currentQuestionMeta"],
             "revisitReason": "",
@@ -694,6 +842,8 @@ def create_session(payload: Any) -> Dict[str, Any]:
         payload={
             "currentProbe": session["currentProbe"],
             "workspaceScope": session["workspaceScope"],
+            "currentTrainingPointId": first_point["id"],
+            "currentCheckpointId": first_concept["id"],
         },
     )
     SESSIONS[session_id] = session
@@ -705,18 +855,23 @@ def apply_focus_domain(session: Dict[str, Any], domain_id: str) -> Dict[str, Any
     if not candidates:
         raise HTTPException(status_code=404, detail="Unknown domain.")
     concept = next((item for item in candidates if not session["conceptStates"][item["id"]]["completed"]), candidates[0])
+    point = get_checkpoint_point(session, concept["id"]) or get_current_checkpoint_point(session)
     session["workspaceScope"] = {"type": "domain", "id": domain_id}
+    session["currentTrainingPointId"] = point["id"] if point else session.get("currentTrainingPointId", "")
+    session["currentCheckpointId"] = concept["id"]
     session["currentConceptId"] = concept["id"]
     session["currentProbe"] = initial_probe(concept, session)
     session["currentQuestionMeta"] = create_question_meta(concept, session=session, phase="diagnostic")
-    session["turns"].append(create_workspace_turn(action="focus-domain", concept=concept))
+    session["turns"].append(create_workspace_turn(action="focus-domain", concept=point or concept))
     session["turns"].append(
         {
             "role": "tutor",
             "kind": "question",
             "action": "probe",
-            "conceptId": concept["id"],
-            "conceptTitle": concept["title"],
+            "conceptId": point["id"] if point else concept["id"],
+            "conceptTitle": point["title"] if point else concept["title"],
+            "checkpointId": concept["id"],
+            "checkpointStatement": concept.get("checkpointStatement", concept["title"]),
             "content": session["currentProbe"],
             "questionMeta": session["currentQuestionMeta"],
             "revisitReason": "",
@@ -726,32 +881,39 @@ def apply_focus_domain(session: Dict[str, Any], domain_id: str) -> Dict[str, Any
     append_interaction_event(
         session,
         event_type="focus_domain",
-        concept=concept,
+        concept=point or concept,
         payload={
             "domainId": domain_id,
             "currentProbe": session["currentProbe"],
             "workspaceScope": session["workspaceScope"],
+            "currentCheckpointId": concept["id"],
         },
     )
     return project_session(session)
 
 
 def apply_focus_concept(session: Dict[str, Any], concept_id: str) -> Dict[str, Any]:
-    concept = next((item for item in session["concepts"] if item["id"] == concept_id), None)
-    if not concept:
+    point = next((item for item in session.get("trainingPoints") or [] if item["id"] == concept_id), None)
+    checkpoint_concepts = [item for item in session["concepts"] if item.get("trainingPointId") == concept_id]
+    concept = next((item for item in checkpoint_concepts if not session["conceptStates"][item["id"]]["completed"]), checkpoint_concepts[0] if checkpoint_concepts else None)
+    if not point or not concept:
         raise HTTPException(status_code=404, detail="Unknown concept.")
     session["workspaceScope"] = {"type": "concept", "id": concept_id}
-    session["currentConceptId"] = concept_id
+    session["currentTrainingPointId"] = point["id"]
+    session["currentCheckpointId"] = concept["id"]
+    session["currentConceptId"] = concept["id"]
     session["currentProbe"] = initial_probe(concept, session)
     session["currentQuestionMeta"] = create_question_meta(concept, session=session, phase="diagnostic")
-    session["turns"].append(create_workspace_turn(action="focus-concept", concept=concept))
+    session["turns"].append(create_workspace_turn(action="focus-concept", concept=point))
     session["turns"].append(
         {
             "role": "tutor",
             "kind": "question",
             "action": "probe",
-            "conceptId": concept["id"],
-            "conceptTitle": concept["title"],
+            "conceptId": point["id"],
+            "conceptTitle": point["title"],
+            "checkpointId": concept["id"],
+            "checkpointStatement": concept.get("checkpointStatement", concept["title"]),
             "content": session["currentProbe"],
             "questionMeta": session["currentQuestionMeta"],
             "revisitReason": "",
@@ -761,10 +923,11 @@ def apply_focus_concept(session: Dict[str, Any], concept_id: str) -> Dict[str, A
     append_interaction_event(
         session,
         event_type="focus_concept",
-        concept=concept,
+        concept=point,
         payload={
             "currentProbe": session["currentProbe"],
             "workspaceScope": session["workspaceScope"],
+            "currentCheckpointId": concept["id"],
         },
     )
     return project_session(session)
@@ -778,6 +941,7 @@ def handle_teach_control(
     burden_signal: str,
     intelligence_override: Any = None,
 ) -> Dict[str, Any]:
+    point = get_checkpoint_point(session, concept["id"]) or get_current_checkpoint_point(session)
     session["engagement"]["controlCount"] += 1
     session["engagement"]["teachRequestCount"] += 1
     session["engagement"]["consecutiveControlCount"] += 1
@@ -818,9 +982,6 @@ def handle_teach_control(
         except Exception:
             reply_text = ""
     next_move = (decision_envelope or {}).get("next_move") or {}
-    if next_move.get("ui_mode") in {"probe", "teach", "verify"} and not str(next_move.get("follow_up_question") or "").strip():
-        next_move["follow_up_question"] = concept.get("checkQuestion") or concept.get("retryQuestion") or concept.get("diagnosticQuestion") or ""
-        decision_envelope["next_move"] = next_move
     assert_valid_turn_envelope(decision_envelope, concept["id"])
     assert_consistent_turn_envelope(decision_envelope, context_packet)
     if not reply_text:
@@ -838,26 +999,31 @@ def handle_teach_control(
     )
     teaching_chunk = ""
     teaching_paragraphs: List[str] = []
-    coaching_step = (tutor_move or {}).get("followUpQuestion") or concept.get("checkQuestion") or concept.get("retryQuestion") or ""
+    coaching_step = (tutor_move or {}).get("followUpQuestion") or ""
     wrap_up = build_interview_wrap_up(
         concept=concept,
         judge=tutor_move.get("judge") or session["conceptStates"][concept["id"]]["judge"],
         gap=(tutor_move.get("nextMove") or {}).get("reason", ""),
     )
 
-    session["currentProbe"] = coaching_step
-    session["currentQuestionMeta"] = create_question_meta(concept, session=session, phase="teach-back")
+    session["conceptStates"][concept["id"]]["completed"] = True
+    session["conceptStates"][concept["id"]]["result"] = "partial"
+    transition = next_checkpoint_after_completion(session, concept, point)
+    next_concept = transition["next_concept"]
+    next_point = transition["next_point"]
 
     latest_feedback = {
         "conceptId": concept["id"],
-        "conceptTitle": concept["title"],
+        "conceptTitle": point["title"] if point else concept["title"],
+        "checkpointId": concept["id"],
+        "checkpointStatement": concept.get("checkpointStatement", concept["title"]),
         "signal": tutor_move.get("signal", "noise"),
         "action": "teach",
         "explanation": explanation,
         "gap": (tutor_move.get("nextMove") or {}).get("reason", ""),
-        "evidenceReference": concept.get("excerpt", ""),
-        "coachingStep": coaching_step,
-        "candidateCoachingStep": coaching_step,
+        "evidenceReference": concept.get("evidenceSnippet", ""),
+        "coachingStep": "",
+        "candidateCoachingStep": "",
         "strength": "",
         "takeaway": wrap_up["takeaway"],
         "teachingChunk": teaching_chunk,
@@ -869,11 +1035,13 @@ def handle_teach_control(
         "writebackSuggestion": tutor_move.get("writebackSuggestion"),
         "controlVerdict": None,
         "turnResolution": {
-            "mode": "stay",
-            "reason": "continue_on_current_concept",
-            "finalPrompt": coaching_step,
-            "finalConceptId": concept["id"],
-            "finalConceptTitle": concept["title"],
+            "mode": "switch" if next_concept else "stop",
+            "reason": "teach_then_advance",
+            "finalPrompt": session["currentProbe"],
+            "finalConceptId": next_point["id"] if next_point else (point["id"] if point else concept["id"]),
+            "finalConceptTitle": next_point["title"] if next_point else (point["title"] if point else concept["title"]),
+            "finalCheckpointId": next_concept["id"] if next_concept else concept["id"],
+            "finalCheckpointStatement": next_concept.get("checkpointStatement", next_concept["title"]) if next_concept else concept.get("checkpointStatement", concept["title"]),
             "finalQuestionMeta": session["currentQuestionMeta"],
         },
         "memoryAnchor": session["memoryProfile"]["abilityItems"].get(concept["id"]),
@@ -884,12 +1052,14 @@ def handle_teach_control(
 
 
 def handle_advance_control(*, session: Dict[str, Any], concept: Dict[str, Any]) -> Dict[str, Any]:
+    point = get_checkpoint_point(session, concept["id"]) or get_current_checkpoint_point(session)
     session["engagement"]["controlCount"] += 1
     session["engagement"]["skipCount"] += 1
     session["engagement"]["consecutiveControlCount"] += 1
     session["engagement"]["lastControlIntent"] = "advance"
     session["conceptStates"][concept["id"]]["completed"] = True
     session["conceptStates"][concept["id"]]["lastAction"] = "advance"
+    session["conceptStates"][concept["id"]]["result"] = "skipped"
     wrap_up = build_interview_wrap_up(
         concept=concept,
         judge=session["conceptStates"][concept["id"]]["judge"],
@@ -898,8 +1068,10 @@ def handle_advance_control(*, session: Dict[str, Any], concept: Dict[str, Any]) 
     )
     session["revisitQueue"].append(
         {
-            "conceptId": concept["id"],
-            "conceptTitle": concept["title"],
+            "conceptId": point["id"] if point else concept["id"],
+            "conceptTitle": point["title"] if point else concept["title"],
+            "checkpointId": concept["id"],
+            "checkpointStatement": concept.get("checkpointStatement", concept["title"]),
             "reason": "skipped-by-user",
             "takeaway": wrap_up["takeaway"],
             "queuedAt": now_iso(),
@@ -908,17 +1080,22 @@ def handle_advance_control(*, session: Dict[str, Any], concept: Dict[str, Any]) 
     )
     next_unit = choose_next_unit(session, allow_revisit=False)
     next_concept = next_unit.get("concept")
+    next_point = get_checkpoint_point(session, next_concept["id"]) if next_concept else None
+    session["currentTrainingPointId"] = next_point["id"] if next_point else (point["id"] if point else session.get("currentTrainingPointId", ""))
+    session["currentCheckpointId"] = next_concept["id"] if next_concept else concept["id"]
     session["currentConceptId"] = next_concept["id"] if next_concept else concept["id"]
     session["currentProbe"] = resolve_prompt_for_concept(session=session, concept=next_concept, revisit=bool(next_unit.get("revisit"))) if next_concept else ""
     session["currentQuestionMeta"] = create_question_meta(next_concept, session=session, phase="diagnostic" if not next_unit.get("revisit") else "revisit") if next_concept else None
     return {
         "conceptId": concept["id"],
-        "conceptTitle": concept["title"],
+        "conceptTitle": point["title"] if point else concept["title"],
+        "checkpointId": concept["id"],
+        "checkpointStatement": concept.get("checkpointStatement", concept["title"]),
         "signal": "noise",
         "action": "advance",
         "explanation": f"好，这个点先不继续卡住你了，我们直接进下一题。\n\n{wrap_up['explanation']}",
         "gap": "",
-        "evidenceReference": concept.get("excerpt", ""),
+        "evidenceReference": concept.get("evidenceSnippet", ""),
         "coachingStep": "",
         "candidateCoachingStep": "",
         "strength": "",
@@ -935,8 +1112,10 @@ def handle_advance_control(*, session: Dict[str, Any], concept: Dict[str, Any]) 
             "mode": "switch" if next_concept else "stop",
             "reason": "next_move_requests_stop",
             "finalPrompt": session["currentProbe"],
-            "finalConceptId": next_concept["id"] if next_concept else concept["id"],
-            "finalConceptTitle": next_concept["title"] if next_concept else concept["title"],
+            "finalConceptId": next_point["id"] if next_point else (point["id"] if point else concept["id"]),
+            "finalConceptTitle": next_point["title"] if next_point else (point["title"] if point else concept["title"]),
+            "finalCheckpointId": next_concept["id"] if next_concept else concept["id"],
+            "finalCheckpointStatement": next_concept.get("checkpointStatement", next_concept["title"]) if next_concept else concept.get("checkpointStatement", concept["title"]),
             "finalQuestionMeta": session["currentQuestionMeta"],
         },
         "memoryAnchor": session["memoryProfile"]["abilityItems"].get(concept["id"]),
@@ -945,69 +1124,9 @@ def handle_advance_control(*, session: Dict[str, Any], concept: Dict[str, Any]) 
     }
 
 
-def handle_summarize_control(*, session: Dict[str, Any], concept: Dict[str, Any]) -> Dict[str, Any]:
-    session["engagement"]["controlCount"] += 1
-    session["engagement"]["consecutiveControlCount"] += 1
-    session["engagement"]["lastControlIntent"] = "summarize"
-    session["conceptStates"][concept["id"]]["completed"] = True
-    session["conceptStates"][concept["id"]]["lastAction"] = "summarize"
-
-    wrap_up = build_interview_wrap_up(
-        concept=concept,
-        judge=session["conceptStates"][concept["id"]]["judge"],
-        gap=str(concept.get("remediationHint") or ""),
-        requested_by_user=True,
-    )
-    if session["conceptStates"][concept["id"]]["judge"].get("state") != "solid":
-        session["revisitQueue"].append(
-            {
-                "conceptId": concept["id"],
-                "conceptTitle": concept["title"],
-                "reason": "summary-requested",
-                "takeaway": wrap_up["takeaway"],
-                "queuedAt": now_iso(),
-                "done": False,
-            }
-        )
-
-    session["currentProbe"] = ""
-    session["currentQuestionMeta"] = None
-    return {
-        "conceptId": concept["id"],
-        "conceptTitle": concept["title"],
-        "signal": "noise",
-        "action": "summarize",
-        "explanation": wrap_up["explanation"],
-        "gap": "",
-        "evidenceReference": concept.get("excerpt", ""),
-        "coachingStep": "",
-        "candidateCoachingStep": "",
-        "strength": "",
-        "takeaway": wrap_up["takeaway"],
-        "teachingChunk": "",
-        "teachingParagraphs": [],
-        "judge": session["conceptStates"][concept["id"]]["judge"],
-        "runtimeMap": session["runtimeMaps"][concept["id"]],
-        "nextMove": None,
-        "modelNextMove": {"intent": "先把这一题收口成可复述答案。", "reason": "用户要求总结。", "ui_mode": "stop"},
-        "writebackSuggestion": None,
-        "controlVerdict": None,
-        "turnResolution": {
-            "mode": "stop",
-            "reason": "user_requested_summary",
-            "finalPrompt": "",
-            "finalConceptId": concept["id"],
-            "finalConceptTitle": concept["title"],
-            "finalQuestionMeta": None,
-        },
-        "memoryAnchor": session["memoryProfile"]["abilityItems"].get(concept["id"]),
-        "remediationMaterial": (concept.get("remediationMaterials") or [None])[0],
-        "learningSources": concept.get("javaGuideSources") or [],
-    }
-
-
 def answer_session(session: Dict[str, Any], payload: Any, intelligence_override: Any = None) -> Dict[str, Any]:
-    concept = next(item for item in session["concepts"] if item["id"] == session["currentConceptId"])
+    concept = get_current_checkpoint_concept(session)
+    point = get_current_checkpoint_point(session) or get_checkpoint_point(session, concept["id"])
     if payload.interactionPreference:
         session["interactionPreference"] = normalize_interaction_preference(payload.interactionPreference)
     session["burdenSignal"] = payload.burdenSignal
@@ -1019,8 +1138,10 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
             "role": "learner",
             "kind": "control" if control_intent else "answer",
             "action": control_intent or "",
-            "conceptId": concept["id"],
-            "conceptTitle": concept["title"],
+            "conceptId": point["id"] if point else concept["id"],
+            "conceptTitle": point["title"] if point else concept["title"],
+            "checkpointId": concept["id"],
+            "checkpointStatement": concept.get("checkpointStatement", concept["title"]),
             "content": answer,
             "timestamp": now_ms,
         }
@@ -1034,6 +1155,7 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
             "controlIntent": control_intent or "",
             "burdenSignal": payload.burdenSignal,
             "currentProbe": session.get("currentProbe", ""),
+            "currentCheckpointId": concept["id"],
         },
     )
     if control_intent == "teach":
@@ -1045,15 +1167,6 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
             intelligence_override=intelligence_override,
         )
         latest_memory_events: List[Dict[str, Any]] = []
-    elif control_intent == "summarize":
-        latest_feedback = handle_summarize_control(session=session, concept=concept)
-        latest_memory_events = []
-        if session.get("mode") == "target":
-            latest_memory_events = groom_pending_writebacks(session, concept_id=concept["id"])
-            if latest_memory_events:
-                session["memoryEvents"].extend(latest_memory_events)
-                session["memoryEvents"] = session["memoryEvents"][-10:]
-                session["latestMemoryEvents"] = latest_memory_events
     elif control_intent == "advance":
         latest_feedback = handle_advance_control(session=session, concept=concept)
         latest_memory_events = []
@@ -1103,10 +1216,7 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
             except Exception:
                 reply_text = ""
         next_move = (decision_envelope or {}).get("next_move") or {}
-        if next_move.get("ui_mode") in {"probe", "teach", "verify"} and not str(next_move.get("follow_up_question") or "").strip():
-            next_move["follow_up_question"] = concept.get("checkQuestion") or concept.get("retryQuestion") or concept.get("diagnosticQuestion") or ""
-            decision_envelope["next_move"] = next_move
-
+        turn_diagnosis = (decision_envelope or {}).get("turn_diagnosis") or {}
         assert_valid_turn_envelope(decision_envelope, concept["id"])
         assert_consistent_turn_envelope(decision_envelope, context_packet)
         if not reply_text:
@@ -1125,17 +1235,12 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
             tutor_move["nextMove"] = {
                 **(tutor_move.get("nextMove") or {}),
                 "ui_mode": "teach",
-                "follow_up_question": concept.get("checkQuestion") or concept.get("retryQuestion") or get_move_follow_up_question(tutor_move) or concept.get("diagnosticQuestion") or "",
+                "follow_up_question": get_move_follow_up_question(tutor_move)
+                or concept.get("checkQuestion")
+                or concept.get("retryQuestion")
+                or concept.get("diagnosticQuestion")
+                or "",
             }
-        if session.get("interactionPreference") == "explain-first" and tutor_move["moveType"] == "teach" and concept.get("checkQuestion"):
-            tutor_move["followUpQuestion"] = concept.get("checkQuestion")
-            tutor_move["nextMove"] = {
-                **(tutor_move.get("nextMove") or {}),
-                "ui_mode": "teach",
-                "follow_up_question": concept.get("checkQuestion"),
-            }
-            tutor_move["completeCurrentUnit"] = False
-            tutor_move["shouldStop"] = False
         tutor_move["runtimeMap"] = merge_runtime_maps(session["runtimeMaps"].get(concept["id"]), tutor_move["runtimeMap"], concept["id"])
         session["runtimeMaps"][concept["id"]] = tutor_move["runtimeMap"]
 
@@ -1151,7 +1256,7 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
                 "whyJudgedThisWay": "；".join((tutor_move["judge"] or {}).get("reasons", [])),
                 "sourceRefs": context_packet["draft_evidence"]["sourceRefs"],
                 "confidenceLevel": tutor_move["judge"].get("confidenceLevel") or score_to_confidence_level(tutor_move["judge"].get("confidence", 0)),
-                "evidenceReference": concept["excerpt"],
+                "evidenceReference": concept["evidenceSnippet"],
                 "sourceAligned": True,
             },
         )
@@ -1166,8 +1271,10 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
         if tutor_move.get("revisitReason"):
             session["revisitQueue"].append(
                 {
-                    "conceptId": concept["id"],
-                    "conceptTitle": concept["title"],
+                    "conceptId": point["id"] if point else concept["id"],
+                    "conceptTitle": point["title"] if point else concept["title"],
+                    "checkpointId": concept["id"],
+                    "checkpointStatement": concept.get("checkpointStatement", concept["title"]),
                     "reason": tutor_move["revisitReason"],
                     "takeaway": tutor_move.get("takeaway", ""),
                     "queuedAt": now_iso(),
@@ -1184,19 +1291,27 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
             scope_type=get_workspace_scope(session)["type"],
         )
 
-        probe_budget_forces_completion = (
-            session["conceptStates"][concept["id"]]["attempts"] >= get_concept_round_budget(concept)
+        checkpoint_outcome = classify_checkpoint_outcome(
+            diagnosis=turn_diagnosis,
+            tutor_move=tutor_move,
+            answer=answer,
+            burden_signal=payload.burdenSignal,
         )
-        should_complete = (
-            tutor_move["completeCurrentUnit"]
-            or tutor_move["judge"]["state"] in {"solid", "不可判"}
-            or tutor_move["moveType"] == "advance"
-            or probe_budget_forces_completion
+        probe_budget_forces_completion = get_consumed_rounds(session, concept) >= get_concept_round_budget(concept)
+        wrong_followup_count = session["conceptStates"][concept["id"]].get("wrongFollowupCount", 0)
+        should_followup_wrong = (
+            checkpoint_outcome == "wrong"
+            and wrong_followup_count < 1
+            and not probe_budget_forces_completion
         )
-        if session.get("interactionPreference") == "explain-first" and tutor_move["moveType"] == "teach" and not probe_budget_forces_completion:
-            should_complete = False
-        if should_complete:
+
+        if should_followup_wrong:
+            session["conceptStates"][concept["id"]]["wrongFollowupCount"] = wrong_followup_count + 1
+            session["conceptStates"][concept["id"]]["completed"] = False
+            session["conceptStates"][concept["id"]]["result"] = "wrong"
+        else:
             session["conceptStates"][concept["id"]]["completed"] = True
+            session["conceptStates"][concept["id"]]["result"] = map_checkpoint_result(checkpoint_outcome)
 
         writeback_result = apply_writeback_suggestion(
             session=session,
@@ -1231,26 +1346,28 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
         session["memoryEvents"] = session["memoryEvents"][-10:]
         session["latestMemoryEvents"] = latest_memory_events
 
-        next_unit = choose_next_unit(session)
-        next_concept = next_unit.get("concept")
-        switched = bool(next_concept and next_concept["id"] != concept["id"])
-        session["currentConceptId"] = next_concept["id"] if next_concept else session["currentConceptId"]
-        session["currentProbe"] = (
-            resolve_prompt_for_concept(session=session, concept=next_concept, revisit=bool(next_unit.get("revisit")))
-            if next_concept and switched
-            else get_move_follow_up_question(tutor_move)
-            if next_concept
-            else ""
-        )
-        session["currentQuestionMeta"] = (
-            create_question_meta(
-                next_concept,
-                session=session,
-                phase="revisit" if next_unit.get("revisit") else "diagnostic" if switched else "teach-back" if tutor_move["moveType"] == "teach" else "follow-up",
+        if should_followup_wrong:
+            next_unit = {"concept": concept, "revisit": False}
+            next_concept = concept
+            next_point = point
+            switched = False
+            session["currentTrainingPointId"] = point["id"] if point else session.get("currentTrainingPointId", "")
+            session["currentCheckpointId"] = concept["id"]
+            session["currentConceptId"] = concept["id"]
+            session["currentProbe"] = (
+                get_move_follow_up_question(tutor_move)
+                or concept.get("checkQuestion")
+                or concept.get("retryQuestion")
+                or concept.get("diagnosticQuestion")
+                or ""
             )
-            if session["currentProbe"] and next_concept
-            else None
-        )
+            session["currentQuestionMeta"] = create_question_meta(concept, session=session, phase="follow-up") if session["currentProbe"] else None
+        else:
+            transition = next_checkpoint_after_completion(session, concept, point)
+            next_unit = transition["next_unit"]
+            next_concept = transition["next_concept"]
+            next_point = transition["next_point"]
+            switched = bool(next_concept and next_concept["id"] != concept["id"])
         turn_resolution = build_turn_resolution(
             concept=concept,
             next_concept=next_concept,
@@ -1261,15 +1378,17 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
         )
         latest_feedback = {
             "conceptId": concept["id"],
-            "conceptTitle": concept["title"],
+            "conceptTitle": point["title"] if point else concept["title"],
+            "checkpointId": concept["id"],
+            "checkpointStatement": concept.get("checkpointStatement", concept["title"]),
             "signal": tutor_move["signal"],
-            "action": tutor_move["moveType"],
+            "action": "teach" if checkpoint_outcome in {"full", "partial", "empty", "wrong"} else tutor_move["moveType"],
             "explanation": tutor_move["replyText"],
             "replyStream": tutor_move["replyText"],
             "gap": (tutor_move.get("nextMove") or {}).get("reason", ""),
-            "evidenceReference": concept["excerpt"],
-            "coachingStep": get_move_follow_up_question(tutor_move) if turn_resolution["mode"] == "stay" else "",
-            "candidateCoachingStep": get_move_follow_up_question(tutor_move),
+            "evidenceReference": concept["evidenceSnippet"],
+            "coachingStep": session["currentProbe"] if should_followup_wrong else "",
+            "candidateCoachingStep": session["currentProbe"] if should_followup_wrong else "",
             "strength": "",
             "takeaway": build_interview_wrap_up(
                 concept=concept,
@@ -1303,8 +1422,10 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
             "role": "tutor",
             "kind": "feedback",
             "action": latest_feedback["action"],
-            "conceptId": concept["id"],
-            "conceptTitle": concept["title"],
+            "conceptId": point["id"] if point else concept["id"],
+            "conceptTitle": point["title"] if point else concept["title"],
+            "checkpointId": concept["id"],
+            "checkpointStatement": concept.get("checkpointStatement", concept["title"]),
             "content": latest_feedback["explanation"],
             "contentFormat": "markdown",
             "coachingStep": latest_feedback["coachingStep"],
@@ -1320,14 +1441,17 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
         }
     )
     if session["currentProbe"]:
-        current_concept = next(item for item in session["concepts"] if item["id"] == session["currentConceptId"])
+        current_concept = get_current_checkpoint_concept(session)
+        current_point = get_current_checkpoint_point(session) or get_checkpoint_point(session, current_concept["id"])
         session["turns"].append(
             {
                 "role": "tutor",
                 "kind": "question",
                 "action": "probe",
-                "conceptId": current_concept["id"],
-                "conceptTitle": current_concept["title"],
+                "conceptId": current_point["id"] if current_point else current_concept["id"],
+                "conceptTitle": current_point["title"] if current_point else current_concept["title"],
+                "checkpointId": current_concept["id"],
+                "checkpointStatement": current_concept.get("checkpointStatement", current_concept["title"]),
                 "content": session["currentProbe"],
                 "questionMeta": session["currentQuestionMeta"],
                 "revisitReason": "",
@@ -1337,7 +1461,7 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
     logger.event(
         events.BUSINESS_RESULT_GENERATED,
         question_type=concept.get("questionFamily", "") or "general",
-        difficulty=concept.get("coverage", "medium"),
+        difficulty=concept.get("importance", "secondary"),
         followup_triggered=bool(session.get("currentProbe")),
         followup_reason=latest_feedback.get("coachingStep") or latest_feedback.get("candidateCoachingStep") or "",
         scores={
@@ -1356,9 +1480,10 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
             "action": latest_feedback.get("action", ""),
             "turnResolution": latest_feedback.get("turnResolution"),
             "currentProbe": session.get("currentProbe", ""),
+            "currentCheckpointId": session.get("currentCheckpointId", ""),
         },
     )
-    if control_intent in {"teach", "advance", "summarize"}:
+    if control_intent in {"teach", "advance"}:
         session["latestMemoryEvents"] = latest_memory_events
     return project_session(session, latest_feedback)
 

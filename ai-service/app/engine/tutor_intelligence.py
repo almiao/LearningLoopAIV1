@@ -360,16 +360,17 @@ def _slugify(value: Any) -> str:
 
 
 def _validate_unit(unit: Dict[str, Any], index: int) -> Dict[str, Any]:
+    misconception_anchors = [ensure_string(item) for item in ensure_array(unit.get("misconceptionAnchors")) if ensure_string(item)][:4]
+    discriminators = [ensure_string(item) for item in ensure_array(unit.get("discriminators")) if ensure_string(item)][:4]
     return {
         "id": ensure_string(unit.get("id"), f"{_slugify(unit.get('title') or f'unit-{index + 1}')}-{index + 1}"),
         "title": ensure_string(unit.get("title"), f"Teachable Unit {index + 1}"),
         "summary": ensure_string(unit.get("summary")),
-        "excerpt": ensure_string(unit.get("excerpt") or unit.get("evidenceReference") or unit.get("summary")),
-        "keywords": [ensure_string(item) for item in ensure_array(unit.get("keywords")) if ensure_string(item)][:8],
-        "sourceAnchors": [ensure_string(item) for item in ensure_array(unit.get("sourceAnchors")) if ensure_string(item)][:3],
-        "misconception": ensure_string(unit.get("misconception")),
+        "evidenceSnippet": ensure_string(unit.get("evidenceSnippet") or unit.get("evidenceReference") or unit.get("summary")),
+        "misconceptionAnchors": misconception_anchors,
+        "discriminators": discriminators,
+        "misconception": ensure_string(unit.get("misconception"), "；".join(misconception_anchors)),
         "importance": ensure_string(unit.get("importance"), "secondary"),
-        "coverage": ensure_string(unit.get("coverage"), "medium"),
         "diagnosticQuestion": ensure_string(unit.get("diagnosticQuestion")),
         "retryQuestion": ensure_string(unit.get("retryQuestion")),
         "stretchQuestion": ensure_string(unit.get("stretchQuestion")),
@@ -379,23 +380,194 @@ def _validate_unit(unit: Dict[str, Any], index: int) -> Dict[str, Any]:
     }
 
 
+def _validate_checkpoint(checkpoint: Dict[str, Any], index: int, point_id: str, fallback_summary: str = "", fallback_evidence: str = "", fallback_mistakes: List[str] | None = None) -> Dict[str, Any]:
+    evidence_snippets = [ensure_string(item) for item in ensure_array(checkpoint.get("evidenceSnippets")) if ensure_string(item)][:3]
+    common_mistakes = [ensure_string(item) for item in ensure_array(checkpoint.get("commonMistakes")) if ensure_string(item)][:4]
+    return {
+        "id": ensure_string(checkpoint.get("id"), f"{point_id}-cp-{index + 1}"),
+        "statement": ensure_string(checkpoint.get("statement"), fallback_summary or f"Checkpoint {index + 1}"),
+        "evidenceSnippets": evidence_snippets or ([ensure_string(fallback_evidence)] if ensure_string(fallback_evidence) else []),
+        "successCriteria": ensure_string(checkpoint.get("successCriteria"), fallback_summary or ensure_string(checkpoint.get("statement"))),
+        "commonMistakes": common_mistakes or [item for item in (fallback_mistakes or []) if ensure_string(item)][:4],
+        "maxTurns": int(checkpoint.get("maxTurns") or 3),
+        "diagnosticQuestion": ensure_string(checkpoint.get("diagnosticQuestion")),
+        "checkQuestion": ensure_string(checkpoint.get("checkQuestion")),
+        "order": index + 1,
+    }
+
+
+def _build_checkpoints_from_legacy_unit(unit: Dict[str, Any]) -> List[Dict[str, Any]]:
+    discriminators = unit.get("discriminators") or []
+    misconception_anchors = unit.get("misconceptionAnchors") or []
+    if discriminators:
+        return [
+            _validate_checkpoint(
+                {
+                    "id": f"{unit['id']}-cp-{index + 1}",
+                    "statement": discriminator,
+                    "evidenceSnippets": [unit.get("evidenceSnippet", "")],
+                    "successCriteria": discriminator,
+                    "commonMistakes": misconception_anchors,
+                    "maxTurns": 3,
+                    "diagnosticQuestion": unit.get("diagnosticQuestion", ""),
+                    "checkQuestion": unit.get("checkQuestion", "") or unit.get("retryQuestion", ""),
+                },
+                index,
+                unit["id"],
+                fallback_summary=unit.get("summary", ""),
+                fallback_evidence=unit.get("evidenceSnippet", ""),
+                fallback_mistakes=misconception_anchors,
+            )
+            for index, discriminator in enumerate(discriminators)
+        ]
+
+    return [
+        _validate_checkpoint(
+            {
+                "id": f"{unit['id']}-cp-1",
+                "statement": unit.get("summary") or unit.get("title") or "核心检查项",
+                "evidenceSnippets": [unit.get("evidenceSnippet", "")],
+                "successCriteria": unit.get("summary") or unit.get("title") or "说明当前训练点的核心作用",
+                "commonMistakes": misconception_anchors,
+                "maxTurns": 3,
+                "diagnosticQuestion": unit.get("diagnosticQuestion", ""),
+                "checkQuestion": unit.get("checkQuestion", "") or unit.get("retryQuestion", ""),
+            },
+            0,
+            unit["id"],
+            fallback_summary=unit.get("summary", ""),
+            fallback_evidence=unit.get("evidenceSnippet", ""),
+            fallback_mistakes=misconception_anchors,
+        )
+    ]
+
+
+def _validate_training_point(point: Dict[str, Any], index: int) -> Dict[str, Any]:
+    point_id = ensure_string(point.get("id"), f"{_slugify(point.get('title') or f'point-{index + 1}')}-{index + 1}")
+    checkpoints = [
+        _validate_checkpoint(
+            checkpoint,
+            checkpoint_index,
+            point_id,
+            fallback_summary=ensure_string(point.get("summary")),
+            fallback_evidence=ensure_string(point.get("evidenceSnippet") or point.get("summary")),
+            fallback_mistakes=[ensure_string(item) for item in ensure_array(point.get("commonMistakes")) if ensure_string(item)],
+        )
+        for checkpoint_index, checkpoint in enumerate(ensure_array(point.get("checkpoints")))
+    ]
+    if not checkpoints:
+        checkpoints = _build_checkpoints_from_legacy_unit(
+            {
+                "id": point_id,
+                "title": ensure_string(point.get("title"), f"Training Point {index + 1}"),
+                "summary": ensure_string(point.get("summary")),
+                "evidenceSnippet": ensure_string(point.get("evidenceSnippet") or point.get("summary")),
+                "misconceptionAnchors": [ensure_string(item) for item in ensure_array(point.get("commonMistakes") or point.get("misconceptionAnchors")) if ensure_string(item)],
+                "discriminators": [ensure_string(item) for item in ensure_array(point.get("discriminators")) if ensure_string(item)],
+                "diagnosticQuestion": ensure_string(point.get("diagnosticQuestion")),
+                "retryQuestion": ensure_string(point.get("retryQuestion")),
+                "checkQuestion": ensure_string(point.get("checkQuestion")),
+            }
+        )
+
+    return {
+        "id": point_id,
+        "title": ensure_string(point.get("title"), f"Training Point {index + 1}"),
+        "summary": ensure_string(point.get("summary")),
+        "importance": ensure_string(point.get("importance"), "secondary"),
+        "order": index + 1,
+        "checkpoints": checkpoints,
+        "abilityDomainId": ensure_string(point.get("abilityDomainId") or point.get("domainId")),
+        "abilityDomainTitle": ensure_string(point.get("abilityDomainTitle") or point.get("domainTitle")),
+        "questionFamily": ensure_string(point.get("questionFamily")),
+        "provenance": point.get("provenance") or point.get("interviewQuestion") or {},
+        "provenanceLabel": ensure_string(point.get("provenanceLabel") or ((point.get("interviewQuestion") or {}).get("label"))),
+        "javaGuideSources": ensure_array(point.get("javaGuideSources")),
+        "remediationMaterials": ensure_array(point.get("remediationMaterials")),
+        "remediationHint": ensure_string(point.get("remediationHint")),
+    }
+
+
+def _checkpoint_concept_from_point(point: Dict[str, Any], checkpoint: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": checkpoint["id"],
+        "title": point["title"],
+        "summary": point["summary"],
+        "evidenceSnippet": " / ".join(checkpoint.get("evidenceSnippets") or []) or point["summary"],
+        "misconceptionAnchors": checkpoint.get("commonMistakes") or [],
+        "discriminators": [checkpoint.get("statement", ""), checkpoint.get("successCriteria", "")] if checkpoint.get("successCriteria") else [checkpoint.get("statement", "")],
+        "misconception": "；".join(checkpoint.get("commonMistakes") or []),
+        "importance": point.get("importance", "secondary"),
+        "diagnosticQuestion": checkpoint.get("diagnosticQuestion") or "",
+        "retryQuestion": "",
+        "stretchQuestion": "",
+        "checkQuestion": checkpoint.get("checkQuestion") or "",
+        "remediationHint": "",
+        "order": checkpoint.get("order", 1),
+        "trainingPointId": point["id"],
+        "trainingPointTitle": point["title"],
+        "trainingPointSummary": point["summary"],
+        "checkpointId": checkpoint["id"],
+        "checkpointStatement": checkpoint["statement"],
+        "successCriteria": checkpoint["successCriteria"],
+        "evidenceSnippets": checkpoint.get("evidenceSnippets") or [],
+        "commonMistakes": checkpoint.get("commonMistakes") or [],
+        "maxTurns": checkpoint.get("maxTurns", 3),
+        "abilityDomainId": point.get("abilityDomainId", ""),
+        "abilityDomainTitle": point.get("abilityDomainTitle", ""),
+        "domainId": point.get("abilityDomainId", ""),
+        "domainTitle": point.get("abilityDomainTitle", ""),
+        "questionFamily": point.get("questionFamily", ""),
+        "provenance": point.get("provenance") or {},
+        "provenanceLabel": point.get("provenanceLabel", ""),
+        "interviewQuestion": point.get("provenance") or {},
+        "javaGuideSources": point.get("javaGuideSources") or [],
+        "remediationMaterials": point.get("remediationMaterials") or [],
+        "remediationHint": point.get("remediationHint", ""),
+    }
+
+
 def normalize_decomposition_payload(payload: Dict[str, Any], source: Dict[str, Any]) -> Dict[str, Any]:
-    raw_units = ensure_array((payload or {}).get("units"))[:7]
-    if len(raw_units) < 3:
-        raise ValueError("Tutor intelligence returned too few teaching units.")
-    units = [_validate_unit(unit, index) for index, unit in enumerate(raw_units)]
-    units = [unit for unit in units if unit["summary"] and unit["diagnosticQuestion"]]
-    if len(units) < 3:
-        raise ValueError("Tutor intelligence returned invalid teaching units.")
+    raw_points = ensure_array((payload or {}).get("trainingPoints"))[:7]
+    if not raw_points:
+        raw_concepts = ensure_array((payload or {}).get("concepts"))
+        if raw_concepts:
+            raw_points = raw_concepts
+    if not raw_points:
+        raw_units = ensure_array((payload or {}).get("units"))[:7]
+        if len(raw_units) < 1:
+            raise ValueError("Tutor intelligence returned too few teaching units.")
+        raw_points = []
+        for index, unit in enumerate(raw_units):
+            normalized_unit = _validate_unit(unit, index)
+            raw_points.append(
+                {
+                    "id": normalized_unit["id"],
+                    "title": normalized_unit["title"],
+                    "summary": normalized_unit["summary"],
+                    "importance": normalized_unit["importance"],
+                    "evidenceSnippet": normalized_unit["evidenceSnippet"],
+                    "commonMistakes": normalized_unit["misconceptionAnchors"],
+                    "checkpoints": _build_checkpoints_from_legacy_unit(normalized_unit),
+                }
+            )
+    training_points = [_validate_training_point(point, index) for index, point in enumerate(raw_points)]
+    training_points = [point for point in training_points if point["summary"] and point["checkpoints"]]
+    if len(training_points) < 1:
+        raise ValueError("Tutor intelligence returned invalid training points.")
+    concepts = []
+    for point in training_points:
+        concepts.extend([_checkpoint_concept_from_point(point, checkpoint) for checkpoint in point["checkpoints"]])
     key_themes = [ensure_string(item) for item in ensure_array(((payload or {}).get("summary") or {}).get("keyThemes")) if ensure_string(item)][:3]
     return {
-        "concepts": units,
+        "trainingPoints": training_points,
+        "concepts": concepts,
         "summary": {
             "sourceTitle": ensure_string(((payload or {}).get("summary") or {}).get("sourceTitle"), source.get("title", "")),
-            "keyThemes": key_themes or [unit["title"] for unit in units[:3]],
+            "keyThemes": key_themes or [point["title"] for point in training_points[:3]],
             "framing": ensure_string(
                 ((payload or {}).get("summary") or {}).get("framing"),
-                f"我先从材料里提炼出 {'、'.join(unit['title'] for unit in units[:3])} 这些切入点。",
+                f"我先从材料里提炼出 {'、'.join(point['title'] for point in training_points[:3])} 这些训练点。",
             ),
         },
     }
@@ -451,10 +623,6 @@ def normalize_turn_envelope_payload(payload: Dict[str, Any], concept: Dict[str, 
     suggestion = (payload or {}).get("writeback_suggestion") or {}
     follow_up_question = ensure_string(next_move.get("follow_up_question") or next_move.get("followUpQuestion"))
     ui_mode = next_move.get("ui_mode") if next_move.get("ui_mode") in {"probe", "teach", "verify", "advance", "revisit", "stop"} else "probe"
-    if ui_mode in {"probe", "teach", "verify"} and not follow_up_question:
-        follow_up_question = ensure_string(
-            concept.get("checkQuestion") or concept.get("retryQuestion") or concept.get("diagnosticQuestion")
-        )
     return {
         "runtime_map": {
             "anchor_id": ensure_string(runtime_map.get("anchor_id"), concept.get("id", "")),
@@ -506,6 +674,11 @@ def normalize_explain_concept_payload(payload: Dict[str, Any], concept: Dict[str
     }
 
 
+def validate_question_generation_payload(payload: Dict[str, Any]) -> None:
+    if not ensure_string((payload or {}).get("question")):
+        raise ValueError("AI tutor did not generate a question.")
+
+
 def format_source_for_prompt(source: Dict[str, Any]) -> str:
     lines = [f"TITLE: {source.get('title', '')}"]
     if source.get("url"):
@@ -529,6 +702,7 @@ TUTOR_TOP_LEVEL_CONTRACT = [
 TUTOR_CONFLICT_ORDER = [
     "explicit learner intent > inferred intent",
     "current concept continuity > opportunistic topic switch",
+    "answering the current learner-facing question completely > expanding to a different discriminator under the same broad anchor",
     "recent teaching + unresolved gap > restating the whole explanation",
     "one highest-value missing link > listing multiple gaps at once",
     "clear stop or advance request > extra probing",
@@ -633,6 +807,8 @@ def build_turn_envelope_prompt(
         "DECISION RULES:",
         "- Treat budget, friction_signals, and stop_conditions as orchestration factors before proposing more probing.",
         "- If recent teaching already covered the core mechanism, prefer naming the one missing link over repeating the full explanation.",
+        "- If TURN_DIAGNOSIS.evidence_quality is full and has_misconception is false, do not open a new follow-up just to cover a different discriminator under the same broad anchor.",
+        "- When the learner has already fully answered the current learner-facing question, prefer marking the unit solid and stopping or advancing instead of escalating scope.",
         "- When a response is still needed on the current concept, follow_up_question must be a concrete question the learner can answer immediately.",
         "- Treat follow_up_question as a candidate follow-up only for staying on the current concept. If the turn should switch or stop, leave follow_up_question empty.",
         "- Keep writeback_suggestion conservative. Use noop when this turn does not materially change the anchor state.",
@@ -658,10 +834,9 @@ def build_turn_envelope_prompt(
                     {
                         "concept_title": concept.get("title", ""),
                         "concept_summary": concept.get("summary", ""),
-                        "concept_excerpt": concept.get("excerpt", ""),
-                        "misconception": concept.get("misconception", ""),
-                        "remediation_hint": concept.get("remediationHint", ""),
-                        "check_question": concept.get("checkQuestion") or concept.get("retryQuestion") or "",
+                        "evidence_snippet": concept.get("evidenceSnippet", ""),
+                        "misconception_anchors": concept.get("misconceptionAnchors", []) or ([concept.get("misconception")] if concept.get("misconception") else []),
+                        "discriminators": concept.get("discriminators", []),
                         "sources": concept.get("javaGuideSources", []),
                     },
                     ensure_ascii=False,
@@ -681,25 +856,18 @@ DECOMPOSITION_SCHEMA = {
     "example": {
         "summary": {
             "sourceTitle": "AQS 详解",
-            "keyThemes": ["AQS 的作用是什么？", "AQS 为什么使用 CLH 锁队列的变体？"],
-            "framing": "我先从材料里提炼出几个切入点，再围绕其中的具体机制来出题。",
+            "keyThemes": ["AQS 的同步器底座角色", "独占 acquire/release 主链路"],
+            "framing": "我先把材料拆成稳定概念锚点，具体问题会根据学习进展动态生成。",
         },
         "units": [
             {
                 "id": "aqs-role-1",
-                "title": "AQS 的作用是什么？",
+                "title": "AQS 的同步器底座角色",
                 "summary": "AQS 为锁和同步器提供通用框架。",
-                "excerpt": "AQS 提供了资源获取和释放的通用框架。",
-                "keywords": ["aqs", "synchronizer"],
-                "sourceAnchors": ["AQS 提供了资源获取和释放的通用框架。"],
-                "misconception": "容易只说它很重要，不说明它到底抽象了什么。",
+                "evidenceSnippet": "AQS 提供了资源获取和释放的通用框架。",
+                "misconceptionAnchors": ["容易只说它很重要，不说明它到底抽象了什么。"],
+                "discriminators": ["能说清 AQS 是框架而不是具体锁", "能把 state、队列、唤醒串成一条链路"],
                 "importance": "core",
-                "coverage": "high",
-                "diagnosticQuestion": "请直接回答：AQS 的作用是什么？",
-                "retryQuestion": "先只回答一个点：AQS 替同步器隐藏了哪类底层线程协调逻辑？",
-                "stretchQuestion": "继续深入：AQS 为什么能复用到多种同步器上？",
-                "checkQuestion": "现在用你自己的话复述：AQS 为什么不是具体锁，而是同步器底座？",
-                "remediationHint": "先抓住材料里的关键点，再讲它屏蔽的底层协调逻辑。",
             }
         ],
     },
@@ -718,7 +886,50 @@ DECOMPOSITION_SCHEMA = {
                     "framing": {"type": "string"},
                 },
             },
-            "units": {"type": "array", "minItems": 3, "maxItems": 7, "items": {"type": "object"}},
+            "units": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 7,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [
+                        "id",
+                        "title",
+                        "summary",
+                        "evidenceSnippet",
+                        "misconceptionAnchors",
+                        "discriminators",
+                        "importance",
+                    ],
+                    "properties": {
+                        "id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "summary": {"type": "string"},
+                        "evidenceSnippet": {"type": "string"},
+                        "misconceptionAnchors": {"type": "array", "maxItems": 4, "items": {"type": "string"}},
+                        "discriminators": {"type": "array", "maxItems": 4, "items": {"type": "string"}},
+                        "importance": {"type": "string", "enum": ["core", "secondary", "optional"]},
+                    },
+                },
+            },
+        },
+    },
+}
+
+QUESTION_GENERATION_SCHEMA = {
+    "name": "tutor_question_generation",
+    "example": {
+        "question": "先从这条链路开始：如果 ReentrantLock 基于 AQS，独占 acquire 失败后线程会进入哪几个关键步骤？",
+        "intent": "诊断用户是否能把 state、入队和阻塞唤醒串起来。",
+    },
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["question", "intent"],
+        "properties": {
+            "question": {"type": "string"},
+            "intent": {"type": "string"},
         },
     },
 }
@@ -916,16 +1127,16 @@ class ProviderTutorIntelligence:
     def decompose_source(self, source: Dict[str, Any]) -> Dict[str, Any]:
         prompt = "\n".join(
             [
-                "Read the submitted learning material and produce 3-7 document-local teachable units.",
+                "Read the submitted learning material and produce 3-7 document-local concept anchors.",
                 "Requirements:",
                 "- Stay anchored to the submitted source, but use minimal background knowledge when needed for clearer teaching.",
                 "- Do not leak frontmatter, tags, SEO metadata, or boilerplate into the learner-facing summary.",
-                "- Each unit must support a concrete first diagnostic question.",
-                "- Each unit should include a check question for teach-back after explanation.",
-                "- Prefer mechanisms, distinctions, failure modes, and misconceptions over broad topic labels.",
-                "- Do not generate broad prompts like “what is the core mechanism and why is it important”. Ask one concrete, answerable question tied to a specific passage.",
-                "- Keep unit titles as internal anchors. The learner-facing question should stand on its own without exposing the anchor label.",
-                "- Assign importance as core/secondary/optional and coverage as high/medium/low.",
+                "- Do not generate learner-facing questions during decomposition.",
+                "- Decomposition is only for stable concept structure: what to teach, evidence, common misconception anchors, and key discriminators.",
+                "- Prefer mechanisms, distinctions, failure modes, and misconception anchors over broad topic labels.",
+                "- Keep unit titles as internal anchors. Runtime question generation will turn these anchors into learner-facing prompts based on session state.",
+                "- Keep evidenceSnippet short and directly traceable to the submitted material; long documents should still produce compact, high-signal anchors.",
+                "- Assign importance as core/secondary/optional.",
                 "",
                 format_source_for_prompt(source),
             ]
@@ -937,6 +1148,55 @@ class ProviderTutorIntelligence:
             validator=validate_decomposition_payload,
         )
         return normalize_decomposition_payload(result.parsed, source)
+
+    def generate_probe_question(
+        self,
+        *,
+        concept: Dict[str, Any],
+        context_packet: Dict[str, Any],
+        phase: str = "diagnostic",
+        revisit: bool = False,
+    ) -> Dict[str, Any]:
+        prompt = "\n".join(
+            [
+                "Generate exactly one learner-facing question for the current tutor turn. Return json only.",
+                "The question must be created from the current session state, not copied from decomposition-time placeholders.",
+                "Use the concept anchors as constraints, but adapt to memory, recent turns, previous runtime map, phase, and revisit state.",
+                "Ask one concrete, answerable question. Avoid broad prompts like “what is the core mechanism and why is it important”.",
+                "If this is a revisit, target the unresolved misconception or missing discriminator instead of repeating the first diagnostic.",
+                "",
+                f"PHASE: {phase}",
+                f"REVISIT: {str(revisit).lower()}",
+                "",
+                "CONCEPT_ANCHOR_JSON:",
+                json.dumps(
+                    {
+                        "id": concept.get("id", ""),
+                        "title": concept.get("title", ""),
+                        "summary": concept.get("summary", ""),
+                        "evidenceSnippet": concept.get("evidenceSnippet", ""),
+                        "misconceptionAnchors": concept.get("misconceptionAnchors", []) or ([concept.get("misconception")] if concept.get("misconception") else []),
+                        "discriminators": concept.get("discriminators", []),
+                        "importance": concept.get("importance", ""),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                "",
+                "CONTEXT_PACKET_JSON:",
+                json.dumps(context_packet, ensure_ascii=False, indent=2),
+            ]
+        )
+        result = self._call_json_traced(
+            call_type="generate_question",
+            prompt=prompt,
+            schema=QUESTION_GENERATION_SCHEMA,
+            validator=validate_question_generation_payload,
+        )
+        return {
+            "question": ensure_string(result.parsed.get("question")),
+            "intent": ensure_string(result.parsed.get("intent")),
+        }
 
     def diagnose_turn(self, *, concept: Dict[str, Any], context_packet: Dict[str, Any], answer: str) -> Dict[str, Any]:
         result = self._call_json_traced(
@@ -982,7 +1242,9 @@ class ProviderTutorIntelligence:
                 concept.get("id", "")
             ),
         )
-        return normalize_turn_envelope_payload(result.parsed, concept)
+        envelope = normalize_turn_envelope_payload(result.parsed, concept)
+        envelope["turn_diagnosis"] = diagnosis
+        return envelope
 
     def generate_reply_stream(
         self,
@@ -1076,17 +1338,11 @@ class HeuristicTutorIntelligence:
                     "id": f"test-doc-unit-{index + 1}",
                     "title": unit_title,
                     "summary": ensure_string(seed, title),
-                    "excerpt": ensure_string(seed, title),
-                    "keywords": [keyword for keyword in title.lower().split()[:4] if keyword],
-                    "sourceAnchors": [ensure_string(seed, title)],
+                    "evidenceSnippet": ensure_string(seed, title),
+                    "misconceptionAnchors": ["容易脱离当前材料泛泛回答。"],
+                    "discriminators": [f"能结合材料解释“{unit_title}”，而不是泛泛复述标题。"],
                     "misconception": "容易脱离当前材料泛泛回答。",
                     "importance": "core" if index == 0 else "secondary",
-                    "coverage": "high" if index == 0 else "medium",
-                    "diagnosticQuestion": f"根据当前材料，{unit_title} 这个点你会怎么解释？",
-                    "retryQuestion": f"先收窄到一个点：{unit_title} 的关键机制是什么？",
-                    "stretchQuestion": f"如果继续追问，{unit_title} 最容易答偏的边界在哪里？",
-                    "checkQuestion": f"用你自己的话复述：{unit_title} 的核心结论是什么？",
-                    "remediationHint": ensure_string(seed, title),
                 }
             )
         return {
@@ -1096,6 +1352,26 @@ class HeuristicTutorIntelligence:
                 "keyThemes": [unit["title"] for unit in units[:3]],
                 "framing": f"测试环境从《{title}》里生成最小训练单元。",
             },
+        }
+
+    def generate_probe_question(
+        self,
+        *,
+        concept: Dict[str, Any],
+        context_packet: Dict[str, Any],
+        phase: str = "diagnostic",
+        revisit: bool = False,
+    ) -> Dict[str, Any]:
+        title = ensure_string(concept.get("title"), "这个点")
+        if revisit:
+            question = f"回到刚才没讲稳的地方：围绕“{title}”，你现在会怎么补上最关键的一步？"
+        elif phase == "teach-back":
+            question = f"用你自己的话复述一下：“{title}”这条链路的核心结论是什么？"
+        else:
+            question = f"根据当前材料，围绕“{title}”你会先怎么解释？"
+        return {
+            "question": question,
+            "intent": "heuristic_test_double_dynamic_question",
         }
 
     def _classify_signal(self, *, concept: Dict[str, Any], answer: str, forced_action: str | None = None) -> str:

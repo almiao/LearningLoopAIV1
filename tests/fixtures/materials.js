@@ -35,7 +35,7 @@ tag:
   - Java并发
 head:
   - - meta
-    - name: keywords
+    - name: description
       content: AQS,AbstractQueuedSynchronizer,CLH队列
 ---
 

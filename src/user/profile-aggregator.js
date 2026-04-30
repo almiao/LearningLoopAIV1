@@ -1,5 +1,6 @@
 import { createBaselinePackDecomposition, getBaselinePackById } from "../baseline/baseline-packs.js";
 import { getJavaGuideDocumentOrder } from "../knowledge/java-guide-order.js";
+import { buildTrainingPointsFromDecomposition } from "../training/training-model.js";
 import { buildReadingDomainsForTarget } from "./reading-roadmap.js";
 
 const progressScore = {
@@ -150,14 +151,14 @@ function getConceptOrder(concept, fallbackOrder = Number.MAX_SAFE_INTEGER) {
   return orders.length ? Math.min(...orders) : fallbackOrder;
 }
 
-function buildAbilityItemView(concept, memoryItem = null) {
+function buildAbilityItemView(point, memoryItem = null) {
   const evidenceCount = memoryItem?.evidenceCount || 0;
   const state = memoryItem?.state || "不可判";
-  const sources = normalizeGuideSources(concept.javaGuideSources);
+  const sources = normalizeGuideSources(point.javaGuideSources);
   const primarySource = sources[0] || null;
   return {
-    abilityItemId: concept.id,
-    title: concept.title,
+    abilityItemId: point.id,
+    title: point.title,
     state,
     confidenceLevel: memoryItem?.confidenceLevel || "low",
     confidence: memoryItem?.confidence || 0,
@@ -165,21 +166,66 @@ function buildAbilityItemView(concept, memoryItem = null) {
     progressPercentage: scoreState(state, evidenceCount),
     lastUpdatedAt: memoryItem?.lastUpdatedAt || "",
     questionStatusLabel: evidenceCount > 0 ? stateLabel(state) : "",
-    provenanceLabel: concept.provenanceLabel || "",
+    provenanceLabel: point.provenanceLabel || "",
     derivedPrinciple: memoryItem?.derivedPrinciple || "",
     primaryDocPath: primarySource?.path || "",
     primaryDocTitle: primarySource?.title || "",
     javaGuideSources: sources,
-    sourceOrder: getConceptOrder(concept, concept.order || 0),
+    sourceOrder: getConceptOrder(point, point.order || 0),
+  };
+}
+
+function summarizeCheckpointState(memoryItem = null) {
+  if (!memoryItem || (memoryItem.evidenceCount || 0) <= 0) {
+    return "不可判";
+  }
+  return memoryItem.state || "partial";
+}
+
+function aggregatePointMemory(point, memoryProfile) {
+  const checkpointMemory = (point.checkpoints || []).map((checkpoint) => (
+    memoryProfile?.abilityItems?.[checkpoint.id] || null
+  ));
+  const legacyPointMemory = memoryProfile?.abilityItems?.[point.id] || null;
+  const evidenceCount = checkpointMemory.reduce((sum, item) => sum + (item?.evidenceCount || 0), 0) || (legacyPointMemory?.evidenceCount || 0);
+  const stateValues = checkpointMemory.map((item) => summarizeCheckpointState(item));
+  const derivedPrinciples = checkpointMemory.map((item) => item?.derivedPrinciple || "").filter(Boolean);
+  const confidenceLevels = checkpointMemory.map((item) => item?.confidenceLevel || "").filter(Boolean);
+  const lastUpdatedAt = [legacyPointMemory?.lastUpdatedAt || "", ...checkpointMemory.map((item) => item?.lastUpdatedAt || "")]
+    .filter(Boolean)
+    .sort((left, right) => String(right).localeCompare(String(left)))[0] || "";
+  const assessedCheckpointCount = checkpointMemory.filter((item) => (item?.evidenceCount || 0) > 0).length;
+
+  let state = legacyPointMemory?.state || "不可判";
+  if (checkpointMemory.length) {
+    if (checkpointMemory.every((item) => (item?.evidenceCount || 0) > 0 && item?.state === "solid")) {
+      state = "solid";
+    } else if (checkpointMemory.some((item) => (item?.evidenceCount || 0) > 0)) {
+      state = "partial";
+    } else {
+      state = "不可判";
+    }
+  }
+
+  return {
+    state,
+    confidenceLevel: legacyPointMemory?.confidenceLevel || confidenceLevels[0] || "low",
+    confidence: legacyPointMemory?.confidence || 0,
+    evidenceCount,
+    derivedPrinciple: legacyPointMemory?.derivedPrinciple || derivedPrinciples[0] || point.summary || "",
+    lastUpdatedAt,
+    assessedCheckpointCount,
+    totalCheckpointCount: (point.checkpoints || []).length,
   };
 }
 
 function buildTargetView(targetRecord, memoryProfile) {
   const pack = getBaselinePackById(targetRecord.targetBaselineId);
   const decomposition = createBaselinePackDecomposition(pack);
+  const trainingPoints = buildTrainingPointsFromDecomposition(decomposition);
   const readingProgress = targetRecord.readingProgress || {};
-  const itemViews = decomposition.concepts.map((concept, index) =>
-    buildAbilityItemView(concept, memoryProfile?.abilityItems?.[concept.id] || null)
+  const itemViews = trainingPoints.map((point) =>
+    buildAbilityItemView(point, aggregatePointMemory(point, memoryProfile))
   );
   const documentMasteryMap = buildDocumentMasteryMap(itemViews);
   const readingDomains = buildReadingDomainsForTarget(targetRecord.targetBaselineId).map((domain) => {
@@ -221,9 +267,9 @@ function buildTargetView(targetRecord, memoryProfile) {
   const domainMap = new Map();
 
   for (const item of itemViews) {
-    const concept = decomposition.concepts.find((entry) => entry.id === item.abilityItemId);
-    const domainId = concept?.abilityDomainId || concept?.domainId || "general";
-    const domainTitle = concept?.abilityDomainTitle || concept?.domainTitle || "通用能力";
+    const point = trainingPoints.find((entry) => entry.id === item.abilityItemId);
+    const domainId = point?.abilityDomainId || "general";
+    const domainTitle = point?.abilityDomainTitle || "通用能力";
     if (!domainMap.has(domainId)) {
       domainMap.set(domainId, {
         id: domainId,
@@ -312,6 +358,7 @@ function buildTargetView(targetRecord, memoryProfile) {
     currentDocPath: readingProgress.currentDocPath || currentDomain?.currentDocPath || "",
     currentDocTitle: readingProgress.currentDocTitle || currentDomain?.currentDocTitle || "",
     readingProgress,
+    trainingPoints,
     domains,
     readingDomains,
   };
@@ -322,10 +369,8 @@ export function buildUserProfileView({ user, memoryProfile }) {
     .map((target) => buildTargetView(target, memoryProfile))
     .sort((left, right) => String(right.lastActivityAt || "").localeCompare(String(left.lastActivityAt || "")));
 
-  const memoryItems = Object.values(memoryProfile?.abilityItems || {});
-  const summarizedStates = memoryItems
-    .map((item) => summarizeState(item))
-    .filter(Boolean);
+  const targetItems = targets.flatMap((target) => target.domains.flatMap((domain) => domain.items));
+  const summarizedStates = targetItems.map((item) => summarizeState(item)).filter(Boolean);
   return {
     user: {
       id: user.id,
@@ -338,7 +383,7 @@ export function buildUserProfileView({ user, memoryProfile }) {
     summary: {
       totalTargets: targets.length,
       sessionsStarted: memoryProfile?.sessionsStarted || 0,
-      assessedAbilityItems: memoryItems.filter((item) => (item.evidenceCount || 0) > 0).length,
+      assessedAbilityItems: targetItems.filter((item) => (item.evidenceCount || 0) > 0).length,
       solidItems: summarizedStates.filter((state) => state === "solid").length,
       partialItems: summarizedStates.filter((state) => state === "partial").length,
       weakItems: summarizedStates.filter((state) => state === "weak").length

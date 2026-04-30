@@ -119,9 +119,9 @@ test("python ai-service supports teach, advance, and domain-scoped continuation"
     });
 
     assert.equal(taught.latestFeedback.action, "teach");
-    assert.equal(taught.latestFeedback.turnResolution.mode, "stay");
+    assert.equal(taught.latestFeedback.turnResolution.mode, "switch");
     assert.ok(taught.currentProbe.length > 0);
-    assert.equal(taught.currentQuestionMeta?.phase, "teach-back");
+    assert.equal(taught.currentQuestionMeta?.phase, "diagnostic");
 
     const focused = await postJson(`${aiBaseUrl}/api/interview/focus-domain`, {
       sessionId: taught.sessionId,
@@ -139,18 +139,6 @@ test("python ai-service supports teach, advance, and domain-scoped continuation"
     assert.equal(advanced.latestFeedback.turnResolution.mode, "switch");
     const nextConcept = (advanced.concepts || []).find((item) => item.id === advanced.currentConceptId);
     assert.equal(nextConcept?.abilityDomainId || nextConcept?.domainId, "network-http-tcp");
-
-    const summarized = await postJson(`${aiBaseUrl}/api/interview/answer`, {
-      sessionId: advanced.sessionId,
-      answer: "总结一下",
-      burdenSignal: "normal",
-      interactionPreference: "balanced"
-    });
-
-    assert.equal(summarized.latestFeedback.action, "summarize");
-    assert.equal(summarized.latestFeedback.turnResolution.mode, "stop");
-    assert.equal(summarized.currentProbe, "");
-    assert.match(summarized.latestFeedback.explanation, /标准答案：/);
   });
 });
 

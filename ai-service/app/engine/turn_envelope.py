@@ -239,7 +239,7 @@ def turn_envelope_to_tutor_move(envelope: Dict[str, Any], concept: Dict[str, Any
         },
         "replyText": str(reply_text or "").strip(),
         "visibleReply": str(reply_text or "").strip(),
-        "evidenceReference": (concept or {}).get("excerpt", ""),
+        "evidenceReference": (concept or {}).get("evidenceSnippet", ""),
         "teachingChunk": "",
         "teachingParagraphs": [],
         "followUpQuestion": next_move.get("follow_up_question", "") or "",
