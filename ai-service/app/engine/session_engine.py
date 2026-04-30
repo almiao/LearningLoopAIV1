@@ -315,6 +315,7 @@ def project_session(session: Dict[str, Any], latest_feedback: Optional[Dict[str,
             "title": session["source"]["title"],
             "kind": session["source"].get("kind", "baseline-pack"),
             "url": session["source"].get("url", ""),
+            "metadata": deepcopy(session["source"].get("metadata") or {}),
         },
         "summary": session["summary"],
         "concepts": session["concepts"],
@@ -1183,12 +1184,16 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
             scope_type=get_workspace_scope(session)["type"],
         )
 
+        probe_budget_forces_completion = (
+            session["conceptStates"][concept["id"]]["attempts"] >= get_concept_round_budget(concept)
+        )
         should_complete = (
             tutor_move["completeCurrentUnit"]
             or tutor_move["judge"]["state"] in {"solid", "不可判"}
             or tutor_move["moveType"] == "advance"
+            or probe_budget_forces_completion
         )
-        if session.get("interactionPreference") == "explain-first" and tutor_move["moveType"] == "teach":
+        if session.get("interactionPreference") == "explain-first" and tutor_move["moveType"] == "teach" and not probe_budget_forces_completion:
             should_complete = False
         if should_complete:
             session["conceptStates"][concept["id"]]["completed"] = True

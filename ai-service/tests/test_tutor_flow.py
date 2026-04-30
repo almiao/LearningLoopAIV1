@@ -37,6 +37,18 @@ def make_concept() -> dict:
     }
 
 
+def make_second_concept() -> dict:
+    return {
+        **make_concept(),
+        "id": "next-anchor",
+        "title": "下一训练点",
+        "summary": "第二个训练点用于验证当前概念收口后会推进。",
+        "diagnosticQuestion": "进入下一题：请说明第二个训练点是什么？",
+        "retryQuestion": "先说第二个训练点的关键边界。",
+        "checkQuestion": "用一句话复述第二个训练点。",
+    }
+
+
 def make_session_payload() -> SimpleNamespace:
     concept = make_concept()
     return SimpleNamespace(
@@ -54,6 +66,15 @@ def make_session_payload() -> SimpleNamespace:
         targetBaseline={"id": "baseline-1", "title": "Java Backend"},
         memoryProfile={"id": "memory-1", "abilityItems": {}},
     )
+
+
+def make_multi_concept_session_payload() -> SimpleNamespace:
+    payload = make_session_payload()
+    payload.decomposition = {
+        **payload.decomposition,
+        "concepts": [make_concept(), make_second_concept()],
+    }
+    return payload
 
 
 class FakeTeachIntelligence:
@@ -113,6 +134,48 @@ class FakeTeachIntelligence:
 
     def explain_concept(self, *args, **kwargs):
         raise AssertionError("teach control should use generate_turn_envelope, not explain_concept")
+
+
+class FakeVerifyForeverIntelligence:
+    configured = True
+
+    def generate_turn_envelope(self, *, concept, context_packet, answer, forced_action=None):
+        return {
+            "runtime_map": {
+                "anchor_id": concept["id"],
+                "turn_signal": "positive",
+                "anchor_assessment": {
+                    "state": "partial",
+                    "confidence_level": "medium",
+                    "reasons": ["用户答对了主线，但模型仍想继续确认。"],
+                },
+                "hypotheses": [],
+                "misunderstandings": [],
+                "open_questions": [],
+                "verification_targets": [],
+                "info_gain_level": "medium",
+            },
+            "next_move": {
+                "intent": "继续确认当前概念。",
+                "reason": "模型仍认为还可以追问。",
+                "expected_gain": "medium",
+                "ui_mode": "verify",
+                "follow_up_question": "继续围绕同一个概念追问一句？",
+            },
+            "writeback_suggestion": {
+                "should_write": True,
+                "mode": "update",
+                "reason": "partial_signal",
+                "anchor_patch": {
+                    "state": "partial",
+                    "confidence_level": "medium",
+                    "derived_principle": concept["summary"],
+                },
+            },
+        }
+
+    def generate_reply_stream(self, *, concept, context_packet, answer):
+        return "你已经抓到主线，我补一句后准备推进。"
 
 
 class TutorFlowTests(unittest.TestCase):
@@ -185,6 +248,19 @@ class TutorFlowTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "AI tutor intelligence is required"):
                 answer_session(session, payload)
 
+    def test_projected_session_keeps_source_metadata_for_document_matching(self):
+        payload = make_session_payload()
+        payload.source = {
+            **payload.source,
+            "metadata": {
+                "docPath": "docs/java/concurrent/threadlocal.md",
+            },
+        }
+
+        projected = create_session(payload)
+
+        self.assertEqual(projected["source"]["metadata"]["docPath"], "docs/java/concurrent/threadlocal.md")
+
     def test_teach_control_uses_unified_turn_generation_and_updates_anchor_state(self):
         session = create_session(make_session_payload())
         fake_intelligence = FakeTeachIntelligence()
@@ -208,6 +284,28 @@ class TutorFlowTests(unittest.TestCase):
             projected["currentAnchorState"]["lastFollowupGoal"],
             "先把快照读和当前读边界讲清，再用一句 teach-back 确认。",
         )
+
+    def test_probe_budget_forces_topic_advance_even_when_model_keeps_verifying(self):
+        session = create_session(make_multi_concept_session_payload())
+        fake_intelligence = FakeVerifyForeverIntelligence()
+        payload = SimpleNamespace(
+            answer="这个点我已经知道主线了。",
+            interactionPreference=None,
+            burdenSignal="normal",
+            intent="",
+        )
+
+        with patch("app.engine.session_engine.get_tutor_intelligence", return_value=fake_intelligence):
+            first = answer_session(session, payload)
+            second = answer_session(session, payload)
+            third = answer_session(session, payload)
+
+        self.assertEqual(first["currentConceptId"], "mvcc-boundary")
+        self.assertEqual(second["currentConceptId"], "mvcc-boundary")
+        self.assertEqual(third["currentConceptId"], "next-anchor")
+        self.assertEqual(third["currentProbe"], "进入下一题：请说明第二个训练点是什么？")
+        self.assertEqual(third["latestFeedback"]["turnResolution"]["mode"], "switch")
+        self.assertEqual(third["currentQuestionMeta"]["phase"], "diagnostic")
 
 
 if __name__ == "__main__":

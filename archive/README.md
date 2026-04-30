@@ -12,4 +12,5 @@ This directory stores historical material that is no longer part of the active w
 ## Rules
 
 - Archived files stay read-only unless they need to be restored or referenced.
+- Archived files are not active extension points. Do not import from `archive/` in production, tests, or scripts.
 - New runtime-generated artifacts should not be committed back into active directories when an archive is more appropriate.

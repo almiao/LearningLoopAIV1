@@ -14,6 +14,14 @@ const promptChips = [
   { label: "Java", query: "java" },
   { label: "JVM", query: "jvm" },
   { label: "数据库", query: "数据库" },
+  { label: "并发", query: "concurrent" },
+  { label: "Spring", query: "spring" },
+];
+
+const entryOptions = [
+  { key: "javaguide", label: "Java面试（JavaGuide）" },
+  { key: "ielts", label: "雅思考试" },
+  { key: "frontend", label: "前端面试" },
 ];
 
 function buildKnowledgeTree(documents = []) {
@@ -60,76 +68,97 @@ function countDocuments(nodes = []) {
   }, 0);
 }
 
-function filterKnowledgeTree(nodes = [], query = "") {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return nodes;
-  }
-
-  return nodes
-    .map((node) => {
-      if (node.type === "document") {
-        const haystack = `${node.label} ${node.path}`.toLowerCase();
-        return haystack.includes(normalizedQuery) ? node : null;
-      }
-
-      const folderMatches = `${node.label} ${node.key}`.toLowerCase().includes(normalizedQuery);
-      const filteredChildren = filterKnowledgeTree(node.children || [], normalizedQuery);
-      if (!folderMatches && !filteredChildren.length) {
-        return null;
-      }
-      return {
-        ...node,
-        children: folderMatches ? node.children : filteredChildren,
-      };
-    })
-    .filter(Boolean);
-}
-
 function documentHref(docPath = "") {
   const params = new URLSearchParams();
   params.set("doc", docPath);
   return `/learn?${params.toString()}`;
 }
 
-function KnowledgeTreeNodes({ nodes, depth = 0 }) {
-  return (
-    <div className={depth === 0 ? "knowledge-tree-list" : "knowledge-tree-list nested"}>
-      {nodes.map((node) => {
-        if (node.type === "document") {
-          return (
-            <Link
-              key={node.key}
-              className="chapter-row knowledge-doc-row"
-              href={documentHref(node.path)}
-            >
-              <span className="status-bullet" />
-              <span className="chapter-row-title">{node.label}</span>
-              <span className="chapter-row-tag">文档</span>
-            </Link>
-          );
-        }
+function flattenDocuments(nodes = [], sectionLabel = "") {
+  return nodes.flatMap((node) => {
+    if (node.type === "document") {
+      return [{ ...node, sectionLabel }];
+    }
+    return flattenDocuments(node.children || [], node.label || sectionLabel);
+  });
+}
 
-        const documentCount = countDocuments(node.children || []);
-        return (
-          <details key={node.key} className="knowledge-folder" open={depth === 0}>
-            <summary>
-              <span>{node.label}</span>
-              <span>{documentCount} 篇</span>
-            </summary>
-            <KnowledgeTreeNodes nodes={node.children || []} depth={depth + 1} />
-          </details>
-        );
-      })}
-    </div>
-  );
+function simplifyPath(docPath = "") {
+  return String(docPath || "")
+    .replace(/^docs\//, "")
+    .replace(/\/[^/]+\.md$/, "")
+    .replace(/-/g, " / ");
+}
+
+function averageProgress(documents = [], target = null) {
+  if (!documents.length) {
+    return 0;
+  }
+  const total = documents.reduce((sum, document) => sum + getDocumentProgress(target, document.path), 0);
+  return Math.round(total / documents.length);
+}
+
+function averageMastery(documents = [], target = null) {
+  if (!documents.length) {
+    return 0;
+  }
+  const total = documents.reduce((sum, document) => sum + getDocumentMastery(target, document.path).percentage, 0);
+  return Math.round(total / documents.length);
+}
+
+function getDocumentProgress(target = null, docPath = "") {
+  const storedProgress = target?.readingProgress?.docs?.[docPath]?.progressPercentage;
+  if (Number.isFinite(Number(storedProgress))) {
+    return Math.max(0, Math.min(100, Number(storedProgress)));
+  }
+  if (target?.currentDocPath === docPath) {
+    return 10;
+  }
+  return 0;
+}
+
+function getDocumentMastery(target = null, docPath = "") {
+  const matchedDoc = (target?.readingDomains || [])
+    .flatMap((domain) => domain.docs || [])
+    .find((document) => document.path === docPath);
+  const percentage = Number(matchedDoc?.masteryPercentage || 0);
+  return {
+    percentage: Number.isFinite(percentage) ? Math.max(0, Math.min(100, percentage)) : 0,
+    label: matchedDoc?.masteryLabel || "未训练",
+    assessedConceptCount: matchedDoc?.assessedConceptCount || 0,
+    totalConceptCount: matchedDoc?.totalConceptCount || 0,
+  };
+}
+
+function formatProgressBadge(progressPercentage = 0, isCurrent = false) {
+  if (isCurrent) {
+    return `当前 ${Math.max(10, progressPercentage)}%`;
+  }
+  if (progressPercentage >= 100) {
+    return "已读";
+  }
+  if (progressPercentage >= 25) {
+    return `${progressPercentage}%`;
+  }
+  if (progressPercentage > 0) {
+    return "已打开";
+  }
+  return "未读";
+}
+
+function formatMasteryBadge(mastery = {}) {
+  if (!mastery.assessedConceptCount) {
+    return "未训练";
+  }
+  return `掌握 ${mastery.percentage}%`;
 }
 
 export function HomePage() {
   const [handle, setHandle] = useState("");
   const [pin, setPin] = useState("");
   const [search, setSearch] = useState("");
-  const [expandedSectionKeys, setExpandedSectionKeys] = useState([]);
+  const [selectedEntry, setSelectedEntry] = useState("javaguide");
+  const [selectedSectionKey, setSelectedSectionKey] = useState("all");
   const [knowledgeDocuments, setKnowledgeDocuments] = useState([]);
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState("");
@@ -211,33 +240,78 @@ export function HomePage() {
   }, []);
 
   const knowledgeTree = useMemo(() => buildKnowledgeTree(knowledgeDocuments), [knowledgeDocuments]);
-  const visibleSections = useMemo(() => filterKnowledgeTree(knowledgeTree, search), [knowledgeTree, search]);
+  const sections = useMemo(
+    () => knowledgeTree.filter((section) => section.type === "folder"),
+    [knowledgeTree]
+  );
+  const allCatalogDocuments = useMemo(() => flattenDocuments(knowledgeTree), [knowledgeTree]);
+  const selectedSection = useMemo(
+    () => sections.find((section) => section.key === selectedSectionKey) || null,
+    [sections, selectedSectionKey]
+  );
+  const scopedDocuments = useMemo(
+    () => selectedSection ? flattenDocuments(selectedSection.children || [], selectedSection.label) : allCatalogDocuments,
+    [allCatalogDocuments, selectedSection]
+  );
+  const visibleDocuments = useMemo(() => {
+    const normalizedQuery = search.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return scopedDocuments;
+    }
+    return scopedDocuments.filter((document) => (
+      `${document.label} ${document.path} ${document.sectionLabel}`.toLowerCase().includes(normalizedQuery)
+    ));
+  }, [scopedDocuments, search]);
   const totalDocumentCount = knowledgeDocuments.length;
-  const matchingDocumentCount = countDocuments(visibleSections);
+  const matchingDocumentCount = visibleDocuments.length;
+  const currentTarget = profile?.targets?.[0] || null;
+  const currentReading = currentTarget?.currentDocPath ? {
+    path: currentTarget.currentDocPath,
+    title: currentTarget.currentDocTitle || allCatalogDocuments.find((document) => document.path === currentTarget.currentDocPath)?.label || "继续当前文档",
+    targetTitle: currentTarget.title || "",
+    progress: getDocumentProgress(currentTarget, currentTarget.currentDocPath),
+  } : null;
+  const currentReadingSection = useMemo(() => {
+    if (!currentReading?.path) {
+      return null;
+    }
+    return sections.find((section) => flattenDocuments(section.children || [], section.label).some((document) => document.path === currentReading.path)) || null;
+  }, [currentReading?.path, sections]);
+  const recommendedDocuments = useMemo(() => {
+    return visibleDocuments.slice(0, 18);
+  }, [visibleDocuments]);
+  const allProgress = useMemo(
+    () => averageProgress(allCatalogDocuments, currentTarget),
+    [allCatalogDocuments, currentTarget]
+  );
+  const sectionSummaries = useMemo(
+    () => sections.map((section) => {
+      const documents = flattenDocuments(section.children || [], section.label);
+      return {
+        ...section,
+        documentCount: documents.length,
+        progressPercentage: averageProgress(documents, currentTarget),
+        masteryPercentage: averageMastery(documents, currentTarget),
+      };
+    }),
+    [currentTarget, sections]
+  );
 
   useEffect(() => {
-    const availableKeys = new Set(visibleSections.filter((section) => section.type === "folder").map((section) => section.key));
-    const nextExpanded = expandedSectionKeys.filter((key) => availableKeys.has(key));
-    if (nextExpanded.length) {
-      if (nextExpanded.length !== expandedSectionKeys.length) {
-        setExpandedSectionKeys(nextExpanded);
-      }
+    if (selectedSectionKey !== "all" || !currentReadingSection?.key) {
       return;
     }
+    setSelectedSectionKey(currentReadingSection.key);
+  }, [currentReadingSection?.key, selectedSectionKey]);
 
-    const firstFolder = visibleSections.find((section) => section.type === "folder");
-    if (firstFolder) {
-      setExpandedSectionKeys([firstFolder.key]);
+  useEffect(() => {
+    if (selectedSectionKey === "all") {
+      return;
     }
-  }, [expandedSectionKeys, visibleSections]);
-
-  function toggleSection(sectionKey) {
-    setExpandedSectionKeys((currentKeys) => (
-      currentKeys.includes(sectionKey)
-        ? currentKeys.filter((key) => key !== sectionKey)
-        : [...currentKeys, sectionKey]
-    ));
-  }
+    if (!sections.some((section) => section.key === selectedSectionKey)) {
+      setSelectedSectionKey("all");
+    }
+  }, [sections, selectedSectionKey]);
 
   async function onLogin(event) {
     event.preventDefault();
@@ -293,36 +367,36 @@ export function HomePage() {
         )}
       </section>
 
-      <section className="home-hero">
-        <p className="section-kicker">JavaGuide 静态文档库</p>
-        <h1>选择一篇文档开始阅读</h1>
+      <section className="home-hero compact-home-hero">
+        <p className="section-kicker">LearningLoop AI</p>
+        <h1>搜索技术资料或选择入口</h1>
         <label className="search-shell" aria-label="搜索目录或文档">
           <span className="search-icon">⌕</span>
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="搜索目录或文档"
+            placeholder="搜索技术文档、知识点或学习入口"
           />
         </label>
-        {search.trim() ? (
-          <p className="search-feedback" aria-live="polite">
-            {matchingDocumentCount
-              ? `正在按“${search.trim()}”筛选文档，找到 ${matchingDocumentCount} 个匹配。`
-              : `没有找到“${search.trim()}”相关文档，可以换个关键词。`}
-          </p>
-        ) : null}
-        <div className="prompt-chip-row">
-          {promptChips.map((chip) => (
+        <div className="entry-option-row" aria-label="快捷入口">
+          {entryOptions.map((option) => (
             <button
-              key={chip.label}
+              key={option.key}
               type="button"
-              className={chip.query === "java" ? "topic-chip topic-chip-dark" : "topic-chip"}
-              onClick={() => setSearch(chip.query)}
+              className={selectedEntry === option.key ? "entry-option active" : "entry-option"}
+              onClick={() => setSelectedEntry(option.key)}
             >
-              {chip.label}
+              {option.label}
             </button>
           ))}
         </div>
+        {search.trim() ? (
+          <p className="search-feedback" aria-live="polite">
+            {matchingDocumentCount
+              ? `找到 ${matchingDocumentCount} 篇匹配文档`
+              : `没有找到“${search.trim()}”相关文档`}
+          </p>
+        ) : null}
       </section>
 
       {!profile ? (
@@ -345,90 +419,127 @@ export function HomePage() {
 
       {error ? <section className="feedback-banner error-banner">{error}</section> : null}
 
-      <section className="learning-browser-card">
-        <div className="learning-browser-head">
-          <div className="learning-browser-copy">
-            <span className="learning-header-kicker">目录浏览</span>
-            <h2>JavaGuide 全量目录</h2>
-          </div>
-          <div className="progress-summary">
+      {selectedEntry === "javaguide" ? (
+      <section className="learning-browser-card compact-catalog">
+        <header className="catalog-hero">
+          <div className="catalog-stats" aria-label="文档数量">
             <strong>{totalDocumentCount}</strong>
-            <span>篇静态文档</span>
+            <span>篇文档</span>
+          </div>
+        </header>
+
+        <div className="catalog-search-row">
+          <div className="prompt-chip-row compact">
+            {promptChips.map((chip) => (
+              <button
+                key={chip.label}
+                type="button"
+                className={search === chip.query ? "topic-chip active" : "topic-chip"}
+                onClick={() => setSearch(chip.query)}
+              >
+                {chip.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="learning-browser-tabs" aria-label="JavaGuide 顶层目录">
-          {visibleSections.map((section) => (
-            section.type === "folder" ? (
+        <div className="catalog-workbench">
+          <nav className="catalog-section-rail" aria-label="文档分类">
+            {currentReading ? (
+              <button
+                type="button"
+                className="catalog-section-tab current-reading-tab"
+                onClick={() => setSelectedSectionKey(currentReadingSection?.key || "all")}
+              >
+                <span>当前阅读</span>
+                <strong>{formatProgressBadge(currentReading.progress, true)}</strong>
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={selectedSectionKey === "all" ? "catalog-section-tab active" : "catalog-section-tab"}
+              onClick={() => setSelectedSectionKey("all")}
+            >
+              <span>全部</span>
+              <strong>{totalDocumentCount} · {allProgress}%读</strong>
+            </button>
+            {sectionSummaries.map((section) => (
               <button
                 key={section.key}
                 type="button"
-                className={expandedSectionKeys.includes(section.key) ? "learning-browser-tab active" : "learning-browser-tab"}
-                onClick={() => toggleSection(section.key)}
+                className={selectedSectionKey === section.key ? "catalog-section-tab active" : "catalog-section-tab"}
+                onClick={() => setSelectedSectionKey(section.key)}
+                title={`${section.progressPercentage}% 阅读进度，${section.masteryPercentage}% 掌握度`}
               >
                 <span>{section.label}</span>
-                <strong>{countDocuments(section.children || [])}</strong>
+                <strong>{section.documentCount} · {section.progressPercentage}%读</strong>
               </button>
-            ) : null
-          ))}
-        </div>
+            ))}
+          </nav>
 
-        {visibleSections.length ? (
-          <div className="learning-browser-directory-list">
-            {visibleSections.map((section) => {
-              if (section.type === "document") {
-                return (
-                  <Link
-                    key={section.key}
-                    className="chapter-row knowledge-doc-row"
-                    href={documentHref(section.path)}
-                  >
-                    <span className="status-bullet" />
-                    <span className="chapter-row-title">{section.label}</span>
-                    <span className="chapter-row-tag">文档</span>
-                  </Link>
-                );
-              }
-
-              const isExpanded = expandedSectionKeys.includes(section.key);
-              const sectionDocumentCount = countDocuments(section.children || []);
-              return (
-                <section
-                  key={section.key}
-                  className={isExpanded ? "directory-card expanded" : "directory-card"}
+          <div className="catalog-main-panel">
+            <div className="catalog-list-head">
+              <div>
+                <p aria-live="polite">
+                  {search.trim()
+                    ? `找到 ${matchingDocumentCount} 篇匹配`
+                    : selectedSection ? "当前分类" : "全部文档"}
+                </p>
+                <span
+                  className="catalog-progress-rule"
+                  title="打开文档记为已打开；阅读深度按最大滚动位置累计；滚到 90% 且停留 45 秒记为已读。训练掌握度另算。"
                 >
-                  <button
-                    type="button"
-                    className="directory-card-toggle"
-                    onClick={() => toggleSection(section.key)}
-                    aria-expanded={isExpanded}
-                  >
-                    <div className="directory-card-copy">
-                      <span className="chapter-panel-kicker">{sectionDocumentCount} 篇文档</span>
-                      <h3>{section.label}</h3>
-                      <p>{section.key}</p>
-                    </div>
-                    <div className="directory-card-meta">
-                      <span className="directory-card-progress">{sectionDocumentCount}</span>
-                      <span className="directory-card-arrow">{isExpanded ? "收起" : "展开"}</span>
-                    </div>
-                  </button>
+                  进度规则
+                </span>
+              </div>
+              {search.trim() ? (
+                <button type="button" className="catalog-clear-button" onClick={() => setSearch("")}>
+                  清除
+                </button>
+              ) : null}
+            </div>
 
-                  {isExpanded ? (
-                    <div className="learning-browser-body">
-                      <KnowledgeTreeNodes nodes={section.children || []} />
-                    </div>
-                  ) : null}
-                </section>
-              );
-            })}
+            {recommendedDocuments.length ? (
+              <div className="catalog-doc-grid">
+                {recommendedDocuments.map((document) => {
+                  const isCurrent = document.path === currentReading?.path;
+                  const progressPercentage = getDocumentProgress(currentTarget, document.path);
+                  const mastery = getDocumentMastery(currentTarget, document.path);
+
+                  return (
+                    <Link
+                      key={document.key}
+                      className={isCurrent ? "catalog-doc-row current" : "catalog-doc-row"}
+                      href={documentHref(document.path)}
+                    >
+                      <span className="catalog-doc-dot" />
+                      <span className="catalog-doc-title">{document.label}</span>
+                      <span className="catalog-doc-badges">
+                        <span className="catalog-doc-progress">{formatProgressBadge(progressPercentage, isCurrent)}</span>
+                        <span className="catalog-doc-mastery">{formatMasteryBadge(mastery)}</span>
+                      </span>
+                      <span className="catalog-doc-path">
+                        {isCurrent ? "当前阅读" : simplifyPath(document.path)}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="chapter-empty">
+                <p>当前搜索没有匹配到文档，换个关键词试试。</p>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="chapter-empty">
-            <p>当前搜索还没有匹配到文档，换个关键词试试。</p>
-          </div>
-        )}
+        </div>
       </section>
+      ) : null}
+
+      {selectedEntry !== "javaguide" ? (
+        <section className="learning-browser-card entry-empty-panel">
+          <h2>{entryOptions.find((option) => option.key === selectedEntry)?.label}</h2>
+        </section>
+      ) : null}
     </main>
   );
 }

@@ -2,6 +2,12 @@
 
 `ai-service/` contains the Python FastAPI service used by the split runtime.
 
+## Runtime boundary
+
+- Training content generation, question generation, answer diagnosis, and answer evaluation belong here.
+- A configured LLM provider is required in production.
+- Heuristic tutor intelligence is available only as a test double under test-only environment flags.
+
 ## Folder map
 
 | Directory | Purpose |

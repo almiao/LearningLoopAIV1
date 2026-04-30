@@ -152,7 +152,7 @@ async function handleStartTarget(body) {
   const aiPayload = {
     userId: user.id,
     source,
-    decomposition: createBaselinePackDecomposition(baselinePack),
+    decomposition: activeDocument ? undefined : createBaselinePackDecomposition(baselinePack),
     targetBaseline: {
       id: baselinePack.id,
       title: baselinePack.title,
@@ -238,6 +238,8 @@ async function handleReadingProgress(body) {
     conceptId: body.conceptId,
     docPath: body.docPath,
     docTitle: body.docTitle,
+    scrollRatio: body.scrollRatio,
+    dwellMs: body.dwellMs,
     timestamp: new Date().toISOString(),
   });
   user.targets[body.targetBaselineId].lastActivityAt = new Date().toISOString();

@@ -1046,8 +1046,8 @@ class ProviderTutorIntelligence:
 class HeuristicTutorIntelligence:
     def __init__(self):
         self.provider = "HEURISTIC"
-        self.model = "heuristic-fallback"
-        self.kind = "heuristic-fallback"
+        self.model = "heuristic-test-double"
+        self.kind = "heuristic-test-double"
         self.client = TracedLLMClient()
 
     @property
@@ -1060,7 +1060,7 @@ class HeuristicTutorIntelligence:
             model=self.model,
             enabled=True,
             configured=True,
-            reason="fallback_without_provider_credentials",
+            reason="test_double_without_provider_credentials",
         )
 
     def _classify_signal(self, *, concept: Dict[str, Any], answer: str, forced_action: str | None = None) -> str:
@@ -1160,7 +1160,7 @@ class HeuristicTutorIntelligence:
                 "writeback_suggestion": {
                     "should_write": True,
                     "mode": "update",
-                    "reason": "heuristic_fallback_turn",
+                    "reason": "heuristic_test_double_turn",
                     "anchor_patch": {
                         "state": state,
                         "confidence_level": confidence_level,
@@ -1219,18 +1219,25 @@ class HeuristicTutorIntelligence:
         return normalize_explain_concept_payload(payload, concept)
 
 
-def _allow_heuristic_fallback() -> bool:
+def _allow_heuristic_test_double() -> bool:
+    explicit_test_double = str(os.environ.get("LLAI_ENABLE_AI_SERVICE_HEURISTIC_TEST_DOUBLE", "")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    app_env = str(os.environ.get("APP_ENV", "")).lower()
     return (
-        str(os.environ.get("LLAI_ALLOW_HEURISTIC_FALLBACK", "")).lower() in {"1", "true", "yes", "on"}
-        or str(os.environ.get("NODE_ENV", "")).lower() == "test"
+        str(os.environ.get("NODE_ENV", "")).lower() == "test"
         or bool(os.environ.get("PYTEST_CURRENT_TEST"))
+        or (app_env == "test" and explicit_test_double)
     )
 
 
 def create_tutor_intelligence() -> ProviderTutorIntelligence | HeuristicTutorIntelligence | None:
     enabled = str(os.environ.get("LLAI_LLM_ENABLED", "true")).lower()
     if enabled in {"0", "false", "no", "off"}:
-        return HeuristicTutorIntelligence() if _allow_heuristic_fallback() else None
+        return HeuristicTutorIntelligence() if _allow_heuristic_test_double() else None
     provider = str(os.environ.get("LLAI_LLM_PROVIDER", "OPENAI")).upper()
     if provider == "DEEPSEEK":
         intelligence = ProviderTutorIntelligence(
@@ -1239,13 +1246,13 @@ def create_tutor_intelligence() -> ProviderTutorIntelligence | HeuristicTutorInt
             api_key=os.environ.get("LLAI_DEEPSEEK_API_KEY", ""),
             base_url=os.environ.get("LLAI_DEEPSEEK_BASE_URL", DEFAULT_DEEPSEEK_BASE_URL),
         )
-        return intelligence if intelligence.configured else (HeuristicTutorIntelligence() if _allow_heuristic_fallback() else None)
+        return intelligence if intelligence.configured else (HeuristicTutorIntelligence() if _allow_heuristic_test_double() else None)
     intelligence = ProviderTutorIntelligence(
         provider="OPENAI",
         model=os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
         api_key=os.environ.get("OPENAI_API_KEY", ""),
     )
-    return intelligence if intelligence.configured else (HeuristicTutorIntelligence() if _allow_heuristic_fallback() else None)
+    return intelligence if intelligence.configured else (HeuristicTutorIntelligence() if _allow_heuristic_test_double() else None)
 
 
 def describe_tutor_intelligence() -> Dict[str, Any]:

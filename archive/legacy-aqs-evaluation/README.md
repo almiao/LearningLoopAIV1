@@ -13,3 +13,4 @@ Historical comparison tooling for the old AQS baseline.
 
 - Archived reference only
 - Not part of the active build, test, or evaluation workflow
+- Do not repair imports or reuse this script for new validation. Create active tests under `tests/` instead.

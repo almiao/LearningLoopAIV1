@@ -42,6 +42,7 @@ const pythonFiles = [
   "ai-service/app/interview_assist/__init__.py",
   "ai-service/app/interview_assist/service.py",
   "ai-service/app/interview_assist/aliyun_realtime_asr.py",
+  "ai-service/tests/test_tutor_provider_config.py",
 ];
 
 const nodeCheckFiles = [
@@ -147,7 +148,12 @@ async function runTests() {
   for (const testFile of testFiles) {
     await runNodeCommand(nodeRuntime, ["--test", "--test-timeout=120000", testFile], {
       cwd: rootDir,
-      env: runtimeEnv,
+      env: {
+        ...runtimeEnv,
+        LLAI_ENABLE_JS_HEURISTIC_TEST_DOUBLE: "1",
+        APP_ENV: "test",
+        LLAI_ENABLE_AI_SERVICE_HEURISTIC_TEST_DOUBLE: "1",
+      },
     });
   }
 }

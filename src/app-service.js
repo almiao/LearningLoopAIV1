@@ -14,7 +14,6 @@ import {
 } from "./tutor/session-orchestrator.js";
 import { createMemoryProfileStore } from "./tutor/memory-profile-store.js";
 import { recordSessionCase } from "./tutor/case-recorder.js";
-import { createHeuristicTutorIntelligence } from "./tutor/tutor-intelligence.js";
 import { applyReadingProgress } from "./user/reading-progress.js";
 import { createUserProfileStore } from "./user/user-profile-store.js";
 import { buildUserProfileView } from "./user/profile-aggregator.js";
@@ -59,7 +58,10 @@ export function createAppService({ fetchImpl = globalThis.fetch, intelligence } 
   const memoryProfiles = new Map();
   const memoryProfileStore = createMemoryProfileStore();
   const userProfileStore = createUserProfileStore();
-  const tutorIntelligence = intelligence ?? createHeuristicTutorIntelligence();
+  if (!intelligence) {
+    throw new Error("LLM tutor intelligence is required. Production must use the split AI service or pass an explicit test double.");
+  }
+  const tutorIntelligence = intelligence;
 
   async function getOrCreateMemoryProfile(memoryProfileId) {
     if (memoryProfileId && memoryProfiles.has(memoryProfileId)) {

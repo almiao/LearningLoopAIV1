@@ -16,6 +16,34 @@ import { getBaselinePackById } from "../../src/baseline/baseline-packs";
 
 const profileDirtyStorageKey = "learning-loop-profile-dirty-at";
 
+const trainingPreparationSteps = [
+  {
+    label: "连接学习档案",
+    detail: "确认你的账号、目标和当前阅读进度。",
+    progress: 18,
+  },
+  {
+    label: "读取当前原文",
+    detail: "把当前文档整理成可以交给 AI 的上下文。",
+    progress: 36,
+  },
+  {
+    label: "LLM 拆解训练点",
+    detail: "正在让 AI 从原文中提炼局部训练单元，这一步可能需要十几秒。",
+    progress: 62,
+  },
+  {
+    label: "生成首问与评分上下文",
+    detail: "准备第一道问题、评分依据和后续追问线索。",
+    progress: 82,
+  },
+  {
+    label: "等待服务返回",
+    detail: "后台还在处理，页面没有卡住；完成后会自动进入训练。",
+    progress: 94,
+  },
+];
+
 function splitTextBlocks(value) {
   return String(value || "")
     .split(/\n{2,}/)
@@ -47,6 +75,10 @@ function stateLabel(state) {
     return "待补强";
   }
   return "未判断";
+}
+
+function getTrainingPreparationStep(stageIndex = 0) {
+  return trainingPreparationSteps[Math.min(stageIndex, trainingPreparationSteps.length - 1)];
 }
 
 function buildDomainMap(session) {
@@ -118,6 +150,22 @@ function safeGetBaseline(baselineId = "") {
   }
 }
 
+function sessionBelongsToDocument(session, docPath = "") {
+  if (!session?.sessionId) {
+    return false;
+  }
+  if (!docPath) {
+    return true;
+  }
+  const sourceDocPath = session.source?.metadata?.docPath || "";
+  if (sourceDocPath) {
+    return sourceDocPath === docPath;
+  }
+  return (session.concepts || []).some((concept) =>
+    (concept.javaGuideSources || []).some((source) => source.path === docPath)
+  );
+}
+
 function buildDocumentHeadings(markdown = "") {
   const lines = String(markdown || "").replace(/\r/g, "").split("\n");
   const headings = [];
@@ -145,6 +193,7 @@ export function LearnWorkspace() {
   const autostartRef = useRef(false);
   const conceptFocusRef = useRef("");
   const readingProgressRef = useRef("");
+  const readerBodyRef = useRef(null);
   const qaScrollRef = useRef(null);
   const [profile, setProfile] = useState(null);
   const [baselines, setBaselines] = useState([]);
@@ -155,6 +204,7 @@ export function LearnWorkspace() {
   const [answer, setAnswer] = useState("");
   const [error, setError] = useState("");
   const [isStarting, setIsStarting] = useState(false);
+  const [trainingPrepStage, setTrainingPrepStage] = useState(0);
   const [isAnswering, setIsAnswering] = useState(false);
   const [streamingTurn, setStreamingTurn] = useState(null);
   const [outlineOpen, setOutlineOpen] = useState(false);
@@ -251,6 +301,7 @@ export function LearnWorkspace() {
   const questionProgress = session?.currentQuestionMeta?.progress || null;
   const trainingTakeaway = session?.latestFeedback?.takeaway || "";
   const trainingClosed = workspaceMode === "training" && Boolean(session) && !session?.currentProbe;
+  const trainingPrepStep = getTrainingPreparationStep(trainingPrepStage);
   const knowledgeTree = useMemo(() => buildKnowledgeTree(knowledgeDocuments), [knowledgeDocuments]);
   const documentHeadings = useMemo(
     () => buildDocumentHeadings(knowledgeDoc?.markdown || ""),
@@ -295,11 +346,35 @@ export function LearnWorkspace() {
   }, [streamingTurn?.id, streamingTurn?.assistantText, streamingTurn?.replyComplete]);
 
   useEffect(() => {
+    if (!isStarting) {
+      setTrainingPrepStage(0);
+      return undefined;
+    }
+
+    setTrainingPrepStage(0);
+    const startedAt = Date.now();
+    const intervalId = window.setInterval(() => {
+      const elapsedSeconds = (Date.now() - startedAt) / 1000;
+      if (elapsedSeconds > 18) {
+        setTrainingPrepStage(4);
+      } else if (elapsedSeconds > 10) {
+        setTrainingPrepStage(3);
+      } else if (elapsedSeconds > 4) {
+        setTrainingPrepStage(2);
+      } else if (elapsedSeconds > 1.4) {
+        setTrainingPrepStage(1);
+      }
+    }, 450);
+
+    return () => window.clearInterval(intervalId);
+  }, [isStarting]);
+
+  useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       scrollQaToBottom();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [chatTimeline.length, session?.sessionId]);
+  }, [chatTimeline.length, isStarting, session?.sessionId, trainingPrepStage]);
 
   useEffect(() => {
     if (!outlineOpen) {
@@ -317,7 +392,20 @@ export function LearnWorkspace() {
   useEffect(() => {
     setWorkspaceMode("reading");
     setTrainingUnlocked(false);
+    setAnswer("");
+    setStreamingTurn(null);
   }, [activeDocPath]);
+
+  useEffect(() => {
+    if (!session?.sessionId || sessionBelongsToDocument(session, activeDocPath)) {
+      return;
+    }
+    setSession(null);
+    setTrainingUnlocked(false);
+    setWorkspaceMode("reading");
+    setAnswer("");
+    setStreamingTurn(null);
+  }, [activeDocPath, session]);
 
   useEffect(() => {
     if (
@@ -403,6 +491,8 @@ export function LearnWorkspace() {
       conceptId: conceptForDoc?.id || "",
       docPath: activeDocPath,
       docTitle: knowledgeDoc?.title || "",
+      scrollRatio: 0,
+      dwellMs: 0,
     });
 
     if (readingProgressRef.current === nextSignature) {
@@ -423,6 +513,88 @@ export function LearnWorkspace() {
       });
   }, [activeDocPath, currentConcept, docConcepts, knowledgeDoc?.title, profile, targetBaselineId]);
 
+  useEffect(() => {
+    const readerBody = readerBodyRef.current;
+    if (!readerBody || !profile?.user?.id || !targetBaselineId || !activeDocPath || !knowledgeDoc?.path) {
+      return undefined;
+    }
+
+    let maxScrollRatio = 0;
+    let lastSentAt = 0;
+    let timeoutId = null;
+    const startedAt = Date.now();
+
+    function calculateScrollRatio() {
+      const scrollableHeight = readerBody.scrollHeight - readerBody.clientHeight;
+      if (scrollableHeight <= 0) {
+        return 1;
+      }
+      return Math.min(1, Math.max(0, readerBody.scrollTop / scrollableHeight));
+    }
+
+    function markProfileDirty() {
+      window.localStorage.setItem(profileDirtyStorageKey, String(Date.now()));
+    }
+
+    function sendProgress(force = false) {
+      maxScrollRatio = Math.max(maxScrollRatio, calculateScrollRatio());
+      const dwellMs = Date.now() - startedAt;
+      const now = Date.now();
+
+      if (!force && now - lastSentAt < 10_000 && maxScrollRatio < 0.9) {
+        return;
+      }
+      lastSentAt = now;
+
+      void apiFetch("/api/profile/reading-progress", {
+        method: "POST",
+        body: JSON.stringify({
+          userId: profile.user.id,
+          targetBaselineId,
+          docPath: activeDocPath,
+          docTitle: knowledgeDoc.title || "",
+          scrollRatio: maxScrollRatio,
+          dwellMs,
+        }),
+        keepalive: true,
+      })
+        .then(markProfileDirty)
+        .catch(() => {});
+    }
+
+    function scheduleProgressSend() {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+      timeoutId = window.setTimeout(() => sendProgress(false), 250);
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "hidden") {
+        sendProgress(true);
+      }
+    }
+
+    function handlePageHide() {
+      sendProgress(true);
+    }
+
+    sendProgress(false);
+    readerBody.addEventListener("scroll", scheduleProgressSend, { passive: true });
+    window.addEventListener("pagehide", handlePageHide);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+      sendProgress(true);
+      readerBody.removeEventListener("scroll", scheduleProgressSend);
+      window.removeEventListener("pagehide", handlePageHide);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [activeDocPath, knowledgeDoc?.path, knowledgeDoc?.title, profile?.user?.id, targetBaselineId]);
+
   async function refreshProfile() {
     if (!profile?.user?.id) {
       return;
@@ -437,6 +609,7 @@ export function LearnWorkspace() {
     }
     try {
       setIsStarting(true);
+      setTrainingPrepStage(0);
       setError("");
       const nextSession = await postJson("/api/interview/start-target", {
         userId: profile.user.id,
@@ -445,6 +618,7 @@ export function LearnWorkspace() {
         interactionPreference,
       });
       setSession(nextSession);
+      setTrainingPrepStage(trainingPreparationSteps.length - 1);
       setStoredTargetBaselineId(targetBaselineId);
       await refreshProfile();
       return nextSession;
@@ -457,7 +631,7 @@ export function LearnWorkspace() {
   }
 
   async function unlockTraining() {
-    let nextSession = session;
+    let nextSession = sessionBelongsToDocument(session, activeDocPath) ? session : null;
     if (!nextSession) {
       nextSession = await startSession();
     }
@@ -469,7 +643,9 @@ export function LearnWorkspace() {
   }
 
   async function submitAnswer({ nextAnswer = answer, intent = "" } = {}) {
-    if (!session?.sessionId || !nextAnswer.trim()) {
+    const submittedAnswer = nextAnswer.trim();
+    const shouldClearComposer = nextAnswer === answer;
+    if (!session?.sessionId || !submittedAnswer) {
       return;
     }
     try {
@@ -477,19 +653,22 @@ export function LearnWorkspace() {
       setIsAnswering(true);
       setStreamingTurn({
         id: `${session.sessionId}:${Date.now()}`,
-        answer: nextAnswer,
+        answer: submittedAnswer,
         intent,
         assistantText: "",
         replyComplete: false,
         decisionPending: false,
       });
+      if (shouldClearComposer) {
+        setAnswer("");
+      }
 
       let finalSession = null;
       await postEventStream(
         "/api/interview/answer-stream",
         {
           sessionId: session.sessionId,
-          answer: nextAnswer,
+          answer: submittedAnswer,
           intent,
           burdenSignal: "normal",
           interactionPreference,
@@ -522,6 +701,9 @@ export function LearnWorkspace() {
       }
     } catch (nextError) {
       setError(nextError.message);
+      if (shouldClearComposer) {
+        setAnswer(submittedAnswer);
+      }
     } finally {
       setIsAnswering(false);
       setStreamingTurn(null);
@@ -689,7 +871,7 @@ export function LearnWorkspace() {
             </div>
           </header>
 
-          <div className="reader-body">
+          <div className="reader-body" ref={readerBodyRef}>
             {knowledgeDoc ? (
               <div className={focusMode ? "focus-reading-flow" : undefined} data-testid={focusMode ? "focus-reading-flow" : undefined}>
                 {focusMode ? (
@@ -800,7 +982,7 @@ export function LearnWorkspace() {
             <div className={`qa-header-controls ${!trainingUnlocked ? "qa-header-controls-locked" : ""}`}>
               {!trainingUnlocked ? (
                 <button type="button" className="qa-header-lock" disabled={isStarting} onClick={() => unlockTraining()}>
-                  <span>{isStarting ? "准备中..." : "开启训练"}</span>
+                  <span>{isStarting ? trainingPrepStep.label : "开启训练"}</span>
                 </button>
               ) : null}
             </div>
@@ -808,6 +990,33 @@ export function LearnWorkspace() {
 
           <div className="qa-scroll" ref={qaScrollRef}>
             <section className="chat-stack">
+              {isStarting && !trainingUnlocked ? (
+                <article className="training-prep-card" aria-live="polite" data-testid="training-prep-card">
+                  <div className="training-prep-kicker">正在开启训练</div>
+                  <div className="training-prep-title">{trainingPrepStep.label}</div>
+                  <p>{trainingPrepStep.detail}</p>
+                  <div className="training-progress-track" aria-hidden="true">
+                    <span
+                      className="training-progress-fill"
+                      style={{ width: `${trainingPrepStep.progress}%` }}
+                    />
+                  </div>
+                  <div className="training-prep-steps">
+                    {trainingPreparationSteps.map((step, index) => (
+                      <span
+                        className={index <= trainingPrepStage ? "training-prep-step active" : "training-prep-step"}
+                        key={step.label}
+                      >
+                        {step.label}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="training-prep-footnote">
+                    长文档会先由 LLM 做局部拆解，完成后会自动跳到第一题。
+                  </p>
+                </article>
+              ) : null}
+
               {workspaceMode === "training" ? (
                 <article className="training-hero-card">
                   <div className="training-hero-title">训练模式</div>
@@ -864,6 +1073,17 @@ export function LearnWorkspace() {
                       )}
                     </div>
                   </article>
+                  {streamingTurn.replyComplete && streamingTurn.decisionPending ? (
+                    <article className="message-card assistant pending-decision-card" aria-live="polite">
+                      <div className="pending-decision-kicker">下一步生成中</div>
+                      <p>正在评估你的答案、更新掌握度，并决定是追问、讲解还是进入下一个训练点。</p>
+                      <div className="pending-decision-dots" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                    </article>
+                  ) : null}
                 </>
               ) : null}
             </section>
@@ -880,7 +1100,7 @@ export function LearnWorkspace() {
               rows="1"
               value={answer}
               onChange={(event) => setAnswer(event.target.value)}
-              placeholder={session ? "输入回答、追问，或引用原文段落。" : "进入学习后可输入。"}
+              placeholder={isAnswering ? "已发送，正在等待下一步..." : session ? "输入回答、追问，或引用原文段落。" : "进入学习后可输入。"}
             />
 
             <div className="question-input-row">

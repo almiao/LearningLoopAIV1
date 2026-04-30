@@ -69,7 +69,9 @@ test("reading progress persists the last-read document and survives target updat
       targetBaselineId,
       domainId: "spring-runtime",
       conceptId: "spring-transaction-boundary",
-      docPath: "docs/system-design/framework/spring/spring-transaction.md"
+      docPath: "docs/system-design/framework/spring/spring-transaction.md",
+      scrollRatio: 0.42,
+      dwellMs: 12_000
     });
 
     let profileResponse = await fetch(`${bffBaseUrl}/api/profile/${login.profile.user.id}`);
@@ -78,6 +80,37 @@ test("reading progress persists the last-read document and survives target updat
     assert.equal(profile.targets[0].currentDomainId, "spring-runtime");
     assert.equal(profile.targets[0].currentDocPath, "docs/system-design/framework/spring/spring-transaction.md");
     assert.ok(profile.targets[0].currentDocTitle.length > 0);
+    assert.equal(
+      profile.targets[0].readingProgress.docs["docs/system-design/framework/spring/spring-transaction.md"].progressPercentage,
+      42
+    );
+    assert.equal(
+      profile.targets[0].readingDomains.find((domain) => domain.id === "spring-runtime")?.docs.find((doc) => doc.path === "docs/system-design/framework/spring/spring-transaction.md")?.progressLabel,
+      "阅读中 42%"
+    );
+    assert.equal(
+      profile.targets[0].readingDomains.find((domain) => domain.id === "spring-runtime")?.docs.find((doc) => doc.path === "docs/system-design/framework/spring/spring-transaction.md")?.masteryLabel,
+      "未训练"
+    );
+
+    await postJson(`${bffBaseUrl}/api/profile/reading-progress`, {
+      userId: login.profile.user.id,
+      targetBaselineId,
+      docPath: "docs/system-design/framework/spring/spring-transaction.md",
+      scrollRatio: 0.95,
+      dwellMs: 50_000
+    });
+
+    profileResponse = await fetch(`${bffBaseUrl}/api/profile/${login.profile.user.id}`);
+    profile = await profileResponse.json();
+    assert.equal(
+      profile.targets[0].readingProgress.docs["docs/system-design/framework/spring/spring-transaction.md"].progressPercentage,
+      100
+    );
+    assert.equal(
+      profile.targets[0].readingDomains.find((domain) => domain.id === "spring-runtime")?.completedDocCount,
+      1
+    );
 
     const session = await postJson(`${bffBaseUrl}/api/interview/start-target`, {
       targetBaselineId,

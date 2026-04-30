@@ -1708,7 +1708,17 @@ export function createTutorIntelligence(options = {}) {
   throw new Error("LLM tutor intelligence has moved to the Python ai-service. Use the split-service flow instead.");
 }
 
+function assertJsHeuristicTestDoubleAllowed() {
+  const isTestRuntime = process.env.NODE_ENV === "test" || process.env.LLAI_ENABLE_JS_HEURISTIC_TEST_DOUBLE === "1";
+  if (!isTestRuntime) {
+    throw new Error(
+      "JS heuristic tutor intelligence is test-only. Production training must use the Python AI service with a configured LLM provider."
+    );
+  }
+}
+
 export function createHeuristicTutorIntelligence() {
+  assertJsHeuristicTestDoubleAllowed();
   return {
     kind: "heuristic-test-double",
 

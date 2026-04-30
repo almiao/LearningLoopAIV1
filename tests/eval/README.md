@@ -14,7 +14,7 @@ This directory contains deterministic evaluation tooling for the shared tutoring
 | File or directory | Purpose |
 | --- | --- |
 | `scenarios.js` | Deterministic review scenarios |
-| `session-dossier.js` | Replay helpers, heuristic scoring, and artifact writers |
+| `session-dossier.js` | Replay helpers, non-product heuristic scoring aids, and artifact writers |
 | `generated/` | Runtime output directory for generated dossiers |
 
 ## Workflow
@@ -29,3 +29,4 @@ This directory contains deterministic evaluation tooling for the shared tutoring
 - Generated outputs are disposable.
 - Previously committed sample outputs were moved to `archive/session-review-snapshots/`.
 - Keep only the runtime output directory in the active tree.
+- Evaluation heuristics are review aids only; they must not be promoted into production tutor generation or answer evaluation.

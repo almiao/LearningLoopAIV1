@@ -23,6 +23,79 @@ function average(values = []) {
   return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
 }
 
+function progressLabel(progressPercentage) {
+  if (progressPercentage >= 100) {
+    return "已读";
+  }
+  if (progressPercentage >= 25) {
+    return `阅读中 ${progressPercentage}%`;
+  }
+  if (progressPercentage > 0) {
+    return "已打开";
+  }
+  return "未读";
+}
+
+function readDocumentProgress(readingProgress = {}, domainProgress = {}, doc = {}) {
+  const stored = readingProgress.docs?.[doc.path] || {};
+  const visitedDocPaths = new Set(domainProgress.visitedDocPaths || []);
+  const fallbackStarted =
+    visitedDocPaths.has(doc.path) ||
+    readingProgress.currentDocPath === doc.path ||
+    domainProgress.currentDocPath === doc.path;
+  const progressPercentage = Number.isFinite(Number(stored.progressPercentage))
+    ? Number(stored.progressPercentage)
+    : fallbackStarted ? 10 : 0;
+
+  return {
+    progressPercentage,
+    readingStatus: stored.status || (progressPercentage > 0 ? "opened" : "unread"),
+    progressLabel: progressLabel(progressPercentage),
+    started: progressPercentage > 0,
+  };
+}
+
+function masteryLabel(masteryPercentage = 0, assessedConceptCount = 0) {
+  if (assessedConceptCount <= 0) {
+    return "未训练";
+  }
+  if (masteryPercentage >= 80) {
+    return "掌握";
+  }
+  if (masteryPercentage >= 45) {
+    return "练习中";
+  }
+  return "待加强";
+}
+
+function buildDocumentMasteryMap(itemViews = []) {
+  const masteryMap = new Map();
+
+  for (const item of itemViews) {
+    for (const source of item.javaGuideSources || []) {
+      if (!source.path) {
+        continue;
+      }
+      if (!masteryMap.has(source.path)) {
+        masteryMap.set(source.path, {
+          totalConceptCount: 0,
+          assessedConceptCount: 0,
+          progressValues: [],
+        });
+      }
+
+      const entry = masteryMap.get(source.path);
+      entry.totalConceptCount += 1;
+      entry.progressValues.push(item.progressPercentage || 0);
+      if ((item.evidenceCount || 0) > 0) {
+        entry.assessedConceptCount += 1;
+      }
+    }
+  }
+
+  return masteryMap;
+}
+
 function buildTargetLabel(percentage) {
   if (percentage >= 80) {
     return "接近完成";
@@ -105,39 +178,46 @@ function buildTargetView(targetRecord, memoryProfile) {
   const pack = getBaselinePackById(targetRecord.targetBaselineId);
   const decomposition = createBaselinePackDecomposition(pack);
   const readingProgress = targetRecord.readingProgress || {};
+  const itemViews = decomposition.concepts.map((concept, index) =>
+    buildAbilityItemView(concept, memoryProfile?.abilityItems?.[concept.id] || null)
+  );
+  const documentMasteryMap = buildDocumentMasteryMap(itemViews);
   const readingDomains = buildReadingDomainsForTarget(targetRecord.targetBaselineId).map((domain) => {
     const domainProgress = readingProgress.domains?.[domain.id] || {};
-    const visitedDocPaths = new Set(domainProgress.visitedDocPaths || []);
-    const docs = (domain.docs || []).map((doc) => ({
-      ...doc,
-      started:
-        visitedDocPaths.has(doc.path) ||
-        readingProgress.currentDocPath === doc.path ||
-        domainProgress.currentDocPath === doc.path,
-    }));
+    const docs = (domain.docs || []).map((doc) => {
+      const mastery = documentMasteryMap.get(doc.path) || {};
+      const masteryPercentage = average(mastery.progressValues || []);
+      return {
+        ...doc,
+        ...readDocumentProgress(readingProgress, domainProgress, doc),
+        masteryPercentage,
+        masteryLabel: masteryLabel(masteryPercentage, mastery.assessedConceptCount || 0),
+        assessedConceptCount: mastery.assessedConceptCount || 0,
+        totalConceptCount: mastery.totalConceptCount || 0,
+      };
+    });
     const currentDoc =
       docs.find((doc) => doc.path === domainProgress.currentDocPath) ||
       docs.find((doc) => doc.path === readingProgress.currentDocPath) ||
-      docs.find((doc) => !doc.started) ||
+      docs.find((doc) => doc.progressPercentage < 100) ||
       docs[0] ||
       null;
     const currentIndex = currentDoc ? docs.findIndex((doc) => doc.path === currentDoc.path) : 0;
     const startedCount = docs.filter((doc) => doc.started).length;
+    const completedCount = docs.filter((doc) => doc.progressPercentage >= 100).length;
     return {
       id: domain.id,
       title: domain.title,
-      progressPercentage: docs.length ? Math.round((startedCount / docs.length) * 100) : 0,
+      progressPercentage: average(docs.map((doc) => doc.progressPercentage)),
       currentDocPath: currentDoc?.path || "",
       currentDocTitle: domainProgress.currentDocTitle || currentDoc?.title || "",
       previewDocs: docs.slice(Math.max(0, currentIndex), Math.max(0, currentIndex) + 3),
       docs,
       totalDocCount: docs.length,
       startedDocCount: startedCount,
+      completedDocCount: completedCount,
     };
   });
-  const itemViews = decomposition.concepts.map((concept, index) =>
-    buildAbilityItemView(concept, memoryProfile?.abilityItems?.[concept.id] || null)
-  );
   const domainMap = new Map();
 
   for (const item of itemViews) {

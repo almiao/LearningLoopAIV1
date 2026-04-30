@@ -7,6 +7,12 @@ AI interview tutoring project with a split runtime:
 - `ai-service/`: FastAPI-based AI service
 - `src/`: shared JavaScript domain engine still used by BFF, tests, scripts, and parts of the frontend
 
+## Runtime boundary
+
+Training content generation, question generation, answer diagnosis, and answer evaluation are LLM responsibilities and run through the Python `ai-service/` with a configured provider. Progress, aggregation, sorting, and status display can stay deterministic rule logic.
+
+The old JavaScript heuristic tutor is not a production fallback. It is retained only as an explicit test double for regression coverage and must be enabled with test-only environment flags.
+
 ## Quick start
 
 Requirements:
@@ -100,4 +106,5 @@ Each main directory now has its own `README.md` with a more detailed folder brea
 ## Notes
 
 - `src/` is still active. It is not dead code; the BFF, tests, scripts, and some frontend projection logic import it directly.
+- `src/tutor/tutor-intelligence.js` contains test-double compatibility code only. Do not add new product training behavior there; add LLM-backed behavior in `ai-service/`.
 - `tests/eval/generated/` is treated as a runtime output directory. The previously committed snapshots were moved to `archive/`.

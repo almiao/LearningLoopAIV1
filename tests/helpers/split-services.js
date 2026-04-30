@@ -26,13 +26,20 @@ function startProcess(command, args, options = {}) {
     ...options
   });
 
+  let stdout = "";
   let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk.toString("utf8");
+  });
   child.stderr.on("data", (chunk) => {
     stderr += chunk.toString("utf8");
   });
 
   return {
     child,
+    readStdout() {
+      return stdout;
+    },
     readStderr() {
       return stderr;
     }
@@ -98,7 +105,7 @@ export async function withSplitServices(t, fn, { aiPort, bffPort } = {}) {
     const aiStderr = ai.readStderr();
     const bffStderr = bff.readStderr();
     throw new Error(
-      `${error.message}\nAI STDERR:\n${aiStderr || "<empty>"}\nBFF STDERR:\n${bffStderr || "<empty>"}`
+      `${error.message}\nAI STDOUT:\n${ai.readStdout() || "<empty>"}\nAI STDERR:\n${aiStderr || "<empty>"}\nBFF STDOUT:\n${bff.readStdout() || "<empty>"}\nBFF STDERR:\n${bffStderr || "<empty>"}`
     );
   } finally {
     bff.child.kill("SIGTERM");

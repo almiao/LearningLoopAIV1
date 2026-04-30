@@ -44,3 +44,28 @@ test("split BFF -> AI main flow is runnable", async () => {
     assert.equal(profile.summary.totalTargets, 1);
   });
 });
+
+test("split BFF starts document-scoped training from the active document", async () => {
+  await withSplitServices(null, async ({ bffBaseUrl }) => {
+    const login = await postJson(`${bffBaseUrl}/api/auth/login`, {
+      handle: `doc_scope_${Date.now()}`,
+      pin: "1234"
+    });
+
+    const session = await postJson(`${bffBaseUrl}/api/interview/start-target`, {
+      userId: login.profile.user.id,
+      targetBaselineId: "bigtech-java-backend",
+      docPath: "docs/ai/agent/agent-basis.md",
+      interactionPreference: "balanced"
+    });
+
+    assert.ok(session.sessionId);
+    assert.equal(session.source.title, "一文搞懂 AI Agent 核心概念：Agent Loop、Context Engineering、Tools 注册");
+    assert.doesNotMatch(session.currentProbe, /ReentrantLock|AQS|acquire\/release/i);
+    assert.ok(
+      (session.concepts || []).every((concept) =>
+        (concept.javaGuideSources || []).some((source) => source.path === "docs/ai/agent/agent-basis.md")
+      )
+    );
+  });
+});
