@@ -196,3 +196,44 @@ test("document progress remembers training start and answer state for a doc-scop
     );
   });
 });
+
+test("doc-scoped training resumes the recent in-progress session instead of decomposing again", async () => {
+  await withSplitServices(null, async ({ bffBaseUrl }) => {
+    const handle = `reader_training_resume_${Date.now()}`;
+
+    const login = await postJson(`${bffBaseUrl}/api/auth/login`, {
+      handle,
+      pin: "1234"
+    });
+
+    const firstSession = await postJson(`${bffBaseUrl}/api/interview/start-target`, {
+      interactionPreference: "balanced",
+      userId: login.profile.user.id,
+      docPath: "docs/ai/agent/mcp.md"
+    });
+
+    await postJson(`${bffBaseUrl}/api/interview/answer`, {
+      sessionId: firstSession.sessionId,
+      answer: "MCP 统一了宿主和外部能力之间的协议层，让工具发现、调用和上下文交换都标准化。",
+      burdenSignal: "normal",
+      interactionPreference: "balanced"
+    });
+
+    const resumedSession = await postJson(`${bffBaseUrl}/api/interview/start-target`, {
+      interactionPreference: "balanced",
+      userId: login.profile.user.id,
+      docPath: "docs/ai/agent/mcp.md"
+    });
+
+    assert.equal(resumedSession.sessionId, firstSession.sessionId);
+    assert.ok((resumedSession.turns || []).length > (firstSession.turns || []).length);
+
+    const profileResponse = await fetch(`${bffBaseUrl}/api/profile/${login.profile.user.id}`);
+    const profile = await profileResponse.json();
+    assert.equal(profile.summary.sessionsStarted, 1);
+    assert.equal(
+      profile.documentProgress.docs["docs/ai/agent/mcp.md"]?.trainingSessionCount,
+      1
+    );
+  });
+});

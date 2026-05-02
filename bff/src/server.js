@@ -15,7 +15,9 @@ import { createMemoryProfileStore } from "../../src/tutor/memory-profile-store.j
 import {
   applyDocumentReadingEvent,
   applyDocumentTrainingAnswered,
+  applyDocumentTrainingSession,
   applyDocumentTrainingStarted,
+  readDocumentTrainingSession,
 } from "../../src/user/document-progress-state.js";
 import { applyReadingProgress } from "../../src/user/reading-progress.js";
 import { createUserProfileStore } from "../../src/user/user-profile-store.js";
@@ -130,14 +132,99 @@ async function proxyJson(method, pathname, payload) {
   };
 }
 
+function stripSessionPayload(session = {}) {
+  const nextSession = {
+    ...session,
+  };
+  delete nextSession.memoryProfileSnapshot;
+  delete nextSession.sessionSnapshot;
+  return nextSession;
+}
+
+function buildDecompositionSnapshot(session = {}) {
+  return {
+    summary: session.summary || {},
+    trainingPoints: session.trainingPoints || [],
+    concepts: session.concepts || [],
+  };
+}
+
+function isResumableDocumentSession(session = {}, { userId = "", docPath = "" } = {}) {
+  return Boolean(
+    session?.sessionId
+    && session.userId === userId
+    && session.source?.metadata?.docPath === docPath
+  );
+}
+
+async function tryReadLiveSession(sessionId = "") {
+  if (!sessionId) {
+    return null;
+  }
+  try {
+    const { data, traceId } = await proxyJson("GET", `/api/interview/${sessionId}`);
+    return {
+      ...data,
+      traceId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function tryRestoreSessionSnapshot(sessionSnapshot = null) {
+  if (!sessionSnapshot || typeof sessionSnapshot !== "object") {
+    return null;
+  }
+  try {
+    const { data, traceId } = await proxyJson("POST", "/api/interview/restore-session", {
+      sessionSnapshot,
+    });
+    return {
+      ...data,
+      traceId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function touchUserTarget(user, baselinePack, timestamp, { incrementSessionsStarted = false } = {}) {
+  const previous = user.targets[baselinePack.id] || {};
+  user.targets[baselinePack.id] = {
+    targetBaselineId: baselinePack.id,
+    title: baselinePack.title,
+    targetRole: baselinePack.targetRole,
+    createdAt: previous.createdAt || timestamp,
+    lastActivityAt: timestamp,
+    sessionsStarted: (previous.sessionsStarted || 0) + (incrementSessionsStarted ? 1 : 0),
+    readingProgress: previous.readingProgress || {},
+  };
+}
+
+function persistDocumentSessionState(user, session, timestamp) {
+  const docPath = session?.source?.metadata?.docPath || "";
+  if (!docPath) {
+    return;
+  }
+  user.documents = applyDocumentTrainingSession(user.documents || {}, {
+    docPath,
+    docTitle: session.source?.title || session.source?.metadata?.docTitle || "",
+    sessionId: session.sessionId || "",
+    sessionSnapshot: session.sessionSnapshot || null,
+    decompositionSnapshot: buildDecompositionSnapshot(session),
+    currentTrainingPointId: session.currentTrainingPointId || "",
+    currentCheckpointId: session.currentCheckpointId || "",
+    timestamp,
+  });
+}
+
 async function handleStartTarget(body) {
   if (!body.userId) {
     throw new Error("userId is required.");
   }
   const user = await getUserProfile(body.userId);
   const memoryProfile = await getMemoryProfile(user.memoryProfileId);
-  memoryProfile.sessionsStarted += 1;
-  await memoryProfileStore.save(memoryProfile);
   const activeDocument = body.docPath
     ? await readJavaGuideDocument(body.docPath)
     : null;
@@ -145,16 +232,35 @@ async function handleStartTarget(body) {
   const targetBaselineId = body.targetBaselineId || defaultBaselinePackId;
   const baselinePack = getBaselinePackById(targetBaselineId);
   const now = new Date().toISOString();
-  const previous = user.targets[baselinePack.id] || {};
-  user.targets[baselinePack.id] = {
-    targetBaselineId: baselinePack.id,
-    title: baselinePack.title,
-    targetRole: baselinePack.targetRole,
-    createdAt: previous.createdAt || now,
-    lastActivityAt: now,
-    sessionsStarted: (previous.sessionsStarted || 0) + 1,
-    readingProgress: previous.readingProgress || {},
-  };
+  const previousTarget = user.targets[baselinePack.id] || {};
+  const storedSession = activeDocument
+    ? readDocumentTrainingSession(user.documents || {}, activeDocument.path)
+    : null;
+  const liveSession = await tryReadLiveSession(storedSession?.activeSessionId || "");
+  const resumableLiveSession = isResumableDocumentSession(liveSession, {
+    userId: user.id,
+    docPath: activeDocument?.path || "",
+  }) ? liveSession : null;
+  const restoredSession = resumableLiveSession
+    ? null
+    : await tryRestoreSessionSnapshot(storedSession?.activeSessionSnapshot || null);
+  const resumableRestoredSession = isResumableDocumentSession(restoredSession, {
+    userId: user.id,
+    docPath: activeDocument?.path || "",
+  }) ? restoredSession : null;
+
+  if (resumableLiveSession || resumableRestoredSession) {
+    const resumedSession = resumableLiveSession || resumableRestoredSession;
+    touchUserTarget(user, baselinePack, now);
+    persistDocumentSessionState(user, resumedSession, now);
+    user.lastActiveAt = now;
+    await userProfileStore.save(user);
+    return stripSessionPayload(resumedSession);
+  }
+
+  memoryProfile.sessionsStarted += 1;
+  await memoryProfileStore.save(memoryProfile);
+  touchUserTarget(user, baselinePack, now, { incrementSessionsStarted: true });
   user.documents = applyDocumentTrainingStarted(user.documents || {}, {
     docPath: activeDocument?.path || body.docPath || "",
     docTitle: activeDocument?.title || "",
@@ -178,24 +284,28 @@ async function handleStartTarget(body) {
   const aiPayload = {
     userId: user.id,
     source,
-    decomposition: activeDocument ? undefined : createBaselinePackDecomposition(baselinePack),
+    decomposition: activeDocument
+      ? (storedSession?.decompositionSnapshot || undefined)
+      : createBaselinePackDecomposition(baselinePack),
     targetBaseline: {
       id: baselinePack.id,
       title: baselinePack.title,
       targetRole: baselinePack.targetRole,
       flagship: baselinePack.flagship,
     },
-    targetProgress: previous,
+    targetProgress: previousTarget,
     memoryProfile,
     interactionPreference: body.interactionPreference || "balanced",
   };
 
   const { data: result, traceId } = await proxyJson("POST", "/api/interview/start-target", aiPayload);
-  delete result.memoryProfileSnapshot;
-  return {
+  const nextResult = {
     ...result,
-    traceId
+    traceId,
   };
+  persistDocumentSessionState(user, nextResult, now);
+  await userProfileStore.save(user);
+  return stripSessionPayload(nextResult);
 }
 
 async function handleAnswer(body) {
@@ -222,14 +332,14 @@ async function handleAnswer(body) {
       docTitle: result.source?.title || result.source?.metadata?.docTitle || "",
       timestamp,
     });
+    persistDocumentSessionState(user, result, timestamp);
     user.lastActiveAt = user.targets[result.targetBaseline.id].lastActivityAt;
     await userProfileStore.save(user);
   }
-  delete result.memoryProfileSnapshot;
-  return {
+  return stripSessionPayload({
     ...result,
-    traceId
-  };
+    traceId,
+  });
 }
 
 async function handleReminderCandidate(userId) {
@@ -408,10 +518,44 @@ async function persistAnswerSideEffects(result) {
       docTitle: result.source?.title || result.source?.metadata?.docTitle || "",
       timestamp,
     });
+    persistDocumentSessionState(user, result, timestamp);
     user.lastActiveAt = user.targets[result.targetBaseline.id].lastActivityAt;
     await userProfileStore.save(user);
   }
-  delete result.memoryProfileSnapshot;
+}
+
+async function handleFocusDomain(body) {
+  const { data, traceId } = await proxyJson("POST", "/api/interview/focus-domain", body);
+  if (data.userId && data.targetBaseline?.id) {
+    const user = await getUserProfile(data.userId);
+    const baselinePack = getBaselinePackById(data.targetBaseline.id);
+    const timestamp = new Date().toISOString();
+    touchUserTarget(user, baselinePack, timestamp);
+    persistDocumentSessionState(user, data, timestamp);
+    user.lastActiveAt = timestamp;
+    await userProfileStore.save(user);
+  }
+  return stripSessionPayload({
+    ...data,
+    traceId,
+  });
+}
+
+async function handleFocusConcept(body) {
+  const { data, traceId } = await proxyJson("POST", "/api/interview/focus-concept", body);
+  if (data.userId && data.targetBaseline?.id) {
+    const user = await getUserProfile(data.userId);
+    const baselinePack = getBaselinePackById(data.targetBaseline.id);
+    const timestamp = new Date().toISOString();
+    touchUserTarget(user, baselinePack, timestamp);
+    persistDocumentSessionState(user, data, timestamp);
+    user.lastActiveAt = timestamp;
+    await userProfileStore.save(user);
+  }
+  return stripSessionPayload({
+    ...data,
+    traceId,
+  });
 }
 
 async function handleAnswerStream(body, response) {
@@ -452,7 +596,7 @@ async function handleAnswerStream(body, response) {
       if (parsed.event === "turn_result" || parsed.event === "session") {
         const data = parsed.dataText ? JSON.parse(parsed.dataText) : {};
         await persistAnswerSideEffects(data);
-        response.write(serializeSseEvent("turn_result", { ...data, traceId }));
+        response.write(serializeSseEvent("turn_result", stripSessionPayload({ ...data, traceId })));
       } else {
         response.write(`${rawEvent}\n\n`);
       }
@@ -607,21 +751,18 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "POST" && url.pathname === "/api/interview/focus-domain") {
-      const { data, traceId } = await proxyJson("POST", "/api/interview/focus-domain", await readJsonBody(request));
-      sendJson(response, 200, { ...data, traceId });
+      sendJson(response, 200, await handleFocusDomain(await readJsonBody(request)));
       return;
     }
 
     if (request.method === "POST" && url.pathname === "/api/interview/focus-concept") {
-      const { data, traceId } = await proxyJson("POST", "/api/interview/focus-concept", await readJsonBody(request));
-      sendJson(response, 200, { ...data, traceId });
+      sendJson(response, 200, await handleFocusConcept(await readJsonBody(request)));
       return;
     }
 
     if (request.method === "GET" && url.pathname.startsWith("/api/interview/")) {
       const { data: result, traceId } = await proxyJson("GET", url.pathname);
-      delete result.memoryProfileSnapshot;
-      sendJson(response, 200, { ...result, traceId });
+      sendJson(response, 200, stripSessionPayload({ ...result, traceId }));
       return;
     }
 

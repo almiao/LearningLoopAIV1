@@ -12,6 +12,49 @@ import {
 import { buildVisibleSessionView } from "../../src/view/visible-session-view";
 
 const profileDirtyStorageKey = "learning-loop-profile-dirty-at";
+const learnPanelLayoutStorageKey = "learning-loop-learn-panel-layout-v1";
+const minQaPanelPercent = 30;
+const maxQaPanelPercent = 58;
+
+function clampQaPanelPercent(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return 42;
+  }
+  return Math.min(maxQaPanelPercent, Math.max(minQaPanelPercent, numericValue));
+}
+
+function readStoredPanelLayout() {
+  if (typeof window === "undefined") {
+    return {
+      mode: "auto",
+      qaPercent: null,
+    };
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(learnPanelLayoutStorageKey);
+    if (!rawValue) {
+      return {
+        mode: "auto",
+        qaPercent: null,
+      };
+    }
+
+    const parsedValue = JSON.parse(rawValue);
+    if (parsedValue?.mode === "manual" && Number.isFinite(parsedValue?.qaPercent)) {
+      return {
+        mode: "manual",
+        qaPercent: clampQaPanelPercent(parsedValue.qaPercent),
+      };
+    }
+  } catch {}
+
+  return {
+    mode: "auto",
+    qaPercent: null,
+  };
+}
 
 function splitTextBlocks(value) {
   return String(value || "")
@@ -195,6 +238,7 @@ export function LearnWorkspace() {
   const readingProgressRef = useRef("");
   const readerBodyRef = useRef(null);
   const qaScrollRef = useRef(null);
+  const studyMainRef = useRef(null);
   const [profile, setProfile] = useState(null);
   const [knowledgeDocuments, setKnowledgeDocuments] = useState([]);
   const [interactionPreference, setInteractionPreference] = useState("balanced");
@@ -214,6 +258,13 @@ export function LearnWorkspace() {
   const [workspaceMode, setWorkspaceMode] = useState("reading");
   const [trainingUnlocked, setTrainingUnlocked] = useState(false);
   const [focusMode, setFocusMode] = useState(focusParamEnabled);
+  const [panelLayout, setPanelLayout] = useState({
+    mode: "auto",
+    qaPercent: null,
+  });
+  const [panelLayoutLoaded, setPanelLayoutLoaded] = useState(false);
+  const [isDraggingLayout, setIsDraggingLayout] = useState(false);
+  const [isComposerFocused, setIsComposerFocused] = useState(false);
   const deferredSession = useDeferredValue(session);
   const visibleView = buildVisibleSessionView(deferredSession || {});
   const chatTimeline = visibleView.chatTimeline || [];
@@ -227,6 +278,18 @@ export function LearnWorkspace() {
     }
     return chatTimeline.slice(firstUserIndex);
   }, [chatTimeline, trainingUnlocked]);
+
+  useEffect(() => {
+    setPanelLayout(readStoredPanelLayout());
+    setPanelLayoutLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !panelLayoutLoaded) {
+      return;
+    }
+    window.localStorage.setItem(learnPanelLayoutStorageKey, JSON.stringify(panelLayout));
+  }, [panelLayout, panelLayoutLoaded]);
 
   useEffect(() => {
     apiFetch("/api/knowledge/docs")
@@ -300,6 +363,25 @@ export function LearnWorkspace() {
   );
   const outlineAvailable = documentHeadings.length > 0 || knowledgeTree.length > 0;
   const readingCompanionHasHistory = readingChatTimeline.length > 0 || streamingTurn?.mode === "reading";
+  const trainingHasHistory = trainingChatTimeline.length > 0 || streamingTurn?.mode === "training";
+  const qaNeedsAttention = Boolean(
+    trainingUnlocked ||
+    sessionBelongsToDocument(session, activeDocPath) ||
+    readingCompanionHasHistory ||
+    trainingHasHistory ||
+    pendingSubmittedAnswer ||
+    streamingTurn ||
+    isStarting ||
+    isAnswering ||
+    answer.trim() ||
+    isComposerFocused
+  );
+  const autoQaPanelPercent = workspaceMode === "training"
+    ? (trainingHasHistory || qaNeedsAttention ? 52 : 48)
+    : (qaNeedsAttention ? 42 : 34);
+  const qaPanelPercent = panelLayout.mode === "manual" && Number.isFinite(panelLayout.qaPercent)
+    ? clampQaPanelPercent(panelLayout.qaPercent)
+    : autoQaPanelPercent;
 
   function scrollQaToBottom(behavior = "auto") {
     if (!qaScrollRef.current) {
@@ -805,6 +887,76 @@ export function LearnWorkspace() {
     setOutlineOpen(false);
   }
 
+  function updateManualPanelLayout(nextQaPercent) {
+    setPanelLayout({
+      mode: "manual",
+      qaPercent: clampQaPanelPercent(nextQaPercent),
+    });
+  }
+
+  function resetPanelLayout() {
+    setPanelLayout({
+      mode: "auto",
+      qaPercent: null,
+    });
+  }
+
+  function handleDividerPointerDown(event) {
+    event.preventDefault();
+    if (focusMode || window.innerWidth < 1180) {
+      return;
+    }
+
+    function handlePointerMove(moveEvent) {
+      const bounds = studyMainRef.current?.getBoundingClientRect();
+      if (!bounds || bounds.width <= 0) {
+        return;
+      }
+      const nextQaPercent = ((bounds.right - moveEvent.clientX) / bounds.width) * 100;
+      setPanelLayout({
+        mode: "manual",
+        qaPercent: clampQaPanelPercent(nextQaPercent),
+      });
+    }
+
+    function finishDragging() {
+      setIsDraggingLayout(false);
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishDragging);
+      window.removeEventListener("pointercancel", finishDragging);
+    }
+
+    setIsDraggingLayout(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", finishDragging);
+    window.addEventListener("pointercancel", finishDragging);
+  }
+
+  function handleDividerKeyDown(event) {
+    if (focusMode) {
+      return;
+    }
+    const step = event.shiftKey ? 4 : 2;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      updateManualPanelLayout(qaPanelPercent - step);
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      updateManualPanelLayout(qaPanelPercent + step);
+      return;
+    }
+    if (event.key === "Home" || event.key === "Escape") {
+      event.preventDefault();
+      resetPanelLayout();
+    }
+  }
+
   if (!profile) {
     return (
       <main className="learn-shell">
@@ -869,6 +1021,11 @@ export function LearnWorkspace() {
   const studyMainClassName = focusMode
     ? `study-main study-mode-${workspaceMode} focus-reader-layout`
     : `study-main study-mode-${workspaceMode}${workspaceMode === "reading" && !trainingUnlocked ? " pre-training-layout" : ""}`;
+  const studyMainStyle = focusMode
+    ? undefined
+    : {
+        "--qa-panel-width": `${qaPanelPercent}%`,
+      };
 
   return (
     <main
@@ -878,7 +1035,13 @@ export function LearnWorkspace() {
     >
       {error ? <section className="feedback-banner error-banner narrow-banner">{error}</section> : null}
 
-      <section className={studyMainClassName}>
+      <section
+        className={studyMainClassName}
+        ref={studyMainRef}
+        style={studyMainStyle}
+        data-layout-mode={panelLayout.mode}
+        data-testid="study-main"
+      >
         <section className="reader-panel" data-testid="reader-panel">
           {focusMode ? <div className="focus-reader-hover-zone" aria-hidden="true" data-testid="focus-hover-zone" /> : null}
           <header className="reader-header" data-testid="reader-header">
@@ -1028,6 +1191,25 @@ export function LearnWorkspace() {
             </aside>
           </div>
         </section>
+
+        {!focusMode ? (
+          <div className="workspace-divider-shell" aria-hidden="true">
+            <button
+              type="button"
+              className={isDraggingLayout ? "workspace-divider dragging" : "workspace-divider"}
+              aria-label="调整文档区与交互区宽度"
+              aria-valuemin={minQaPanelPercent}
+              aria-valuemax={maxQaPanelPercent}
+              aria-valuenow={Math.round(qaPanelPercent)}
+              onPointerDown={handleDividerPointerDown}
+              onKeyDown={handleDividerKeyDown}
+              onDoubleClick={resetPanelLayout}
+              data-testid="workspace-divider"
+            >
+              <span className="workspace-divider-grip" />
+            </button>
+          </div>
+        ) : null}
 
         <aside className={`qa-panel qa-panel-${workspaceMode}`} data-testid="qa-panel">
           <header className="qa-header">
@@ -1241,6 +1423,8 @@ export function LearnWorkspace() {
               rows="1"
               value={answer}
               onChange={(event) => setAnswer(event.target.value)}
+              onFocus={() => setIsComposerFocused(true)}
+              onBlur={() => setIsComposerFocused(false)}
               placeholder={isAnswering ? "已发送，正在等待下一步..." : "输入回答、追问，或引用原文段落。"}
             />
 

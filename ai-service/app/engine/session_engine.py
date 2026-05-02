@@ -489,6 +489,7 @@ def project_session(session: Dict[str, Any], latest_feedback: Optional[Dict[str,
         "interactionLog": session.get("interactionLog", []),
         "latestFeedback": latest_feedback,
         "memoryProfileSnapshot": deepcopy(session["memoryProfile"]),
+        "sessionSnapshot": deepcopy(session),
         "tutorEngine": describe_tutor_intelligence(),
     }
 
@@ -1505,4 +1506,15 @@ def get_session(session_id: str) -> Dict[str, Any]:
     session = SESSIONS.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Unknown session.")
+    return project_session(session)
+
+
+def restore_session(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(snapshot, dict):
+        raise HTTPException(status_code=400, detail="Session snapshot is invalid.")
+    session_id = snapshot.get("id")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="Session snapshot is missing id.")
+    session = deepcopy(snapshot)
+    SESSIONS[session_id] = session
     return project_session(session)

@@ -26,6 +26,7 @@ from app.engine.session_engine import (
     get_tutor_intelligence,
     get_session,
     project_session,
+    restore_session,
     SESSIONS,
 )
 from app.infra.llm.snapshot import SnapshotStore
@@ -143,6 +144,10 @@ class FocusDomainRequest(BaseModel):
 class FocusConceptRequest(BaseModel):
     sessionId: str
     conceptId: str
+
+
+class RestoreSessionRequest(BaseModel):
+    sessionSnapshot: Dict[str, Any]
 
 
 class SuperappTaskRequest(BaseModel):
@@ -608,6 +613,13 @@ def focus_concept(payload: FocusConceptRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail="Unknown session.")
     set_session_context(session_id=payload.sessionId, turn=len(session.get("turns", [])))
     return apply_focus_concept(session, payload.conceptId)
+
+
+@app.post("/api/interview/restore-session")
+def restore_training_session(payload: RestoreSessionRequest) -> Dict[str, Any]:
+    session = restore_session(payload.sessionSnapshot)
+    set_session_context(session_id=session["sessionId"], turn=len(session.get("turns", [])))
+    return session
 
 
 @app.get("/api/interview/{session_id}")

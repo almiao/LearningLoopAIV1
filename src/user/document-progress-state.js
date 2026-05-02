@@ -53,6 +53,26 @@ function ensureDocumentEntry(previous = {}, { docPath = "", docTitle = "" } = {}
   };
 }
 
+export function readDocumentTrainingSession(documents = {}, docPath = "") {
+  const normalizedDocPath = normalizeReadingDocPath(docPath);
+  if (!normalizedDocPath) {
+    return null;
+  }
+  const state = ensureDocumentsState(documents);
+  const entry = state.docs[normalizedDocPath];
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+  return {
+    activeSessionId: entry.activeSessionId || "",
+    activeSessionSnapshot: entry.activeSessionSnapshot || null,
+    decompositionSnapshot: entry.decompositionSnapshot || null,
+    currentTrainingPointId: entry.currentTrainingPointId || "",
+    currentCheckpointId: entry.currentCheckpointId || "",
+    sessionUpdatedAt: entry.sessionUpdatedAt || "",
+  };
+}
+
 function getMemoryDocPaths(memoryItem = {}) {
   const candidates = [];
 
@@ -204,6 +224,49 @@ export function applyDocumentTrainingAnswered(documents = {}, {
     trainingStartedAt: previousEntry.trainingStartedAt || timestamp,
     trainingAnswerCount: Number(previousEntry.trainingAnswerCount || 0) + 1,
     lastTrainingAt: timestamp,
+    lastActivityAt: timestamp,
+  };
+
+  return {
+    ...state,
+    currentDocPath: normalizedDocPath,
+    currentDocTitle: docTitle || nextEntry.docTitle || state.currentDocTitle || "",
+    lastUpdatedAt: timestamp,
+    docs: {
+      ...state.docs,
+      [normalizedDocPath]: nextEntry,
+    },
+  };
+}
+
+export function applyDocumentTrainingSession(documents = {}, {
+  docPath = "",
+  docTitle = "",
+  sessionId = "",
+  sessionSnapshot = null,
+  decompositionSnapshot = null,
+  currentTrainingPointId = "",
+  currentCheckpointId = "",
+  timestamp = new Date().toISOString(),
+} = {}) {
+  const normalizedDocPath = normalizeReadingDocPath(docPath);
+  if (!normalizedDocPath) {
+    return documents;
+  }
+
+  const state = ensureDocumentsState(documents);
+  const previousEntry = ensureDocumentEntry(state.docs[normalizedDocPath] || {}, {
+    docPath: normalizedDocPath,
+    docTitle,
+  });
+  const nextEntry = {
+    ...previousEntry,
+    activeSessionId: sessionId || previousEntry.activeSessionId || "",
+    activeSessionSnapshot: sessionSnapshot || previousEntry.activeSessionSnapshot || null,
+    decompositionSnapshot: decompositionSnapshot || previousEntry.decompositionSnapshot || null,
+    currentTrainingPointId: currentTrainingPointId || previousEntry.currentTrainingPointId || "",
+    currentCheckpointId: currentCheckpointId || previousEntry.currentCheckpointId || "",
+    sessionUpdatedAt: timestamp,
     lastActivityAt: timestamp,
   };
 
