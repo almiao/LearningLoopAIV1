@@ -2,30 +2,14 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from app.engine.mastery_scoring import confidence_level_to_score, score_to_confidence_level
+
 
 ALLOWED_INFO_GAIN_LEVELS = {"high", "medium", "low", "negligible"}
 ALLOWED_CONFIDENCE_LEVELS = {"high", "medium", "low"}
 ALLOWED_STATES = {"solid", "partial", "weak", "不可判"}
 ALLOWED_SIGNALS = {"positive", "negative", "noise"}
 ALLOWED_UI_MODES = {"probe", "teach", "verify", "advance", "revisit", "stop"}
-
-CONFIDENCE_SCORE_MAP = {
-    "high": 0.84,
-    "medium": 0.58,
-    "low": 0.28,
-}
-
-
-def confidence_level_to_score(level: str = "low") -> float:
-    return CONFIDENCE_SCORE_MAP.get(level, CONFIDENCE_SCORE_MAP["low"])
-
-
-def score_to_confidence_level(score: float = 0.0) -> str:
-    if score >= 0.75:
-        return "high"
-    if score >= 0.45:
-        return "medium"
-    return "low"
 
 
 def normalize_confidence_level(level: str | None, fallback: str = "low") -> str:

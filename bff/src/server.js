@@ -2,8 +2,8 @@ import http from "node:http";
 import {
   createBaselinePackDecomposition,
   createBaselinePackSource,
-  getBaselinePackById,
-  listBaselinePacks
+  defaultBaselinePackId,
+  getBaselinePackById
 } from "../../src/baseline/baseline-packs.js";
 import {
   readJavaGuideAsset,
@@ -12,6 +12,11 @@ import {
 } from "../../src/knowledge/java-guide-doc-service.js";
 import { buildReminderCandidate } from "../../src/superapp/reminder-candidate.js";
 import { createMemoryProfileStore } from "../../src/tutor/memory-profile-store.js";
+import {
+  applyDocumentReadingEvent,
+  applyDocumentTrainingAnswered,
+  applyDocumentTrainingStarted,
+} from "../../src/user/document-progress-state.js";
 import { applyReadingProgress } from "../../src/user/reading-progress.js";
 import { createUserProfileStore } from "../../src/user/user-profile-store.js";
 import { buildUserProfileView } from "../../src/user/profile-aggregator.js";
@@ -46,6 +51,22 @@ function sendBuffer(response, statusCode, body, extraHeaders = {}) {
     ...extraHeaders,
   });
   response.end(body);
+}
+
+function buildMissingAssetPlaceholder(assetPath = "") {
+  const label = String(assetPath || "knowledge asset")
+    .split("/")
+    .filter(Boolean)
+    .slice(-2)
+    .join(" / ")
+    .replace(/[<>&"]/g, "");
+  return Buffer.from(`
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox="0 0 960 420" role="img" aria-label="Image unavailable">
+  <rect width="960" height="420" fill="#f8fafc"/>
+  <rect x="28" y="28" width="904" height="364" rx="18" fill="#ffffff" stroke="#d8dee8" stroke-width="2" stroke-dasharray="10 10"/>
+  <text x="480" y="190" text-anchor="middle" font-family="sans-serif" font-size="30" font-weight="700" fill="#475569">Image unavailable</text>
+  <text x="480" y="238" text-anchor="middle" font-family="sans-serif" font-size="20" fill="#64748b">${label || "missing source asset"}</text>
+</svg>`.trim());
 }
 
 function withStreamHeaders(response, statusCode) {
@@ -117,8 +138,12 @@ async function handleStartTarget(body) {
   const memoryProfile = await getMemoryProfile(user.memoryProfileId);
   memoryProfile.sessionsStarted += 1;
   await memoryProfileStore.save(memoryProfile);
+  const activeDocument = body.docPath
+    ? await readJavaGuideDocument(body.docPath)
+    : null;
 
-  const baselinePack = getBaselinePackById(body.targetBaselineId);
+  const targetBaselineId = body.targetBaselineId || defaultBaselinePackId;
+  const baselinePack = getBaselinePackById(targetBaselineId);
   const now = new Date().toISOString();
   const previous = user.targets[baselinePack.id] || {};
   user.targets[baselinePack.id] = {
@@ -130,12 +155,13 @@ async function handleStartTarget(body) {
     sessionsStarted: (previous.sessionsStarted || 0) + 1,
     readingProgress: previous.readingProgress || {},
   };
+  user.documents = applyDocumentTrainingStarted(user.documents || {}, {
+    docPath: activeDocument?.path || body.docPath || "",
+    docTitle: activeDocument?.title || "",
+    timestamp: now,
+  });
   user.lastActiveAt = now;
   await userProfileStore.save(user);
-
-  const activeDocument = body.docPath
-    ? await readJavaGuideDocument(body.docPath)
-    : null;
   const source = activeDocument
     ? {
         kind: "knowledge-document",
@@ -159,6 +185,7 @@ async function handleStartTarget(body) {
       targetRole: baselinePack.targetRole,
       flagship: baselinePack.flagship,
     },
+    targetProgress: previous,
     memoryProfile,
     interactionPreference: body.interactionPreference || "balanced",
   };
@@ -180,15 +207,21 @@ async function handleAnswer(body) {
   if (result.userId && result.targetBaseline?.id) {
     const user = await getUserProfile(result.userId);
     const previous = user.targets[result.targetBaseline.id] || {};
+    const timestamp = new Date().toISOString();
     user.targets[result.targetBaseline.id] = {
       targetBaselineId: result.targetBaseline.id,
       title: result.targetBaseline.title,
       targetRole: result.targetBaseline.targetRole || "",
-      createdAt: previous.createdAt || new Date().toISOString(),
-      lastActivityAt: new Date().toISOString(),
+      createdAt: previous.createdAt || timestamp,
+      lastActivityAt: timestamp,
       sessionsStarted: previous.sessionsStarted || 0,
       readingProgress: previous.readingProgress || {},
     };
+    user.documents = applyDocumentTrainingAnswered(user.documents || {}, {
+      docPath: result.source?.metadata?.docPath || "",
+      docTitle: result.source?.title || result.source?.metadata?.docTitle || "",
+      timestamp,
+    });
     user.lastActiveAt = user.targets[result.targetBaseline.id].lastActivityAt;
     await userProfileStore.save(user);
   }
@@ -216,13 +249,10 @@ async function handleReadingProgress(body) {
   if (!body.userId) {
     throw new Error("userId is required.");
   }
-  if (!body.targetBaselineId) {
-    throw new Error("targetBaselineId is required.");
-  }
-
   const user = await getUserProfile(body.userId);
-  const baselinePack = getBaselinePackById(body.targetBaselineId);
-  const previous = user.targets[body.targetBaselineId] || {
+  const targetBaselineId = body.targetBaselineId || defaultBaselinePackId;
+  const baselinePack = getBaselinePackById(targetBaselineId);
+  const previous = user.targets[targetBaselineId] || {
     targetBaselineId: baselinePack.id,
     title: baselinePack.title,
     targetRole: baselinePack.targetRole,
@@ -232,20 +262,86 @@ async function handleReadingProgress(body) {
     readingProgress: {},
   };
 
-  user.targets[body.targetBaselineId] = applyReadingProgress(previous, {
-    targetBaselineId: body.targetBaselineId,
+  const timestamp = new Date().toISOString();
+  user.targets[targetBaselineId] = applyReadingProgress(previous, {
+    targetBaselineId,
     domainId: body.domainId,
     conceptId: body.conceptId,
     docPath: body.docPath,
     docTitle: body.docTitle,
     scrollRatio: body.scrollRatio,
     dwellMs: body.dwellMs,
-    timestamp: new Date().toISOString(),
+    timestamp,
   });
-  user.targets[body.targetBaselineId].lastActivityAt = new Date().toISOString();
-  user.lastActiveAt = user.targets[body.targetBaselineId].lastActivityAt;
+  user.documents = applyDocumentReadingEvent(user.documents || {}, {
+    docPath: body.docPath,
+    docTitle: body.docTitle || user.targets[targetBaselineId]?.readingProgress?.currentDocTitle || "",
+    scrollRatio: body.scrollRatio,
+    dwellMs: body.dwellMs,
+    timestamp,
+  });
+  user.targets[targetBaselineId].lastActivityAt = timestamp;
+  user.lastActiveAt = user.targets[targetBaselineId].lastActivityAt;
   await userProfileStore.save(user);
   return buildProfilePayload(user);
+}
+
+function buildFallbackKnowledgeAnswer(question = "", document = {}) {
+  const lines = String(document.markdown || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim().replace(/^#+\s*/, "").replace(/^[-*]\s*/, ""))
+    .filter((line) => line && !line.startsWith("!"));
+  const headings = lines.filter((line) => line.length <= 48).slice(0, 8);
+  const paragraphs = lines.filter((line) => line.length > 18).slice(0, 6);
+  if (/总结|概括|3\s*句|三句/.test(question)) {
+    return (paragraphs.length ? paragraphs : headings).slice(0, 3).map((line, index) => `${index + 1}. ${line}`).join("\n");
+  }
+  if (/面试|追问|问题/.test(question)) {
+    return (headings.length ? headings : paragraphs).slice(0, 5).map((line, index) => `${index + 1}. 面试官可能会追问：${line} 的核心机制和边界是什么？`).join("\n");
+  }
+  const seeds = (paragraphs.length ? paragraphs : headings).slice(0, 2);
+  return seeds.length ? `基于《${document.title || "当前文档"}》，${seeds.join("；")}` : "这篇材料里没有足够内容回答这个问题。";
+}
+
+async function handleKnowledgeAnswer(body) {
+  const question = String(body.question || "").trim();
+  const docPath = String(body.docPath || "").trim();
+  if (!question) {
+    throw new Error("question is required.");
+  }
+  if (!docPath) {
+    throw new Error("docPath is required.");
+  }
+
+  const document = await readJavaGuideDocument(docPath);
+  try {
+    const { data, traceId } = await proxyJson("POST", "/api/superapp/answer-knowledge-question", {
+      userId: body.userId || "",
+      question,
+      title: document.title,
+      context: document.markdown,
+    });
+    return {
+      ...data,
+      traceId,
+      source: {
+        title: document.title,
+        path: document.path,
+      },
+    };
+  } catch (error) {
+    return {
+      mode: "knowledge_qa",
+      content: buildFallbackKnowledgeAnswer(question, document),
+      suggestedFollowUp: "把这个点出成一道快答题",
+      source: {
+        title: document.title,
+        path: document.path,
+      },
+      fallbackReason: error.message,
+    };
+  }
 }
 
 async function ensureSuperappDemoUser() {
@@ -297,15 +393,21 @@ async function persistAnswerSideEffects(result) {
   if (result.userId && result.targetBaseline?.id) {
     const user = await getUserProfile(result.userId);
     const previous = user.targets[result.targetBaseline.id] || {};
+    const timestamp = new Date().toISOString();
     user.targets[result.targetBaseline.id] = {
       targetBaselineId: result.targetBaseline.id,
       title: result.targetBaseline.title,
       targetRole: result.targetBaseline.targetRole || "",
-      createdAt: previous.createdAt || new Date().toISOString(),
-      lastActivityAt: new Date().toISOString(),
+      createdAt: previous.createdAt || timestamp,
+      lastActivityAt: timestamp,
       sessionsStarted: previous.sessionsStarted || 0,
       readingProgress: previous.readingProgress || {},
     };
+    user.documents = applyDocumentTrainingAnswered(user.documents || {}, {
+      docPath: result.source?.metadata?.docPath || "",
+      docTitle: result.source?.title || result.source?.metadata?.docTitle || "",
+      timestamp,
+    });
     user.lastActiveAt = user.targets[result.targetBaseline.id].lastActivityAt;
     await userProfileStore.save(user);
   }
@@ -402,8 +504,8 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    if (request.method === "GET" && url.pathname === "/api/baselines") {
-      sendJson(response, 200, { baselines: listBaselinePacks() });
+    if (request.method === "POST" && url.pathname === "/api/knowledge/answer") {
+      sendJson(response, 200, await handleKnowledgeAnswer(await readJsonBody(request)));
       return;
     }
 
@@ -443,11 +545,21 @@ const server = http.createServer(async (request, response) => {
       const remoteUrl = url.searchParams.get("url");
 
       if (assetPath) {
-        const asset = await readJavaGuideAsset(assetPath);
-        sendBuffer(response, 200, asset.body, {
-          "cache-control": "public, max-age=3600",
-          "content-type": asset.mimeType,
-        });
+        try {
+          const asset = await readJavaGuideAsset(assetPath);
+          sendBuffer(response, 200, asset.body, {
+            "cache-control": "public, max-age=3600",
+            "content-type": asset.mimeType,
+          });
+        } catch (error) {
+          if (error.code !== "ENOENT") {
+            throw error;
+          }
+          sendBuffer(response, 200, buildMissingAssetPlaceholder(assetPath), {
+            "cache-control": "public, max-age=300",
+            "content-type": "image/svg+xml; charset=utf-8",
+          });
+        }
         return;
       }
 

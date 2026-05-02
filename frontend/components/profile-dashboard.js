@@ -67,6 +67,10 @@ export function ProfileDashboard() {
     .slice()
     .sort((left, right) => (right.evidenceCount || 0) - (left.evidenceCount || 0))
     .slice(0, 4);
+  const documentItems = useMemo(() => {
+    return Object.values(profile?.documentProgress?.docs || {})
+      .sort((left, right) => String(right.lastActivityAt || "").localeCompare(String(left.lastActivityAt || "")));
+  }, [profile]);
 
   if (!profile) {
     return (
@@ -75,19 +79,19 @@ export function ProfileDashboard() {
           <div className="brand-chip">L</div>
           <div className="profile-header-copy">
             <h1>个人档案</h1>
-            <p>按不同学习目标查看进展、记忆内容与下一步建议。</p>
+            <p>查看文档阅读、训练进展、记忆内容与下一步建议。</p>
           </div>
         </section>
         <section className="gate-card">
           <h2>{error || "正在载入档案..."}</h2>
-          <p>先从首页连接学习档案，再回来查看目标进展和长期记忆。</p>
+          <p>先从首页连接学习档案，再回来查看文档进展和长期记忆。</p>
           <Link className="primary-pill" href="/">返回首页</Link>
         </section>
       </main>
     );
   }
 
-  const primaryTarget = profile.targets?.[0];
+  const primaryDocument = documentItems[0] || null;
 
   return (
     <main className="profile-shell">
@@ -95,7 +99,7 @@ export function ProfileDashboard() {
         <div className="brand-chip">L</div>
         <div className="profile-header-copy">
           <h1>个人档案</h1>
-          <p>按不同学习目标查看进展、记忆内容与下一步建议。</p>
+          <p>查看文档阅读、训练进展、记忆内容与下一步建议。</p>
         </div>
         <div className="memory-status-pill">
           <span className="status-dot" />
@@ -110,51 +114,64 @@ export function ProfileDashboard() {
             <div className="learner-summary-copy">
               <h2>{profile.user.handle} 的学习档案</h2>
               <p>
-                当前聚焦 {primaryTarget?.title || "学习目标"}，系统会持续记录练习证据、对话反馈和下一步建议。
+                当前聚焦 {primaryDocument?.docTitle || "文档学习"}，系统会持续记录阅读、训练证据、对话反馈和下一步建议。
               </p>
             </div>
             <div className="summary-stat-strip">
               <div>
-                <strong>{primaryTarget?.completionPercentage || 0}%</strong>
-                <span>总进度</span>
+                <strong>{profile.documentProgress?.stats?.completedReadingCount || 0}</strong>
+                <span>已读文档</span>
               </div>
               <div>
-                <strong>{profile.summary.sessionsStarted}</strong>
-                <span>累计练习</span>
+                <strong>{profile.documentProgress?.stats?.startedTrainingCount || 0}</strong>
+                <span>已开训练</span>
               </div>
             </div>
           </article>
 
           <section className="section-heading">
-            <h2>学习目标进展</h2>
-            <p>不同目标分别沉淀进度、薄弱点和下一步任务。</p>
+            <h2>文档学习进展</h2>
+            <p>每篇文档独立记录阅读、训练和掌握状态。</p>
           </section>
 
           <div className="goal-card-list">
-            {(profile.targets || []).map((target) => (
-              <article className="goal-card" key={target.targetBaselineId}>
+            {documentItems.length ? documentItems.slice(0, 8).map((document) => (
+              <article className="goal-card" key={document.docPath}>
                 <div className="goal-card-head">
                   <div>
-                    <h3>{target.title}</h3>
-                    <p>{target.targetRole}</p>
+                    <h3>{document.docTitle || document.docPath}</h3>
+                    <p>{document.docPath}</p>
                   </div>
-                  <strong>{target.completionPercentage}%</strong>
+                  <strong>{document.progressPercentage || 0}%</strong>
                 </div>
                 <div className="progress-track">
-                  <span style={{ width: `${target.completionPercentage}%` }} />
+                  <span style={{ width: `${document.progressPercentage || 0}%` }} />
                 </div>
                 <p className="goal-caption">
-                  已评估 {target.assessedItemCount} / {target.totalItemCount} 项，已启动 {target.sessionsStarted} 次
+                  {document.readingLabel || "未读"} · {document.learningStatusLabel || "未训练"} ·
+                  {" "}
+                  证据 {document.evidenceCount || 0} 条，答题 {document.trainingAnswerCount || 0} 次
                 </p>
                 <div className="goal-pill-row">
-                  {(target.domains || []).slice(0, 3).map((domain) => (
-                    <span className={`goal-pill ${progressTone(domain.progressPercentage)}`} key={domain.id}>
-                      {domain.title} {domain.progressPercentage}%
-                    </span>
-                  ))}
+                  <span className={`goal-pill ${progressTone(document.progressPercentage || 0)}`}>
+                    阅读 {document.readingLabel || "未读"}
+                  </span>
+                  <span className={`goal-pill ${progressTone(document.masteryPercentage || 0)}`}>
+                    掌握 {document.masteryPercentage || 0}%
+                  </span>
                 </div>
               </article>
-            ))}
+            )) : (
+              <article className="goal-card">
+                <div className="goal-card-head">
+                  <div>
+                    <h3>还没有文档进展</h3>
+                    <p>开始阅读或训练后，这里会显示最近学习过的文档。</p>
+                  </div>
+                  <strong>0%</strong>
+                </div>
+              </article>
+            )}
           </div>
 
           <div className="profile-bottom-grid">
@@ -181,7 +198,7 @@ export function ProfileDashboard() {
                   {recentItems.map((item) => (
                     <li key={item.abilityItemId}>
                       <strong>{item.title}</strong>
-                      <span>{item.evidenceCount} 条证据 · {item.targetTitle}</span>
+                      <span>{item.evidenceCount} 条证据 · 训练记忆</span>
                     </li>
                   ))}
                 </ul>

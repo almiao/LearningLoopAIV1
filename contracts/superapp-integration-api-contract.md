@@ -35,7 +35,8 @@ Response:
 ```json
 {
   "userId": "user-123",
-  "targetBaselineId": "bigtech-java-backend",
+  "currentDocPath": "docs/java/concurrent/aqs.md",
+  "currentDocTitle": "AQS 详解",
   "candidate": {
     "taskId": "task-001",
     "category": "yesterday_gap_followup",

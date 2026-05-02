@@ -14,12 +14,10 @@ async function loginAndSeed(page, request) {
   expect(response.ok()).toBeTruthy();
   const payload = await response.json();
 
-  await page.addInitScript(({ userId, baselineId }) => {
+  await page.addInitScript(({ userId }) => {
     window.localStorage.setItem("learning-loop-user-id", userId);
-    window.localStorage.setItem("learning-loop-target-baseline-id", baselineId);
   }, {
     userId: payload.profile.user.id,
-    baselineId: "bigtech-java-backend",
   });
 
   return payload.profile.user.id;
@@ -47,7 +45,7 @@ test("home page does not surface history-driven current or recommendation labels
   await expect(page.getByText("当前章节")).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("你上次读到");
 
-  await page.goto("/learn?target=bigtech-java-backend&doc=docs/system-design/framework/spring/spring-transaction.md&autostart=1", {
+  await page.goto("/learn?doc=docs/system-design/framework/spring/spring-transaction.md&autostart=1", {
     waitUntil: "networkidle",
   });
   await expect(page.getByTestId("document-surface")).toContainText("Spring");

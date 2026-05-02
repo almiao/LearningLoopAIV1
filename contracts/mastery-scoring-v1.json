@@ -1,0 +1,61 @@
+{
+  "stateRank": {
+    "不可判": 0,
+    "weak": 1,
+    "partial": 2,
+    "solid": 3
+  },
+  "confidenceLevelScore": {
+    "high": 0.86,
+    "medium": 0.58,
+    "low": 0.26
+  },
+  "readingScore": {
+    "opened": 8,
+    "progress25": 8,
+    "progress50": 14,
+    "progress75": 12,
+    "progress90Complete": 12,
+    "secondFullReadBonus": 4,
+    "thirdPlusFullReadBonus": 2,
+    "max": 60
+  },
+  "trainingScore": {
+    "weak": { "base": 4, "repeat": 2, "max": 8 },
+    "partial": { "base": 9, "repeat": 4, "max": 16 },
+    "solid": { "base": 13, "repeat": 6, "max": 25 },
+    "max": 25
+  },
+  "stabilityScore": {
+    "partialOrAbove": 4,
+    "repeatedPartialOrAbove": 8,
+    "singleSolid": 10,
+    "repeatedSolid": 15,
+    "max": 15
+  },
+  "conflictPenalty": {
+    "perConflict": 4,
+    "weakStateExtra": 4,
+    "max": 15
+  },
+  "targetReadiness": {
+    "min": 10,
+    "max": 96
+  },
+  "labels": {
+    "mastery": [
+      { "min": 90, "label": "稳定掌握" },
+      { "min": 75, "label": "已掌握" },
+      { "min": 60, "label": "训练中" },
+      { "min": 40, "label": "已阅读" },
+      { "min": 1, "label": "已接触" },
+      { "min": 0, "label": "未开始" }
+    ],
+    "target": [
+      { "min": 80, "label": "接近完成" },
+      { "min": 55, "label": "持续推进中" },
+      { "min": 1, "label": "刚刚起步" },
+      { "min": 0, "label": "尚未建立证据" }
+    ]
+  }
+}

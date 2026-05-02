@@ -1482,21 +1482,6 @@ button {
   color: var(--accent-blue);
 }
 
-.training-progress-track {
-  width: 100%;
-  height: 8px;
-  border-radius: 999px;
-  background: #e8edf6;
-  overflow: hidden;
-}
-
-.training-progress-fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #2f6bff 0%, #69a1ff 100%);
-}
-
 .narrow-banner {
   flex: 0 0 auto;
   margin: 18px 20px 0 72px;
@@ -1520,6 +1505,10 @@ button {
 
 .study-main.study-mode-reading {
   grid-template-columns: minmax(0, 1.5fr) minmax(420px, 0.76fr);
+}
+
+.study-main.study-mode-reading.pre-training-layout {
+  grid-template-columns: minmax(0, 1.72fr) minmax(320px, 0.58fr);
 }
 
 .study-main.study-mode-training {
@@ -2257,6 +2246,67 @@ button {
   font-size: 12px;
 }
 
+.reading-companion-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid #d9e6fb;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, #f8fbff 0%, #ffffff 62%),
+    #ffffff;
+  box-shadow: 0 8px 24px rgba(47, 107, 255, 0.05);
+}
+
+.reading-companion-card.compact {
+  padding: 14px 16px;
+}
+
+.reading-companion-source {
+  max-width: 100%;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reading-companion-card h3 {
+  margin: 0;
+  color: #17202b;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.22;
+}
+
+.reading-companion-card p {
+  margin: 0;
+  color: #556070;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.reading-companion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.composer-source-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid #e5ecf7;
+  border-radius: 999px;
+  background: #f8fbff;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .message-card {
   width: 100%;
 }
@@ -2535,66 +2585,6 @@ button {
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.02em;
-}
-
-.training-prep-card {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 18px;
-  border: 1px solid #d9e4f5;
-  border-radius: 18px;
-  background:
-    radial-gradient(circle at 14% 0%, rgba(47, 107, 255, 0.12), transparent 34%),
-    linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
-  box-shadow: 0 18px 48px rgba(30, 64, 122, 0.08);
-}
-
-.training-prep-kicker {
-  color: #2f6bff;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-}
-
-.training-prep-title {
-  color: #111827;
-  font-size: 20px;
-  font-weight: 800;
-  line-height: 1.35;
-}
-
-.training-prep-card p {
-  margin: 0;
-  color: #5c6678;
-  line-height: 1.6;
-}
-
-.training-prep-steps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.training-prep-step {
-  min-height: 28px;
-  padding: 5px 10px;
-  border: 1px solid #e2e8f0;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #778294;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.training-prep-step.active {
-  border-color: #c9dcff;
-  background: #edf5ff;
-  color: #1f4fa3;
-}
-
-.training-prep-footnote {
-  font-size: 12px;
 }
 
 .training-progress-copy {
@@ -3036,6 +3026,11 @@ button {
     min-height: 360px;
   }
 
+  .study-main.study-mode-reading.pre-training-layout {
+    display: flex;
+    flex-direction: column;
+  }
+
   .auth-strip,
   .auth-form-inline,
   .learner-summary-card,
@@ -3073,6 +3068,11 @@ button {
     z-index: 6;
     width: 100%;
     background: var(--surface);
+  }
+
+  .reading-companion-card {
+    padding: 16px;
+    border-radius: 18px;
   }
 
   .learning-browser-card {

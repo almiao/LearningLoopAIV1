@@ -1,28 +1,15 @@
 import { createBaselinePackDecomposition, getBaselinePackById } from "../baseline/baseline-packs.js";
 import { getJavaGuideDocumentOrder } from "../knowledge/java-guide-order.js";
+import {
+  buildMasteryLabel,
+  buildTargetLabel,
+  calculateMasteryScore,
+  calculateTargetReadinessScore,
+  average,
+} from "../mastery/mastery-scoring.js";
 import { buildTrainingPointsFromDecomposition } from "../training/training-model.js";
+import { buildDocumentProgressView } from "./document-progress-state.js";
 import { buildReadingDomainsForTarget } from "./reading-roadmap.js";
-
-const progressScore = {
-  "不可判": 0,
-  weak: 28,
-  partial: 66,
-  solid: 94
-};
-
-function scoreState(state = "不可判", evidenceCount = 0) {
-  if (evidenceCount <= 0) {
-    return 0;
-  }
-  return progressScore[state] ?? progressScore.weak;
-}
-
-function average(values = []) {
-  if (!values.length) {
-    return 0;
-  }
-  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
-}
 
 function progressLabel(progressPercentage) {
   if (progressPercentage >= 100) {
@@ -56,19 +43,6 @@ function readDocumentProgress(readingProgress = {}, domainProgress = {}, doc = {
   };
 }
 
-function masteryLabel(masteryPercentage = 0, assessedConceptCount = 0) {
-  if (assessedConceptCount <= 0) {
-    return "未训练";
-  }
-  if (masteryPercentage >= 80) {
-    return "掌握";
-  }
-  if (masteryPercentage >= 45) {
-    return "练习中";
-  }
-  return "待加强";
-}
-
 function buildDocumentMasteryMap(itemViews = []) {
   const masteryMap = new Map();
 
@@ -87,27 +61,17 @@ function buildDocumentMasteryMap(itemViews = []) {
 
       const entry = masteryMap.get(source.path);
       entry.totalConceptCount += 1;
-      entry.progressValues.push(item.progressPercentage || 0);
+      entry.progressValues.push(item.masteryScore || 0);
       if ((item.evidenceCount || 0) > 0) {
         entry.assessedConceptCount += 1;
+      }
+      if (item.hasReadingProgress) {
+        entry.hasReadingProgress = true;
       }
     }
   }
 
   return masteryMap;
-}
-
-function buildTargetLabel(percentage) {
-  if (percentage >= 80) {
-    return "接近完成";
-  }
-  if (percentage >= 55) {
-    return "持续推进中";
-  }
-  if (percentage > 0) {
-    return "刚刚起步";
-  }
-  return "尚未建立证据";
 }
 
 function stateLabel(state = "") {
@@ -151,11 +115,16 @@ function getConceptOrder(concept, fallbackOrder = Number.MAX_SAFE_INTEGER) {
   return orders.length ? Math.min(...orders) : fallbackOrder;
 }
 
-function buildAbilityItemView(point, memoryItem = null) {
+function buildAbilityItemView(point, memoryItem = null, readingProgress = null) {
   const evidenceCount = memoryItem?.evidenceCount || 0;
   const state = memoryItem?.state || "不可判";
   const sources = normalizeGuideSources(point.javaGuideSources);
   const primarySource = sources[0] || null;
+  const hasReadingProgress = Boolean(readingProgress && Number(readingProgress.progressPercentage || 0) > 0);
+  const masteryScore = calculateMasteryScore({
+    memoryItem,
+    readingProgress,
+  });
   return {
     abilityItemId: point.id,
     title: point.title,
@@ -163,9 +132,11 @@ function buildAbilityItemView(point, memoryItem = null) {
     confidenceLevel: memoryItem?.confidenceLevel || "low",
     confidence: memoryItem?.confidence || 0,
     evidenceCount,
-    progressPercentage: scoreState(state, evidenceCount),
+    progressPercentage: masteryScore,
+    masteryScore,
+    hasReadingProgress,
     lastUpdatedAt: memoryItem?.lastUpdatedAt || "",
-    questionStatusLabel: evidenceCount > 0 ? stateLabel(state) : "",
+    questionStatusLabel: evidenceCount > 0 ? stateLabel(state) : (hasReadingProgress ? "已阅读" : ""),
     provenanceLabel: point.provenanceLabel || "",
     derivedPrinciple: memoryItem?.derivedPrinciple || "",
     primaryDocPath: primarySource?.path || "",
@@ -191,6 +162,8 @@ function aggregatePointMemory(point, memoryProfile) {
   const stateValues = checkpointMemory.map((item) => summarizeCheckpointState(item));
   const derivedPrinciples = checkpointMemory.map((item) => item?.derivedPrinciple || "").filter(Boolean);
   const confidenceLevels = checkpointMemory.map((item) => item?.confidenceLevel || "").filter(Boolean);
+  const recentStrongEvidence = checkpointMemory.flatMap((item) => item?.recentStrongEvidence || []);
+  const recentConflictingEvidence = checkpointMemory.flatMap((item) => item?.recentConflictingEvidence || []);
   const lastUpdatedAt = [legacyPointMemory?.lastUpdatedAt || "", ...checkpointMemory.map((item) => item?.lastUpdatedAt || "")]
     .filter(Boolean)
     .sort((left, right) => String(right).localeCompare(String(left)))[0] || "";
@@ -213,6 +186,8 @@ function aggregatePointMemory(point, memoryProfile) {
     confidence: legacyPointMemory?.confidence || 0,
     evidenceCount,
     derivedPrinciple: legacyPointMemory?.derivedPrinciple || derivedPrinciples[0] || point.summary || "",
+    recentStrongEvidence: legacyPointMemory?.recentStrongEvidence || recentStrongEvidence,
+    recentConflictingEvidence: legacyPointMemory?.recentConflictingEvidence || recentConflictingEvidence,
     lastUpdatedAt,
     assessedCheckpointCount,
     totalCheckpointCount: (point.checkpoints || []).length,
@@ -224,20 +199,30 @@ function buildTargetView(targetRecord, memoryProfile) {
   const decomposition = createBaselinePackDecomposition(pack);
   const trainingPoints = buildTrainingPointsFromDecomposition(decomposition);
   const readingProgress = targetRecord.readingProgress || {};
-  const itemViews = trainingPoints.map((point) =>
-    buildAbilityItemView(point, aggregatePointMemory(point, memoryProfile))
-  );
+  const readingDocMap = readingProgress.docs || {};
+  const itemViews = trainingPoints.map((point) => {
+    const primaryDocPath = normalizeGuideSources(point.javaGuideSources)[0]?.path || "";
+    return buildAbilityItemView(
+      point,
+      aggregatePointMemory(point, memoryProfile),
+      primaryDocPath ? readingDocMap[primaryDocPath] || null : null,
+    );
+  });
   const documentMasteryMap = buildDocumentMasteryMap(itemViews);
   const readingDomains = buildReadingDomainsForTarget(targetRecord.targetBaselineId).map((domain) => {
     const domainProgress = readingProgress.domains?.[domain.id] || {};
     const docs = (domain.docs || []).map((doc) => {
       const mastery = documentMasteryMap.get(doc.path) || {};
       const masteryPercentage = average(mastery.progressValues || []);
+      const docReadingProgress = readDocumentProgress(readingProgress, domainProgress, doc);
       return {
         ...doc,
-        ...readDocumentProgress(readingProgress, domainProgress, doc),
+        ...docReadingProgress,
         masteryPercentage,
-        masteryLabel: masteryLabel(masteryPercentage, mastery.assessedConceptCount || 0),
+        masteryLabel: buildMasteryLabel(masteryPercentage, {
+          hasEvidence: (mastery.assessedConceptCount || 0) > 0,
+          hasReading: docReadingProgress.started || Boolean(mastery.hasReadingProgress),
+        }),
         assessedConceptCount: mastery.assessedConceptCount || 0,
         totalConceptCount: mastery.totalConceptCount || 0,
       };
@@ -319,6 +304,7 @@ function buildTargetView(targetRecord, memoryProfile) {
       ...domain,
       items: orderedItems,
       progressPercentage: average(orderedItems.map((item) => item.progressPercentage)),
+      masteryScore: average(orderedItems.map((item) => item.masteryScore)),
       assessedItemCount: orderedItems.filter((item) => item.evidenceCount > 0).length,
       totalItemCount: orderedItems.length,
       currentAbilityItemId: currentItem?.abilityItemId || "",
@@ -341,7 +327,7 @@ function buildTargetView(targetRecord, memoryProfile) {
     readingDomains[0] ||
     null;
 
-  const completionPercentage = average(itemViews.map((item) => item.progressPercentage));
+  const completionPercentage = calculateTargetReadinessScore(itemViews);
   return {
     targetBaselineId: targetRecord.targetBaselineId,
     title: targetRecord.title || pack.title,
@@ -350,6 +336,7 @@ function buildTargetView(targetRecord, memoryProfile) {
     lastActivityAt: targetRecord.lastActivityAt || "",
     sessionsStarted: targetRecord.sessionsStarted || 0,
     completionPercentage,
+    readinessScore: completionPercentage,
     completionLabel: buildTargetLabel(completionPercentage),
     assessedItemCount: itemViews.filter((item) => item.evidenceCount > 0).length,
     totalItemCount: itemViews.length,
@@ -371,6 +358,7 @@ export function buildUserProfileView({ user, memoryProfile }) {
 
   const targetItems = targets.flatMap((target) => target.domains.flatMap((domain) => domain.items));
   const summarizedStates = targetItems.map((item) => summarizeState(item)).filter(Boolean);
+  const documentProgress = buildDocumentProgressView({ user, memoryProfile });
   return {
     user: {
       id: user.id,
@@ -388,6 +376,7 @@ export function buildUserProfileView({ user, memoryProfile }) {
       partialItems: summarizedStates.filter((state) => state === "partial").length,
       weakItems: summarizedStates.filter((state) => state === "weak").length
     },
+    documentProgress,
     targets
   };
 }

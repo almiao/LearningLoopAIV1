@@ -102,29 +102,30 @@ function averageMastery(documents = [], target = null) {
   if (!documents.length) {
     return 0;
   }
-  const total = documents.reduce((sum, document) => sum + getDocumentMastery(target, document.path).percentage, 0);
+  const total = documents.reduce((sum, document) => sum + getDocumentLearningState(target, document.path).masteryPercentage, 0);
   return Math.round(total / documents.length);
 }
 
-function getDocumentProgress(target = null, docPath = "") {
-  const storedProgress = target?.readingProgress?.docs?.[docPath]?.progressPercentage;
+function getDocumentProgress(documentProgress = null, docPath = "") {
+  const storedProgress = documentProgress?.docs?.[docPath]?.progressPercentage;
   if (Number.isFinite(Number(storedProgress))) {
     return Math.max(0, Math.min(100, Number(storedProgress)));
   }
-  if (target?.currentDocPath === docPath) {
+  if (documentProgress?.currentDocPath === docPath) {
     return 10;
   }
   return 0;
 }
 
-function getDocumentMastery(target = null, docPath = "") {
-  const matchedDoc = (target?.readingDomains || [])
-    .flatMap((domain) => domain.docs || [])
-    .find((document) => document.path === docPath);
+function getDocumentLearningState(documentProgress = null, docPath = "") {
+  const matchedDoc = documentProgress?.docs?.[docPath] || null;
   const percentage = Number(matchedDoc?.masteryPercentage || 0);
   return {
     percentage: Number.isFinite(percentage) ? Math.max(0, Math.min(100, percentage)) : 0,
-    label: matchedDoc?.masteryLabel || "未训练",
+    masteryPercentage: Number.isFinite(percentage) ? Math.max(0, Math.min(100, percentage)) : 0,
+    masteryLabel: matchedDoc?.masteryLabel || "未开始",
+    learningStatusLabel: matchedDoc?.learningStatusLabel || "未训练",
+    trainingStarted: Boolean(matchedDoc?.trainingStarted),
     assessedConceptCount: matchedDoc?.assessedConceptCount || 0,
     totalConceptCount: matchedDoc?.totalConceptCount || 0,
   };
@@ -132,7 +133,13 @@ function getDocumentMastery(target = null, docPath = "") {
 
 function formatProgressBadge(progressPercentage = 0, isCurrent = false) {
   if (isCurrent) {
-    return `当前 ${Math.max(10, progressPercentage)}%`;
+    if (progressPercentage >= 100) {
+      return "当前 · 已读";
+    }
+    if (progressPercentage >= 25) {
+      return `当前 ${Math.max(10, progressPercentage)}%`;
+    }
+    return "当前 · 已打开";
   }
   if (progressPercentage >= 100) {
     return "已读";
@@ -146,11 +153,14 @@ function formatProgressBadge(progressPercentage = 0, isCurrent = false) {
   return "未读";
 }
 
-function formatMasteryBadge(mastery = {}) {
-  if (!mastery.assessedConceptCount) {
-    return "未训练";
+function formatLearningBadge(learning = {}) {
+  if (!learning.assessedConceptCount) {
+    return learning.learningStatusLabel || "未训练";
   }
-  return `掌握 ${mastery.percentage}%`;
+  if (learning.masteryPercentage >= 75) {
+    return `已掌握 ${learning.masteryPercentage}%`;
+  }
+  return `训练中 ${learning.masteryPercentage}%`;
 }
 
 export function HomePage() {
@@ -264,12 +274,11 @@ export function HomePage() {
   }, [scopedDocuments, search]);
   const totalDocumentCount = knowledgeDocuments.length;
   const matchingDocumentCount = visibleDocuments.length;
-  const currentTarget = profile?.targets?.[0] || null;
-  const currentReading = currentTarget?.currentDocPath ? {
-    path: currentTarget.currentDocPath,
-    title: currentTarget.currentDocTitle || allCatalogDocuments.find((document) => document.path === currentTarget.currentDocPath)?.label || "继续当前文档",
-    targetTitle: currentTarget.title || "",
-    progress: getDocumentProgress(currentTarget, currentTarget.currentDocPath),
+  const currentDocumentProgress = profile?.documentProgress || null;
+  const currentReading = currentDocumentProgress?.currentDocPath ? {
+    path: currentDocumentProgress.currentDocPath,
+    title: currentDocumentProgress.currentDocTitle || allCatalogDocuments.find((document) => document.path === currentDocumentProgress.currentDocPath)?.label || "继续当前文档",
+    progress: getDocumentProgress(currentDocumentProgress, currentDocumentProgress.currentDocPath),
   } : null;
   const currentReadingSection = useMemo(() => {
     if (!currentReading?.path) {
@@ -281,8 +290,8 @@ export function HomePage() {
     return visibleDocuments.slice(0, 18);
   }, [visibleDocuments]);
   const allProgress = useMemo(
-    () => averageProgress(allCatalogDocuments, currentTarget),
-    [allCatalogDocuments, currentTarget]
+    () => averageProgress(allCatalogDocuments, currentDocumentProgress),
+    [allCatalogDocuments, currentDocumentProgress]
   );
   const sectionSummaries = useMemo(
     () => sections.map((section) => {
@@ -290,11 +299,11 @@ export function HomePage() {
       return {
         ...section,
         documentCount: documents.length,
-        progressPercentage: averageProgress(documents, currentTarget),
-        masteryPercentage: averageMastery(documents, currentTarget),
+        progressPercentage: averageProgress(documents, currentDocumentProgress),
+        masteryPercentage: averageMastery(documents, currentDocumentProgress),
       };
     }),
-    [currentTarget, sections]
+    [currentDocumentProgress, sections]
   );
 
   useEffect(() => {
@@ -503,8 +512,8 @@ export function HomePage() {
               <div className="catalog-doc-grid">
                 {recommendedDocuments.map((document) => {
                   const isCurrent = document.path === currentReading?.path;
-                  const progressPercentage = getDocumentProgress(currentTarget, document.path);
-                  const mastery = getDocumentMastery(currentTarget, document.path);
+                  const progressPercentage = getDocumentProgress(currentDocumentProgress, document.path);
+                  const mastery = getDocumentLearningState(currentDocumentProgress, document.path);
 
                   return (
                     <Link
@@ -516,7 +525,7 @@ export function HomePage() {
                       <span className="catalog-doc-title">{document.label}</span>
                       <span className="catalog-doc-badges">
                         <span className="catalog-doc-progress">{formatProgressBadge(progressPercentage, isCurrent)}</span>
-                        <span className="catalog-doc-mastery">{formatMasteryBadge(mastery)}</span>
+                        <span className="catalog-doc-mastery">{formatLearningBadge(mastery)}</span>
                       </span>
                       <span className="catalog-doc-path">
                         {isCurrent ? "当前阅读" : simplifyPath(document.path)}

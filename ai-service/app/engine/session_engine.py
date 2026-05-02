@@ -11,6 +11,12 @@ from fastapi import HTTPException
 from app.engine.context_packet import build_context_packet
 from app.core.config import versions
 from app.engine.control_intents import detect_control_intent
+from app.engine.mastery_scoring import (
+    build_target_label,
+    calculate_mastery_score,
+    calculate_target_readiness_score,
+    rank_state as score_rank_state,
+)
 from app.engine.tutor_intelligence import create_tutor_intelligence, describe_tutor_intelligence, normalize_decomposition_payload
 from app.observability import events
 from app.observability.logger import logger
@@ -24,20 +30,6 @@ from app.engine.turn_envelope import (
     score_to_confidence_level,
     turn_envelope_to_tutor_move,
 )
-
-STATE_SCORE = {
-    "不可判": 0.18,
-    "weak": 0.34,
-    "partial": 0.68,
-    "solid": 0.92,
-}
-
-STATE_RANK = {
-    "不可判": 0,
-    "weak": 1,
-    "partial": 2,
-    "solid": 3,
-}
 
 SESSIONS: Dict[str, Dict[str, Any]] = {}
 _TUTOR_INTELLIGENCE = None
@@ -298,7 +290,7 @@ def initial_probe(concept: Dict[str, Any], session: Optional[Dict[str, Any]] = N
 
 
 def rank_state(state: str) -> int:
-    return STATE_RANK.get(state, STATE_RANK["weak"])
+    return score_rank_state(state)
 
 
 def create_empty_anchor_state() -> Dict[str, Any]:
@@ -369,17 +361,26 @@ def append_evidence(ledger: Dict[str, Any], concept_id: str, evidence: Dict[str,
 
 
 def build_target_match(session: Dict[str, Any]) -> Dict[str, Any]:
-    scores = []
+    reading_docs = ((session.get("targetProgress") or {}).get("readingProgress") or {}).get("docs") or {}
+    scored_items = []
     for concept in session["concepts"]:
         item = session["memoryProfile"]["abilityItems"].get(concept["id"], {})
-        scores.append(STATE_SCORE.get(item.get("state", "不可判"), 0.18) if item.get("evidenceCount", 0) > 0 else 0.0)
-    percentage = round(sum(scores) / max(len(scores), 1) * 100)
-    percentage = max(10, min(96, percentage))
-    label = "接近目标线" if percentage >= 75 else "有通过可能，但仍有明显缺口" if percentage >= 55 else "离目标线还有明显距离"
+        source = ((concept.get("javaGuideSources") or [{}])[0]).get("path", "")
+        scored_items.append(
+            {
+                "title": concept["title"],
+                "masteryScore": calculate_mastery_score(
+                    reading_progress=reading_docs.get(source) or {},
+                    memory_item=item,
+                ),
+            }
+        )
+    percentage = calculate_target_readiness_score(scored_items)
     return {
         "percentage": percentage,
         "percent": percentage,
-        "label": label,
+        "readinessScore": percentage,
+        "label": build_target_label(percentage),
         "explanation": "当前估计会随着更多作答证据继续收敛。",
     }
 
@@ -668,6 +669,9 @@ def apply_writeback_suggestion(*, session: Dict[str, Any], concept: Dict[str, An
 
     previous = deepcopy(session["memoryProfile"]["abilityItems"].get(concept["id"], {}))
     assessment_handle = build_assessment_handle(session, concept)
+    source_metadata = (session.get("source") or {}).get("metadata") or {}
+    source_doc_path = str(source_metadata.get("docPath") or "").strip()
+    source_doc_title = str((session.get("source") or {}).get("title") or source_metadata.get("docTitle") or "").strip()
     snapshot = {
         "signal": (tutor_move.get("runtimeMap") or {}).get("turn_signal", tutor_move.get("signal", "noise")),
         "answer": answer,
@@ -676,6 +680,9 @@ def apply_writeback_suggestion(*, session: Dict[str, Any], concept: Dict[str, An
         "whyJudgedThisWay": "；".join((tutor_move.get("judge") or {}).get("reasons", [])),
         "evidenceReference": tutor_move.get("evidenceReference", ""),
         "sourceRefs": context_packet.get("draft_evidence", {}).get("sourceRefs", []),
+        "sourceDocPath": source_doc_path,
+        "sourceDocPaths": [source_doc_path] if source_doc_path else [],
+        "sourceDocTitle": source_doc_title,
         "assessmentHandle": assessment_handle,
         "writeReason": suggestion.get("reason", "python_ai_service_update"),
         "at": now_iso(),
@@ -704,6 +711,9 @@ def apply_writeback_suggestion(*, session: Dict[str, Any], concept: Dict[str, An
         "questionFamily": concept.get("questionFamily", ""),
         "provenanceLabel": concept.get("provenanceLabel", ""),
         "projectedTargets": [session["targetBaseline"]["id"]],
+        "sourceDocPath": source_doc_path,
+        "sourceDocPaths": [source_doc_path] if source_doc_path else [],
+        "sourceDocTitle": source_doc_title,
     }
     return {"applied": True, "assessmentHandle": assessment_handle}
 
@@ -811,6 +821,7 @@ def create_session(payload: Any) -> Dict[str, Any]:
         "interactionPreference": normalize_interaction_preference(payload.interactionPreference),
         "workspaceScope": {"type": "pack", "id": payload.targetBaseline["id"]},
         "targetBaseline": deepcopy(payload.targetBaseline),
+        "targetProgress": deepcopy(getattr(payload, "targetProgress", {}) or {}),
         "memoryProfile": deepcopy(payload.memoryProfile),
         "memoryEvents": [],
         "latestMemoryEvents": [],
@@ -1307,6 +1318,8 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
 
         if should_followup_wrong:
             session["conceptStates"][concept["id"]]["wrongFollowupCount"] = wrong_followup_count + 1
+
+        if should_followup_wrong:
             session["conceptStates"][concept["id"]]["completed"] = False
             session["conceptStates"][concept["id"]]["result"] = "wrong"
         else:
@@ -1382,7 +1395,7 @@ def answer_session(session: Dict[str, Any], payload: Any, intelligence_override:
             "checkpointId": concept["id"],
             "checkpointStatement": concept.get("checkpointStatement", concept["title"]),
             "signal": tutor_move["signal"],
-            "action": "teach" if checkpoint_outcome in {"full", "partial", "empty", "wrong"} else tutor_move["moveType"],
+            "action": tutor_move["moveType"] if tutor_move["moveType"] == "deepen" else ("teach" if checkpoint_outcome in {"full", "partial", "empty", "wrong"} else tutor_move["moveType"]),
             "explanation": tutor_move["replyText"],
             "replyStream": tutor_move["replyText"],
             "gap": (tutor_move.get("nextMove") or {}).get("reason", ""),

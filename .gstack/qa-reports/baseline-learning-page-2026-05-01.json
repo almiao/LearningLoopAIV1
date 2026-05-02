@@ -1,0 +1,53 @@
+{
+  "date": "2026-05-01",
+  "url": "http://127.0.0.1:3000/learn?target=bigtech-java-backend&doc=docs/system-design/framework/spring/spring-transaction.md&autostart=1",
+  "healthScore": 78,
+  "issues": [
+    {
+      "id": "ISSUE-001",
+      "title": "Empty training rail weakens the first-read experience",
+      "severity": "high",
+      "category": "visual"
+    },
+    {
+      "id": "ISSUE-002",
+      "title": "Outline mixes local navigation with the full 293-document corpus",
+      "severity": "medium",
+      "category": "ux"
+    },
+    {
+      "id": "ISSUE-003",
+      "title": "Training reply loop feels slow and blocks the learner",
+      "severity": "high",
+      "category": "functional"
+    },
+    {
+      "id": "ISSUE-004",
+      "title": "Tutor response is redundant and over-explains before re-asking",
+      "severity": "high",
+      "category": "content"
+    },
+    {
+      "id": "ISSUE-005",
+      "title": "Returning home does not offer an obvious one-click resume path",
+      "severity": "medium",
+      "category": "flow"
+    },
+    {
+      "id": "ISSUE-006",
+      "title": "Mobile turns the experience into a long raw-article scroll",
+      "severity": "medium",
+      "category": "mobile"
+    }
+  ],
+  "categoryScores": {
+    "console": 100,
+    "links": 100,
+    "visual": 69,
+    "functional": 77,
+    "ux": 62,
+    "performance": 70,
+    "content": 70,
+    "accessibility": 85
+  }
+}

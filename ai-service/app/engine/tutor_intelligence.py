@@ -36,6 +36,53 @@ def ensure_string(value: Any, fallback: str = "") -> str:
     return normalized or fallback
 
 
+def build_knowledge_answer_prompt(*, question: str, context: str) -> str:
+    clipped_context = ensure_string(context)[:12_000]
+    return f"""
+你是 LearningLoopAI 的阅读助理。你只回答用户正在阅读的这篇材料，不评估用户掌握度，不追问训练题，不更新学习记忆。
+
+回答规则：
+- 只基于【材料】回答，材料没有的信息要明确说“这篇材料里没有展开”。
+- 如果用户要求总结，直接给出总结，不要说“你是在提出请求”。
+- 用中文，结构清楚，尽量短。
+- 不要输出训练状态、掌握度、下一步训练决策。
+
+【材料】
+{clipped_context}
+
+【用户问题】
+{ensure_string(question)}
+""".strip()
+
+
+def answer_knowledge_question_heuristic(*, question: str, context: str) -> str:
+    normalized_question = ensure_string(question)
+    normalized_context = ensure_string(context)
+    lines = [
+        line.strip(" #`*-")
+        for line in normalized_context.replace("\r", "").split("\n")
+        if line.strip() and not line.strip().startswith("!")
+    ]
+    headings = [line for line in lines if len(line) <= 48][:8]
+    paragraphs = [line for line in lines if len(line) > 18][:6]
+
+    if any(token in normalized_question for token in ("总结", "概括", "3 句", "三句")):
+        seeds = paragraphs[:3] or headings[:3] or [normalized_context[:120] or "这篇材料目前没有足够内容可总结。"]
+        return "\n".join(f"{index + 1}. {seed}" for index, seed in enumerate(seeds[:3]))
+
+    if any(token in normalized_question for token in ("面试", "追问", "问题")):
+        seeds = headings[:5] or paragraphs[:5] or ["材料核心概念"]
+        return "\n".join(
+            f"{index + 1}. 面试官可能会追问：{seed} 的核心机制和边界是什么？"
+            for index, seed in enumerate(seeds[:5])
+        )
+
+    seeds = paragraphs[:2] or headings[:2]
+    if not seeds:
+        return "这篇材料里没有足够内容回答这个问题。"
+    return "基于这篇材料，" + "；".join(seeds[:2])
+
+
 def normalize_teaching_paragraph(text: Any) -> str:
     normalized = str(text or "")
     normalized = normalized.replace("核心结论：", "").replace("核心结论:", "")
@@ -559,16 +606,19 @@ def normalize_decomposition_payload(payload: Dict[str, Any], source: Dict[str, A
     for point in training_points:
         concepts.extend([_checkpoint_concept_from_point(point, checkpoint) for checkpoint in point["checkpoints"]])
     key_themes = [ensure_string(item) for item in ensure_array(((payload or {}).get("summary") or {}).get("keyThemes")) if ensure_string(item)][:3]
+    source_summary = (payload or {}).get("summary") or {}
     return {
         "trainingPoints": training_points,
         "concepts": concepts,
         "summary": {
-            "sourceTitle": ensure_string(((payload or {}).get("summary") or {}).get("sourceTitle"), source.get("title", "")),
+            "sourceTitle": ensure_string(source_summary.get("sourceTitle"), source.get("title", "")),
             "keyThemes": key_themes or [point["title"] for point in training_points[:3]],
             "framing": ensure_string(
-                ((payload or {}).get("summary") or {}).get("framing"),
+                source_summary.get("framing"),
                 f"我先从材料里提炼出 {'、'.join(point['title'] for point in training_points[:3])} 这些训练点。",
             ),
+            "overviewDomains": ensure_array(source_summary.get("overviewDomains")),
+            "javaGuideSourceClusters": ensure_array(source_summary.get("javaGuideSourceClusters")),
         },
     }
 
@@ -625,7 +675,7 @@ def normalize_turn_envelope_payload(payload: Dict[str, Any], concept: Dict[str, 
     ui_mode = next_move.get("ui_mode") if next_move.get("ui_mode") in {"probe", "teach", "verify", "advance", "revisit", "stop"} else "probe"
     return {
         "runtime_map": {
-            "anchor_id": ensure_string(runtime_map.get("anchor_id"), concept.get("id", "")),
+            "anchor_id": concept.get("id", "") or ensure_string(runtime_map.get("anchor_id"), concept.get("id", "")),
             "turn_signal": normalize_signal_alias(runtime_map.get("turn_signal"), "noise"),
             "anchor_assessment": {
                 "state": normalize_state_alias(anchor_assessment.get("state"), "不可判"),
@@ -1283,6 +1333,17 @@ class ProviderTutorIntelligence:
         if text:
             yield text
 
+    def answer_knowledge_question(self, *, question: str, context: str) -> str:
+        prompt = build_knowledge_answer_prompt(question=question, context=context)
+        if self.provider == "DEEPSEEK":
+            return call_deepseek_text(
+                api_key=self.api_key,
+                model=self.model,
+                prompt=prompt,
+                base_url=self.base_url or DEFAULT_DEEPSEEK_BASE_URL,
+            )
+        return call_openai_text(api_key=self.api_key, model=self.model, prompt=prompt)
+
     def explain_concept(self, *, session: Dict[str, Any], concept: Dict[str, Any], context_packet: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         envelope = self.generate_turn_envelope(
             concept=concept,
@@ -1518,6 +1579,9 @@ class HeuristicTutorIntelligence:
         text = self.generate_reply_stream(concept=concept, context_packet=context_packet, answer=answer)
         if text:
             yield text
+
+    def answer_knowledge_question(self, *, question: str, context: str) -> str:
+        return answer_knowledge_question_heuristic(question=question, context=context)
 
     def explain_concept(self, *, session: Dict[str, Any], concept: Dict[str, Any], context_packet: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         payload = {

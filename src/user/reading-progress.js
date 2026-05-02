@@ -1,6 +1,6 @@
 import { findReadingDomainForDoc } from "./reading-roadmap.js";
 
-function normalizeDocPath(docPath = "") {
+export function normalizeReadingDocPath(docPath = "") {
   const normalized = String(docPath || "").trim().replace(/^\/+/, "");
   if (!normalized) {
     return "";
@@ -49,7 +49,7 @@ function statusForProgress(progressPercentage) {
   return "unread";
 }
 
-function buildDocumentProgress(previousDocument = {}, {
+export function buildDocumentProgress(previousDocument = {}, {
   docPath = "",
   docTitle = "",
   scrollRatio,
@@ -75,6 +75,20 @@ function buildDocumentProgress(previousDocument = {}, {
   const isComplete = maxScrollRatio >= 0.9 && maxDwellMs >= 45_000;
   const measuredProgress = isComplete ? 100 : Math.min(90, scrollProgress);
   const progressPercentage = clamp(Math.max(previousProgress, 10, measuredProgress), 0, 100);
+  const previousCompletedAt = previousDocument.completedAt || "";
+  const previousCompletedReadCount = Number(previousDocument.completedReadCount || 0);
+  const previousCompletedDate = previousCompletedAt ? new Date(previousCompletedAt) : null;
+  const currentTimestamp = new Date(timestamp);
+  const canCountAnotherFullRead =
+    isComplete && (
+      !previousCompletedAt
+      || previousDocument.status !== "completed"
+      || !Number.isFinite(previousCompletedDate?.getTime())
+      || (currentTimestamp.getTime() - previousCompletedDate.getTime()) >= 12 * 60 * 60 * 1000
+    );
+  const completedReadCount = canCountAnotherFullRead
+    ? previousCompletedReadCount + 1
+    : previousCompletedReadCount;
 
   return {
     docPath,
@@ -86,11 +100,12 @@ function buildDocumentProgress(previousDocument = {}, {
     openedAt: previousDocument.openedAt || timestamp,
     lastReadAt: timestamp,
     completedAt: progressPercentage >= 100 ? previousDocument.completedAt || timestamp : previousDocument.completedAt || "",
+    completedReadCount,
   };
 }
 
 function resolveReadingCursor(targetBaselineId, { domainId = "", conceptId = "", docPath = "", docTitle = "" } = {}) {
-  const normalizedDocPath = normalizeDocPath(docPath);
+  const normalizedDocPath = normalizeReadingDocPath(docPath);
   const matched = findReadingDomainForDoc(targetBaselineId, normalizedDocPath);
 
   return {

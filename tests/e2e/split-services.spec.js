@@ -17,14 +17,8 @@ test("split BFF -> AI main flow is runnable", async () => {
     const login = await loginResponse.json();
     assert.equal(loginResponse.ok, true);
 
-    const baselinesResponse = await fetch(`${bffBaseUrl}/api/baselines`);
-    const baselines = await baselinesResponse.json();
-    assert.equal(baselinesResponse.ok, true);
-    assert.ok(baselines.baselines.length >= 1);
-
     const session = await postJson(`${bffBaseUrl}/api/interview/start-target`, {
       userId: login.profile.user.id,
-      targetBaselineId: baselines.baselines[0].id,
       interactionPreference: "balanced"
     });
     assert.ok(session.sessionId);
@@ -54,7 +48,6 @@ test("split BFF starts document-scoped training from the active document", async
 
     const session = await postJson(`${bffBaseUrl}/api/interview/start-target`, {
       userId: login.profile.user.id,
-      targetBaselineId: "bigtech-java-backend",
       docPath: "docs/ai/agent/agent-basis.md",
       interactionPreference: "balanced"
     });

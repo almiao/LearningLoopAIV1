@@ -15,7 +15,6 @@ test("simple login creates a reusable user profile and aggregates target progres
     assert.equal(firstLogin.profile.summary.totalTargets, 0);
 
     const session = await postJson(`${bffBaseUrl}/api/interview/start-target`, {
-      targetBaselineId: "bigtech-java-backend",
       interactionPreference: "balanced",
       userId: firstLogin.profile.user.id
     });
@@ -63,10 +62,8 @@ test("reading progress persists the last-read document and survives target updat
       pin: "1234"
     });
 
-    const targetBaselineId = "bigtech-java-backend";
     await postJson(`${bffBaseUrl}/api/profile/reading-progress`, {
       userId: login.profile.user.id,
-      targetBaselineId,
       domainId: "spring-runtime",
       conceptId: "spring-transaction-boundary",
       docPath: "docs/system-design/framework/spring/spring-transaction.md",
@@ -90,12 +87,11 @@ test("reading progress persists the last-read document and survives target updat
     );
     assert.equal(
       profile.targets[0].readingDomains.find((domain) => domain.id === "spring-runtime")?.docs.find((doc) => doc.path === "docs/system-design/framework/spring/spring-transaction.md")?.masteryLabel,
-      "未训练"
+      "已接触"
     );
 
     await postJson(`${bffBaseUrl}/api/profile/reading-progress`, {
       userId: login.profile.user.id,
-      targetBaselineId,
       docPath: "docs/system-design/framework/spring/spring-transaction.md",
       scrollRatio: 0.95,
       dwellMs: 50_000
@@ -113,7 +109,6 @@ test("reading progress persists the last-read document and survives target updat
     );
 
     const session = await postJson(`${bffBaseUrl}/api/interview/start-target`, {
-      targetBaselineId,
       interactionPreference: "balanced",
       userId: login.profile.user.id
     });
@@ -146,10 +141,8 @@ test("reading progress remembers a loaded document even without concept mapping"
       pin: "1234"
     });
 
-    const targetBaselineId = "bigtech-java-backend";
     await postJson(`${bffBaseUrl}/api/profile/reading-progress`, {
       userId: login.profile.user.id,
-      targetBaselineId,
       docPath: "docs/java/basis/bigdecimal.md",
       docTitle: "BigDecimal 详解"
     });
@@ -159,5 +152,47 @@ test("reading progress remembers a loaded document even without concept mapping"
 
     assert.equal(profile.targets[0].currentDocPath, "docs/java/basis/bigdecimal.md");
     assert.equal(profile.targets[0].currentDocTitle, "BigDecimal 详解");
+  });
+});
+
+test("document progress remembers training start and answer state for a doc-scoped session", async () => {
+  await withSplitServices(null, async ({ bffBaseUrl }) => {
+    const handle = `reader_training_state_${Date.now()}`;
+
+    const login = await postJson(`${bffBaseUrl}/api/auth/login`, {
+      handle,
+      pin: "1234"
+    });
+
+    const session = await postJson(`${bffBaseUrl}/api/interview/start-target`, {
+      interactionPreference: "balanced",
+      userId: login.profile.user.id,
+      docPath: "docs/ai/agent/mcp.md"
+    });
+
+    let profileResponse = await fetch(`${bffBaseUrl}/api/profile/${login.profile.user.id}`);
+    let profile = await profileResponse.json();
+    assert.equal(profile.documentProgress.currentDocPath, "docs/ai/agent/mcp.md");
+    assert.equal(
+      profile.documentProgress.docs["docs/ai/agent/mcp.md"]?.learningStatusLabel,
+      "已开启训练"
+    );
+
+    await postJson(`${bffBaseUrl}/api/interview/answer`, {
+      sessionId: session.sessionId,
+      answer: "MCP 本质上是在宿主和外部能力之间建立统一协议层，让工具发现、调用和上下文交换标准化。",
+      burdenSignal: "normal",
+      interactionPreference: "balanced"
+    });
+
+    profileResponse = await fetch(`${bffBaseUrl}/api/profile/${login.profile.user.id}`);
+    profile = await profileResponse.json();
+    assert.match(
+      profile.documentProgress.docs["docs/ai/agent/mcp.md"]?.learningStatusLabel || "",
+      /训练中|已掌握/
+    );
+    assert.ok(
+      (profile.documentProgress.docs["docs/ai/agent/mcp.md"]?.trainingAnswerCount || 0) >= 1
+    );
   });
 });

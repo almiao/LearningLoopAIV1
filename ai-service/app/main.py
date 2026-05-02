@@ -40,7 +40,7 @@ from app.interview_assist import (
 from app.interview_assist.aliyun_realtime_asr import AliyunRealtimeRecognizer
 from app.observability import events
 from app.observability.logger import logger
-from app.engine.tutor_intelligence import describe_tutor_intelligence
+from app.engine.tutor_intelligence import answer_knowledge_question_heuristic, describe_tutor_intelligence
 
 
 def sse_event(event: str, data: Dict[str, Any]) -> str:
@@ -122,6 +122,7 @@ class StartTargetRequest(BaseModel):
     source: Dict[str, Any]
     decomposition: Optional[Dict[str, Any]] = None
     targetBaseline: Dict[str, Any]
+    targetProgress: Dict[str, Any] = {}
     memoryProfile: Dict[str, Any]
     interactionPreference: str = "balanced"
 
@@ -160,6 +161,7 @@ class SuperappContinueRequest(BaseModel):
 class SuperappKnowledgeQuestionRequest(BaseModel):
     userId: str = ""
     question: str
+    title: str = ""
     context: str = ""
 
 
@@ -288,15 +290,16 @@ def answer_superapp_knowledge_question(payload: SuperappKnowledgeQuestionRequest
     if not question:
         raise HTTPException(status_code=400, detail="question is required.")
 
-    context_line = f"结合这段材料背景：{context}\n" if context else ""
+    title_line = f"# {payload.title}\n\n" if payload.title else ""
+    full_context = f"{title_line}{context}".strip()
+    intelligence = get_tutor_intelligence()
+    if intelligence and hasattr(intelligence, "answer_knowledge_question"):
+        content = intelligence.answer_knowledge_question(question=question, context=full_context)
+    else:
+        content = answer_knowledge_question_heuristic(question=question, context=full_context)
     return {
         "mode": "knowledge_qa",
-        "content": (
-            f"{context_line}"
-            f"我先按最小学习闭环回答这个问题：{question}\n\n"
-            "核心思路是先抓定义，再讲机制，最后补一个边界。"
-            "如果你愿意，我们下一轮可以把这个点压成一道快答题。"
-        ),
+        "content": content,
         "suggestedFollowUp": "把这个点出成一道快答题",
     }
 

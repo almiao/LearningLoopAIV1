@@ -1,23 +1,13 @@
-const stateRank = {
-  "不可判": 0,
-  weak: 1,
-  partial: 2,
-  solid: 3
-};
-
-const stateScore = {
-  "不可判": 0.18,
-  weak: 0.34,
-  partial: 0.68,
-  solid: 0.92
-};
+import {
+  calculateMasteryScore,
+  calculateTargetReadinessScore,
+  rankState,
+  buildTargetLabel,
+  confidenceLevelToScore,
+} from "../mastery/mastery-scoring.js";
 
 function rank(state) {
-  return stateRank[state] ?? stateRank.weak;
-}
-
-function score(state) {
-  return stateScore[state] ?? stateScore.weak;
+  return rankState(state);
 }
 
 function clonePlain(value) {
@@ -61,14 +51,7 @@ function getPreviousMemory(memoryProfile, conceptId) {
 }
 
 function levelToConfidence(level) {
-  switch (level) {
-    case "high":
-      return 0.86;
-    case "medium":
-      return 0.58;
-    default:
-      return 0.26;
-  }
+  return confidenceLevelToScore(level);
 }
 
 function getEvidenceCount(ledger, conceptId) {
@@ -342,28 +325,34 @@ export function buildAbilityDomains(concepts, conceptStates, ledger = {}) {
 }
 
 export function buildTargetMatch({ concepts, conceptStates, targetBaseline, ledger = {} }) {
-  const coveredCount = concepts.filter((concept) => getEvidenceCount(ledger, concept.id) > 0).length;
-  const coverageRatio = coveredCount / Math.max(concepts.length, 1);
-  const average = concepts.reduce(
-    (sum, concept) => sum + score(conceptStates[concept.id]?.judge?.state || "weak"),
-    0
-  ) / Math.max(concepts.length, 1);
-  const adjusted = Math.round(average * (0.55 + coverageRatio * 0.45) * 100);
+  const conceptScores = concepts.map((concept) => ({
+    title: concept.title,
+    masteryScore: calculateMasteryScore({
+      memoryItem: {
+        state: conceptStates[concept.id]?.judge?.state || "不可判",
+        confidence: conceptStates[concept.id]?.judge?.confidence || 0,
+        confidenceLevel: conceptStates[concept.id]?.judge?.confidenceLevel || "low",
+        evidenceCount: getEvidenceCount(ledger, concept.id),
+      },
+    }),
+  }));
   const strongest = [...concepts]
-    .sort((left, right) => score(conceptStates[right.id]?.judge?.state || "weak") - score(conceptStates[left.id]?.judge?.state || "weak"))
+    .sort((left, right) => (conceptScores.find((item) => item.title === right.title)?.masteryScore || 0) - (conceptScores.find((item) => item.title === left.title)?.masteryScore || 0))
     .slice(0, 2)
     .map((concept) => concept.title);
   const weakest = [...concepts]
-    .sort((left, right) => score(conceptStates[left.id]?.judge?.state || "weak") - score(conceptStates[right.id]?.judge?.state || "weak"))
+    .sort((left, right) => (conceptScores.find((item) => item.title === left.title)?.masteryScore || 0) - (conceptScores.find((item) => item.title === right.title)?.masteryScore || 0))
     .slice(0, 2)
     .map((concept) => concept.title);
-  const percentage = Math.max(10, Math.min(96, adjusted));
+  const coveredCount = concepts.filter((concept) => getEvidenceCount(ledger, concept.id) > 0).length;
+  const coverageRatio = coveredCount / Math.max(concepts.length, 1);
+  const percentage = calculateTargetReadinessScore(conceptScores);
 
   return {
     percentage,
     percent: percentage,
-    label:
-      percentage >= 75 ? "接近目标线" : percentage >= 55 ? "有通过可能，但仍有明显缺口" : "离目标线还有明显距离",
+    readinessScore: percentage,
+    label: buildTargetLabel(percentage),
     targetLabel: targetBaseline?.title || targetBaseline?.targetRole || "当前目标",
     explanation:
       coverageRatio < 0.35

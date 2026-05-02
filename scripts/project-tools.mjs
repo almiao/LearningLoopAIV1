@@ -173,18 +173,11 @@ async function runSplitSmoke() {
     }),
   });
 
-  const baselines = await fetchJson(`${bffBaseUrl}/api/baselines`);
-  const targetBaselineId = baselines.baselines?.[0]?.id;
-  if (!targetBaselineId) {
-    throw new Error("No baseline available for smoke test.");
-  }
-
   const session = await fetchJson(`${bffBaseUrl}/api/interview/start-target`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       userId: login.profile.user.id,
-      targetBaselineId,
       interactionPreference: "balanced",
     }),
   });

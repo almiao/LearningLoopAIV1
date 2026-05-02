@@ -77,6 +77,14 @@ function validateUserShape(user, expectedId = "") {
   if (!user.targets || typeof user.targets !== "object" || Array.isArray(user.targets)) {
     throw new Error("User targets are invalid.");
   }
+  if (user.documents !== undefined) {
+    if (!user.documents || typeof user.documents !== "object" || Array.isArray(user.documents)) {
+      throw new Error("User documents are invalid.");
+    }
+    if (user.documents.docs !== undefined && (!user.documents.docs || typeof user.documents.docs !== "object" || Array.isArray(user.documents.docs))) {
+      throw new Error("User documents docs are invalid.");
+    }
+  }
 }
 
 export function createUserProfileStore({ usersDir = defaultUsersDir } = {}) {

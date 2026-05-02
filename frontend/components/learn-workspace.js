@@ -6,38 +6,12 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, postEventStream, postJson } from "../lib/api";
 import { readHeading, renderMarkdownContent, slugifyHeading } from "../lib/render-markdown-content";
 import {
-  getStoredTargetBaselineId,
   getStoredUserId,
-  setStoredTargetBaselineId,
   setStoredUserId,
 } from "../lib/user-session";
 import { buildVisibleSessionView } from "../../src/view/visible-session-view";
-import { getBaselinePackById } from "../../src/baseline/baseline-packs";
 
 const profileDirtyStorageKey = "learning-loop-profile-dirty-at";
-
-const trainingPreparationSteps = [
-  {
-    label: "连接学习档案",
-    detail: "确认你的账号、目标和当前阅读进度。",
-    progress: 18,
-  },
-  {
-    label: "读取当前原文",
-    detail: "把当前文档整理成可以交给 AI 的上下文。",
-    progress: 36,
-  },
-  {
-    label: "LLM 拆解训练点",
-    detail: "正在让 AI 从原文中提炼局部训练单元，这一步可能需要十几秒。",
-    progress: 62,
-  },
-  {
-    label: "准备第一题",
-    detail: "整理拆解结果，锁定当前文档里的训练点，并准备第一道题。",
-    progress: 92,
-  },
-];
 
 function splitTextBlocks(value) {
   return String(value || "")
@@ -57,10 +31,6 @@ function renderQuestionPhase(meta) {
     default:
       return "首问";
   }
-}
-
-function getTrainingPreparationStep(stageIndex = 0) {
-  return trainingPreparationSteps[Math.min(stageIndex, trainingPreparationSteps.length - 1)];
 }
 
 function getTrainingPointProgress(points = [], currentPointId = "") {
@@ -181,17 +151,6 @@ function buildKnowledgeTree(documents = []) {
   return root;
 }
 
-function safeGetBaseline(baselineId = "") {
-  if (!baselineId) {
-    return null;
-  }
-  try {
-    return getBaselinePackById(baselineId);
-  } catch {
-    return null;
-  }
-}
-
 function sessionBelongsToDocument(session, docPath = "") {
   if (!session?.sessionId) {
     return false;
@@ -231,24 +190,23 @@ export function LearnWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const focusParamEnabled = searchParams.get("focus") === "1";
-  const initialTargetBaselineId = searchParams.get("target") || getStoredTargetBaselineId() || "";
   const autostartRef = useRef(false);
   const conceptFocusRef = useRef("");
   const readingProgressRef = useRef("");
   const readerBodyRef = useRef(null);
   const qaScrollRef = useRef(null);
   const [profile, setProfile] = useState(null);
-  const [baselines, setBaselines] = useState([]);
   const [knowledgeDocuments, setKnowledgeDocuments] = useState([]);
-  const [targetBaselineId, setTargetBaselineId] = useState(initialTargetBaselineId);
   const [interactionPreference, setInteractionPreference] = useState("balanced");
   const [session, setSession] = useState(null);
   const [answer, setAnswer] = useState("");
+  const [pendingSubmittedAnswer, setPendingSubmittedAnswer] = useState("");
   const [error, setError] = useState("");
   const [isStarting, setIsStarting] = useState(false);
-  const [trainingPrepStage, setTrainingPrepStage] = useState(0);
+  const [sessionStartMode, setSessionStartMode] = useState("reading");
   const [isAnswering, setIsAnswering] = useState(false);
   const [streamingTurn, setStreamingTurn] = useState(null);
+  const [readingChatTimeline, setReadingChatTimeline] = useState([]);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [knowledgeDoc, setKnowledgeDoc] = useState(null);
   const [docLoading, setDocLoading] = useState(false);
@@ -269,20 +227,6 @@ export function LearnWorkspace() {
     }
     return chatTimeline.slice(firstUserIndex);
   }, [chatTimeline, trainingUnlocked]);
-
-  useEffect(() => {
-    apiFetch("/api/baselines")
-      .then((data) => {
-        const nextBaselines = data.baselines || [];
-        setBaselines(nextBaselines);
-        const requestedTarget = searchParams.get("target") || getStoredTargetBaselineId() || nextBaselines[0]?.id || "";
-        setTargetBaselineId(requestedTarget);
-        if (requestedTarget) {
-          setStoredTargetBaselineId(requestedTarget);
-        }
-      })
-      .catch((nextError) => setError(nextError.message));
-  }, [searchParams]);
 
   useEffect(() => {
     apiFetch("/api/knowledge/docs")
@@ -308,13 +252,7 @@ export function LearnWorkspace() {
     () => (session?.trainingPoints || []).find((point) => point.id === session?.currentTrainingPointId) || null,
     [session]
   );
-  const resolvedTargetBaselineId = targetBaselineId || searchParams.get("target") || getStoredTargetBaselineId() || "";
   const currentSource = currentCheckpoint?.javaGuideSources?.[0] || currentTrainingPoint?.javaGuideSources?.[0] || session?.summary?.javaGuideSourceClusters?.[0] || null;
-  const selectedBaseline =
-    baselines.find((baseline) => baseline.id === resolvedTargetBaselineId) ||
-    safeGetBaseline(resolvedTargetBaselineId) ||
-    baselines[0] ||
-    null;
   const activeDocPath = searchParams.get("doc") || currentSource?.path || knowledgeDocuments[0]?.path || "";
   const autostart = searchParams.get("autostart") === "1";
   const desiredConceptId = searchParams.get("concept") || "";
@@ -347,7 +285,6 @@ export function LearnWorkspace() {
   const questionProgress = session?.currentQuestionMeta?.progress || null;
   const trainingTakeaway = session?.latestFeedback?.takeaway || "";
   const trainingClosed = workspaceMode === "training" && Boolean(session) && !session?.currentProbe;
-  const trainingPrepStep = getTrainingPreparationStep(trainingPrepStage);
   const trainingPointProgress = useMemo(
     () => getTrainingPointProgress(docConcepts, trainingConcept?.id || session?.currentTrainingPointId || ""),
     [docConcepts, session?.currentTrainingPointId, trainingConcept?.id]
@@ -362,6 +299,7 @@ export function LearnWorkspace() {
     [knowledgeDoc?.markdown]
   );
   const outlineAvailable = documentHeadings.length > 0 || knowledgeTree.length > 0;
+  const readingCompanionHasHistory = readingChatTimeline.length > 0 || streamingTurn?.mode === "reading";
 
   function scrollQaToBottom(behavior = "auto") {
     if (!qaScrollRef.current) {
@@ -374,12 +312,12 @@ export function LearnWorkspace() {
   }
 
   useEffect(() => {
-    if (!autostart || autostartRef.current || !profile?.user?.id || !targetBaselineId || session) {
+    if (!autostart || autostartRef.current || !profile?.user?.id || session) {
       return;
     }
     autostartRef.current = true;
-    void startSession();
-  }, [autostart, profile, targetBaselineId, session]);
+    void startSession({ mode: "reading" });
+  }, [autostart, profile, session]);
 
   useEffect(() => {
     if (!session?.sessionId || !desiredConceptId || session.currentTrainingPointId === desiredConceptId || conceptFocusRef.current === desiredConceptId) {
@@ -400,33 +338,11 @@ export function LearnWorkspace() {
   }, [streamingTurn?.id, streamingTurn?.assistantText, streamingTurn?.replyComplete]);
 
   useEffect(() => {
-    if (!isStarting) {
-      setTrainingPrepStage(0);
-      return undefined;
-    }
-
-    setTrainingPrepStage(0);
-    const startedAt = Date.now();
-    const intervalId = window.setInterval(() => {
-      const elapsedSeconds = (Date.now() - startedAt) / 1000;
-      if (elapsedSeconds > 10) {
-        setTrainingPrepStage(3);
-      } else if (elapsedSeconds > 4) {
-        setTrainingPrepStage(2);
-      } else if (elapsedSeconds > 1.4) {
-        setTrainingPrepStage(1);
-      }
-    }, 450);
-
-    return () => window.clearInterval(intervalId);
-  }, [isStarting]);
-
-  useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       scrollQaToBottom();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [chatTimeline.length, isStarting, session?.sessionId, trainingPrepStage]);
+  }, [chatTimeline.length, isStarting, session?.sessionId]);
 
   useEffect(() => {
     if (!outlineOpen) {
@@ -446,6 +362,7 @@ export function LearnWorkspace() {
     setTrainingUnlocked(false);
     setAnswer("");
     setStreamingTurn(null);
+    setReadingChatTimeline([]);
   }, [activeDocPath]);
 
   useEffect(() => {
@@ -457,6 +374,7 @@ export function LearnWorkspace() {
     setWorkspaceMode("reading");
     setAnswer("");
     setStreamingTurn(null);
+    setReadingChatTimeline([]);
   }, [activeDocPath, session]);
 
   useEffect(() => {
@@ -529,7 +447,7 @@ export function LearnWorkspace() {
   }, [knowledgeDoc?.path, knowledgeDoc?.markdown]);
 
   useEffect(() => {
-    if (!profile?.user?.id || !targetBaselineId || !activeDocPath) {
+    if (!profile?.user?.id || !activeDocPath) {
       return;
     }
 
@@ -538,7 +456,6 @@ export function LearnWorkspace() {
       : docConcepts[0] || null;
     const nextSignature = JSON.stringify({
       userId: profile.user.id,
-      targetBaselineId,
       domainId: conceptForDoc?.abilityDomainId || conceptForDoc?.domainId || "",
       conceptId: conceptForDoc?.id || "",
       docPath: activeDocPath,
@@ -563,11 +480,11 @@ export function LearnWorkspace() {
       .catch(() => {
         readingProgressRef.current = "";
       });
-  }, [activeDocPath, currentTrainingPoint, docConcepts, knowledgeDoc?.title, profile, targetBaselineId]);
+  }, [activeDocPath, currentTrainingPoint, docConcepts, knowledgeDoc?.title, profile]);
 
   useEffect(() => {
     const readerBody = readerBodyRef.current;
-    if (!readerBody || !profile?.user?.id || !targetBaselineId || !activeDocPath || !knowledgeDoc?.path) {
+    if (!readerBody || !profile?.user?.id || !activeDocPath || !knowledgeDoc?.path) {
       return undefined;
     }
 
@@ -602,7 +519,6 @@ export function LearnWorkspace() {
         method: "POST",
         body: JSON.stringify({
           userId: profile.user.id,
-          targetBaselineId,
           docPath: activeDocPath,
           docTitle: knowledgeDoc.title || "",
           scrollRatio: maxScrollRatio,
@@ -645,7 +561,7 @@ export function LearnWorkspace() {
       window.removeEventListener("pagehide", handlePageHide);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [activeDocPath, knowledgeDoc?.path, knowledgeDoc?.title, profile?.user?.id, targetBaselineId]);
+  }, [activeDocPath, knowledgeDoc?.path, knowledgeDoc?.title, profile?.user?.id]);
 
   async function refreshProfile() {
     if (!profile?.user?.id) {
@@ -655,23 +571,20 @@ export function LearnWorkspace() {
     setProfile(data);
   }
 
-  async function startSession() {
-    if (!profile?.user?.id || !targetBaselineId) {
+  async function startSession({ mode = "reading" } = {}) {
+    if (!profile?.user?.id) {
       return null;
     }
     try {
       setIsStarting(true);
-      setTrainingPrepStage(0);
+      setSessionStartMode(mode);
       setError("");
       const nextSession = await postJson("/api/interview/start-target", {
         userId: profile.user.id,
-        targetBaselineId,
         docPath: activeDocPath,
         interactionPreference,
       });
       setSession(nextSession);
-      setTrainingPrepStage(trainingPreparationSteps.length - 1);
-      setStoredTargetBaselineId(targetBaselineId);
       await refreshProfile();
       return nextSession;
     } catch (nextError) {
@@ -685,7 +598,7 @@ export function LearnWorkspace() {
   async function unlockTraining() {
     let nextSession = sessionBelongsToDocument(session, activeDocPath) ? session : null;
     if (!nextSession) {
-      nextSession = await startSession();
+      nextSession = await startSession({ mode: "training" });
     }
     if (!nextSession) {
       return;
@@ -694,17 +607,26 @@ export function LearnWorkspace() {
     setWorkspaceMode("training");
   }
 
-  async function submitAnswer({ nextAnswer = answer, intent = "" } = {}) {
+  async function ensureSessionForReading() {
+    let nextSession = sessionBelongsToDocument(session, activeDocPath) ? session : null;
+    if (!nextSession) {
+      nextSession = await startSession({ mode: workspaceMode === "training" ? "training" : "reading" });
+    }
+    return nextSession;
+  }
+
+  async function submitAnswerWithSession(activeSession, { nextAnswer = answer, intent = "" } = {}) {
     const submittedAnswer = nextAnswer.trim();
     const shouldClearComposer = nextAnswer === answer;
-    if (!session?.sessionId || !submittedAnswer) {
+    if (!activeSession?.sessionId || !submittedAnswer) {
       return;
     }
     try {
       setError("");
       setIsAnswering(true);
       setStreamingTurn({
-        id: `${session.sessionId}:${Date.now()}`,
+        id: `${activeSession.sessionId}:${Date.now()}`,
+        mode: "training",
         answer: submittedAnswer,
         intent,
         assistantText: "",
@@ -719,7 +641,7 @@ export function LearnWorkspace() {
       await postEventStream(
         "/api/interview/answer-stream",
         {
-          sessionId: session.sessionId,
+          sessionId: activeSession.sessionId,
           answer: submittedAnswer,
           intent,
           burdenSignal: "normal",
@@ -762,6 +684,79 @@ export function LearnWorkspace() {
     }
   }
 
+  async function submitReadingQuestion({ nextAnswer = answer } = {}) {
+    const submittedAnswer = nextAnswer.trim();
+    const shouldClearComposer = nextAnswer === answer;
+    if (!submittedAnswer || !activeDocPath) {
+      return;
+    }
+    const turnId = `reading:${activeDocPath}:${Date.now()}`;
+    try {
+      setError("");
+      setIsAnswering(true);
+      setStreamingTurn({
+        id: turnId,
+        mode: "reading",
+        answer: submittedAnswer,
+        assistantText: "",
+        replyComplete: false,
+        decisionPending: false,
+      });
+      if (shouldClearComposer) {
+        setAnswer("");
+      }
+
+      const result = await postJson("/api/knowledge/answer", {
+        userId: profile?.user?.id || "",
+        docPath: activeDocPath,
+        question: submittedAnswer,
+      });
+      setReadingChatTimeline((items) => items.concat([
+        {
+          id: `${turnId}:user`,
+          role: "user",
+          body: submittedAnswer,
+        },
+        {
+          id: `${turnId}:assistant`,
+          role: "assistant",
+          body: result.content || "这篇材料里没有足够内容回答这个问题。",
+        },
+      ]));
+      await refreshProfile();
+    } catch (nextError) {
+      setError(nextError.message);
+      if (shouldClearComposer) {
+        setAnswer(submittedAnswer);
+      }
+    } finally {
+      setIsAnswering(false);
+      setStreamingTurn(null);
+    }
+  }
+
+  async function submitAnswer(options = {}) {
+    const submittedAnswer = (options.nextAnswer ?? answer).trim();
+    if (!submittedAnswer) {
+      return;
+    }
+    if (workspaceMode === "reading") {
+      await submitReadingQuestion(options);
+      return;
+    }
+    const sessionReady = sessionBelongsToDocument(session, activeDocPath);
+    if (!sessionReady) {
+      setPendingSubmittedAnswer(submittedAnswer);
+    }
+    const activeSession = await ensureSessionForReading();
+    if (!activeSession) {
+      setPendingSubmittedAnswer("");
+      return;
+    }
+    setPendingSubmittedAnswer("");
+    await submitAnswerWithSession(activeSession, options);
+  }
+
   async function focusConcept(conceptId) {
     if (!session?.sessionId) {
       return;
@@ -781,9 +776,6 @@ export function LearnWorkspace() {
 
   function openDocumentFromCatalog(documentPath, conceptId = "") {
     const params = new URLSearchParams();
-    if (targetBaselineId) {
-      params.set("target", targetBaselineId);
-    }
     if (documentPath) {
       params.set("doc", documentPath);
     }
@@ -863,7 +855,20 @@ export function LearnWorkspace() {
     ));
   }
 
-  const documentTitle = knowledgeDoc?.title || currentSource?.title || selectedBaseline?.title || "开始学习";
+  const documentTitle = knowledgeDoc?.title || currentSource?.title || "开始学习";
+  const readingStarterPrompts = [
+    {
+      label: "总结全文",
+      value: `请只基于《${documentTitle}》这篇文档，用 3 句话总结核心内容。`,
+    },
+    {
+      label: "列面试追问",
+      value: `请只基于《${documentTitle}》这篇文档，列出 5 个高频面试追问，并说明每题想考什么。`,
+    },
+  ];
+  const studyMainClassName = focusMode
+    ? `study-main study-mode-${workspaceMode} focus-reader-layout`
+    : `study-main study-mode-${workspaceMode}${workspaceMode === "reading" && !trainingUnlocked ? " pre-training-layout" : ""}`;
 
   return (
     <main
@@ -873,7 +878,7 @@ export function LearnWorkspace() {
     >
       {error ? <section className="feedback-banner error-banner narrow-banner">{error}</section> : null}
 
-      <section className={focusMode ? `study-main study-mode-${workspaceMode} focus-reader-layout` : `study-main study-mode-${workspaceMode}`}>
+      <section className={studyMainClassName}>
         <section className="reader-panel" data-testid="reader-panel">
           {focusMode ? <div className="focus-reader-hover-zone" aria-hidden="true" data-testid="focus-hover-zone" /> : null}
           <header className="reader-header" data-testid="reader-header">
@@ -946,9 +951,8 @@ export function LearnWorkspace() {
               </article>
             ) : (
               <article className="reader-empty">
-                <h2>{selectedBaseline?.title || "开始学习"}</h2>
-                <p>{selectedBaseline?.description || "选择节奏后直接进入原文。"}
-                </p>
+                <h2>开始学习</h2>
+                <p>选择互动风格后直接进入当前文档训练。</p>
                 <div className="session-launch-card">
                   <label>
                     互动风格
@@ -1028,13 +1032,13 @@ export function LearnWorkspace() {
         <aside className={`qa-panel qa-panel-${workspaceMode}`} data-testid="qa-panel">
           <header className="qa-header">
             <div className="qa-title-group">
-              <strong>{workspaceMode === "training" ? "训练" : "阅读"}</strong>
+              <strong>{workspaceMode === "training" ? "训练" : "阅读助理"}</strong>
             </div>
             <span className="qa-header-spacer" />
             <div className={`qa-header-controls ${!trainingUnlocked ? "qa-header-controls-locked" : ""}`}>
               {!trainingUnlocked ? (
                 <button type="button" className="qa-header-lock" disabled={isStarting} onClick={() => unlockTraining()}>
-                  <span>{isStarting ? trainingPrepStep.label : "开启训练"}</span>
+                  <span>{isStarting ? "准备中" : "开始训练"}</span>
                 </button>
               ) : null}
             </div>
@@ -1042,30 +1046,42 @@ export function LearnWorkspace() {
 
           <div className="qa-scroll" ref={qaScrollRef}>
             <section className="chat-stack">
-              {isStarting && !trainingUnlocked ? (
-                <article className="training-prep-card" aria-live="polite" data-testid="training-prep-card">
-                  <div className="training-prep-kicker">正在准备训练</div>
-                  <div className="training-prep-title">{trainingPrepStep.label}</div>
-                  <p>{trainingPrepStep.detail}</p>
-                  <div className="training-progress-track" aria-hidden="true">
-                    <span
-                      className="training-progress-fill"
-                      style={{ width: `${trainingPrepStep.progress}%` }}
-                    />
-                  </div>
-                  <div className="training-prep-steps">
-                    {trainingPreparationSteps.map((step, index) => (
-                      <span
-                        className={index <= trainingPrepStage ? "training-prep-step active" : "training-prep-step"}
-                        key={step.label}
+              {workspaceMode === "reading" ? (
+                <article className={readingCompanionHasHistory ? "reading-companion-card compact" : "reading-companion-card"}>
+                  <div className="reading-companion-source">基于本文 · {documentTitle}</div>
+                  <h3>问这篇文档</h3>
+                  <p>总结、解释原文，或生成面试追问。</p>
+                  <div className="reading-companion-actions">
+                    {readingStarterPrompts.map((prompt) => (
+                      <button
+                        key={prompt.label}
+                        type="button"
+                        className="secondary-pill"
+                        disabled={isStarting || isAnswering}
+                        onClick={() => submitAnswer({ nextAnswer: prompt.value })}
                       >
-                        {step.label}
-                      </span>
+                        {prompt.label}
+                      </button>
                     ))}
                   </div>
-                  <p className="training-prep-footnote">
-                    长文档会先由 LLM 做局部拆解，完成后会直接展示训练点并进入当前题。
-                  </p>
+                </article>
+              ) : null}
+              {pendingSubmittedAnswer ? (
+                <article className="message-card learner">
+                  <div className="message-body">
+                    <p>{pendingSubmittedAnswer}</p>
+                  </div>
+                </article>
+              ) : null}
+              {isStarting && !trainingUnlocked ? (
+                <article className="message-card assistant" aria-live="polite" data-testid="training-prep-card">
+                  <div className="message-body">
+                    <p>
+                      {sessionStartMode === "training"
+                        ? "正在准备训练，会先拆解这篇文档的训练点。"
+                        : "正在准备阅读助理，会先绑定这篇文档的上下文。"}
+                    </p>
+                  </div>
                 </article>
               ) : null}
 
@@ -1163,7 +1179,7 @@ export function LearnWorkspace() {
                 </article>
               ) : null}
 
-              {(workspaceMode === "training" ? trainingChatTimeline : visibleChatTimeline).map((entry) => (
+              {(workspaceMode === "training" ? trainingChatTimeline : readingChatTimeline).map((entry) => (
                 entry.type === "event" ? (
                   <div className="chat-event-row" key={entry.id}>{entry.label}</div>
                 ) : (
@@ -1198,7 +1214,7 @@ export function LearnWorkspace() {
                       )}
                     </div>
                   </article>
-                  {streamingTurn.replyComplete && streamingTurn.decisionPending ? (
+                  {streamingTurn.mode === "training" && streamingTurn.replyComplete && streamingTurn.decisionPending ? (
                     <article className="message-card assistant pending-decision-card" aria-live="polite">
                       <div className="pending-decision-kicker">下一步生成中</div>
                       <p>正在评估你的答案、更新掌握度，并决定是追问、讲解还是进入下一个训练点。</p>
@@ -1225,7 +1241,7 @@ export function LearnWorkspace() {
               rows="1"
               value={answer}
               onChange={(event) => setAnswer(event.target.value)}
-              placeholder={isAnswering ? "已发送，正在等待下一步..." : session ? "输入回答、追问，或引用原文段落。" : "进入学习后可输入。"}
+              placeholder={isAnswering ? "已发送，正在等待下一步..." : "输入回答、追问，或引用原文段落。"}
             />
 
             <div className="question-input-row">
@@ -1235,8 +1251,12 @@ export function LearnWorkspace() {
                     查看解析
                   </button>
                 </div>
-              ) : <div className="suggested-actions" />}
-              <button type="submit" className="send-button" disabled={!session || isAnswering || !answer.trim()}>
+              ) : (
+                <div className="suggested-actions">
+                  <span className="composer-source-badge">基于本文回答</span>
+                </div>
+              )}
+              <button type="submit" className="send-button" disabled={isAnswering || !answer.trim()}>
                 ↑
               </button>
             </div>

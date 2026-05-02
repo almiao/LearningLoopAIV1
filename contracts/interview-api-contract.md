@@ -36,17 +36,8 @@ Response:
 {
   "user": {},
   "summary": {},
+  "documentProgress": {},
   "targets": []
-}
-```
-
-### `GET /api/baselines`
-
-Response:
-
-```json
-{
-  "baselines": []
 }
 ```
 
@@ -57,7 +48,7 @@ Request:
 ```json
 {
   "userId": "user-123",
-  "targetBaselineId": "bigtech-java-backend",
+  "docPath": "docs/ai/agent/mcp.md",
   "interactionPreference": "balanced"
 }
 ```

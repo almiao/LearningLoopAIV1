@@ -77,8 +77,6 @@ export function AppShell() {
   const [handle, setHandle] = useState("");
   const [pin, setPin] = useState("");
   const [profile, setProfile] = useState(null);
-  const [baselines, setBaselines] = useState([]);
-  const [targetBaselineId, setTargetBaselineId] = useState("");
   const [interactionPreference, setInteractionPreference] = useState("balanced");
   const [session, setSession] = useState(null);
   const [answer, setAnswer] = useState("");
@@ -96,18 +94,6 @@ export function AppShell() {
   const sessionTakeaway = session?.latestFeedback?.takeaway || "";
   const sessionClosed = Boolean(session) && !session?.currentProbe;
   const trainingPointProgress = getTrainingPointProgress(session?.trainingPoints || [], session?.currentTrainingPointId || "");
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const data = await apiFetch("/api/baselines");
-        setBaselines(data.baselines || []);
-        setTargetBaselineId(data.baselines?.[0]?.id || "");
-      } catch (nextError) {
-        setError(nextError.message);
-      }
-    })();
-  }, []);
 
   useEffect(() => {
     const userId = getStoredUserId();
@@ -151,7 +137,6 @@ export function AppShell() {
       setError("");
       const data = await postJson("/api/interview/start-target", {
         userId: profile.user.id,
-        targetBaselineId,
         interactionPreference
       });
       setSession(data);
@@ -289,16 +274,8 @@ export function AppShell() {
         </section>
 
         <section className="panel">
-          <h2>开始目标诊断</h2>
+          <h2>开始训练诊断</h2>
           <form onSubmit={onStartTarget}>
-            <div className="field">
-              <label htmlFor="targetBaselineId">目标包</label>
-              <select id="targetBaselineId" value={targetBaselineId} onChange={(event) => setTargetBaselineId(event.target.value)}>
-                {baselines.map((baseline) => (
-                  <option key={baseline.id} value={baseline.id}>{baseline.title}</option>
-                ))}
-              </select>
-            </div>
             <div className="field">
               <label htmlFor="interactionPreference">互动风格</label>
               <select id="interactionPreference" value={interactionPreference} onChange={(event) => setInteractionPreference(event.target.value)}>
@@ -307,7 +284,7 @@ export function AppShell() {
                 <option value="explain-first">偏讲解</option>
               </select>
             </div>
-            <button type="submit" disabled={!profile}>开始目标诊断</button>
+            <button type="submit" disabled={!profile}>开始训练诊断</button>
           </form>
           <p className="muted" style={{ marginTop: 12 }}>本轮允许重整接口与路由，因此新主链统一走 `/api/interview/*`。</p>
         </section>

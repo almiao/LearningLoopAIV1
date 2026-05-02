@@ -301,11 +301,9 @@ export async function runAutomatedEval({
       handle: `auto_eval_${Date.now()}_${runIndex}`,
       pin: "1234"
     });
-    const baselines = await fetch(`${bffBaseUrl}/api/baselines`).then((response) => response.json());
-    const baselineId = targetBaselineId || baselines.baselines[0]?.id;
     let session = await postJson(`${bffBaseUrl}/api/interview/start-target`, {
       userId: login.profile.user.id,
-      targetBaselineId: baselineId,
+      ...(targetBaselineId ? { targetBaselineId } : {}),
       interactionPreference
     });
     const availableDomains = session.summary?.overviewDomains || [];
@@ -384,7 +382,7 @@ export async function runAutomatedEval({
       seed: runSeed,
       persona,
       interactionPreference,
-      targetBaselineId: baselineId,
+      targetBaselineId: session.targetBaseline?.id || targetBaselineId || "",
       selectedDomain: selectedDomain || null,
       learnerMode,
       startedAt: new Date().toISOString(),
