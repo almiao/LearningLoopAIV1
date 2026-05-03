@@ -237,3 +237,69 @@ test("doc-scoped training resumes the recent in-progress session instead of deco
     );
   });
 });
+
+test("doc-scoped training can start a fresh round when explicitly restarted", async () => {
+  await withSplitServices(null, async ({ bffBaseUrl }) => {
+    const handle = `reader_training_restart_${Date.now()}`;
+
+    const login = await postJson(`${bffBaseUrl}/api/auth/login`, {
+      handle,
+      pin: "1234"
+    });
+
+    const firstSession = await postJson(`${bffBaseUrl}/api/interview/start-target`, {
+      interactionPreference: "balanced",
+      userId: login.profile.user.id,
+      docPath: "docs/ai/agent/mcp.md"
+    });
+
+    const restartedSession = await postJson(`${bffBaseUrl}/api/interview/start-target`, {
+      interactionPreference: "balanced",
+      userId: login.profile.user.id,
+      docPath: "docs/ai/agent/mcp.md",
+      restartTraining: true
+    });
+
+    assert.notEqual(restartedSession.sessionId, firstSession.sessionId);
+
+    const profileResponse = await fetch(`${bffBaseUrl}/api/profile/${login.profile.user.id}`);
+    const profile = await profileResponse.json();
+    assert.equal(profile.summary.sessionsStarted, 2);
+    assert.equal(
+      profile.documentProgress.docs["docs/ai/agent/mcp.md"]?.trainingSessionCount,
+      2
+    );
+  });
+});
+
+test("doc-scoped training degrades to reading-only when decomposition cannot produce training points", async () => {
+  await withSplitServices(null, async ({ bffBaseUrl }) => {
+    const handle = `tu_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`.slice(0, 20);
+
+    const login = await postJson(`${bffBaseUrl}/api/auth/login`, {
+      handle,
+      pin: "1234"
+    });
+
+    const result = await postJson(`${bffBaseUrl}/api/interview/start-target`, {
+      interactionPreference: "balanced",
+      userId: login.profile.user.id,
+      docPath: "docs/high-availability/idempotency.md"
+    });
+
+    assert.equal(result.trainingAvailability, "unavailable");
+    assert.equal(result.reasonCode, "insufficient_material");
+    assert.match(result.reasonMessage || "", /当前文档.*阅读材料/);
+
+    const profileResponse = await fetch(`${bffBaseUrl}/api/profile/${login.profile.user.id}`);
+    const profile = await profileResponse.json();
+    assert.equal(
+      profile.documentProgress.docs["docs/high-availability/idempotency.md"]?.learningStatusLabel,
+      "仅阅读"
+    );
+    assert.match(
+      profile.documentProgress.docs["docs/high-availability/idempotency.md"]?.trainingUnavailableReason || "",
+      /当前文档.*阅读材料/
+    );
+  });
+});

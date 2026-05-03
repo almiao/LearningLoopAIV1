@@ -17,6 +17,7 @@ import {
   applyDocumentTrainingAnswered,
   applyDocumentTrainingSession,
   applyDocumentTrainingStarted,
+  applyDocumentTrainingUnavailable,
   readDocumentTrainingSession,
 } from "../../src/user/document-progress-state.js";
 import { applyReadingProgress } from "../../src/user/reading-progress.js";
@@ -219,6 +220,42 @@ function persistDocumentSessionState(user, session, timestamp) {
   });
 }
 
+function isRecoverableTrainingPreparationFailure(message = "") {
+  return [
+    "Tutor intelligence returned too few teaching units.",
+    "Tutor intelligence returned invalid training points.",
+    "AI tutor did not generate an initial question for this concept.",
+    "AI tutor did not generate a runtime question for this concept.",
+    "AI tutor did not generate a follow-up question for this concept.",
+  ].some((fragment) => String(message || "").includes(fragment));
+}
+
+function normalizeTrainingUnavailableMessage(message = "") {
+  if (String(message || "").includes("too few teaching units") || String(message || "").includes("invalid training points")) {
+    return "当前文档缺少足够可训练内容，已保留为阅读材料。";
+  }
+  return "当前文档暂时无法生成训练点，已保留为阅读材料。";
+}
+
+function extractReadableKnowledgeLines(markdown = "") {
+  return String(markdown || "")
+    .replace(/\r/g, "")
+    .replace(/<!--[\s\S]*?-->/g, "\n")
+    .replace(/```[\s\S]*?```/g, "\n")
+    .replace(/!\[[^\]]*]\([^)]+\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .split("\n")
+    .map((line) => line.trim().replace(/^#+\s*/, "").replace(/^[-*]\s*/, ""))
+    .filter(Boolean);
+}
+
+function hasSufficientKnowledgeContent(document = {}) {
+  const lines = extractReadableKnowledgeLines(document.markdown || "");
+  const longLines = lines.filter((line) => line.length >= 18);
+  const totalTextLength = lines.join(" ").length;
+  return longLines.length >= 3 && totalTextLength >= 220;
+}
+
 async function handleStartTarget(body) {
   if (!body.userId) {
     throw new Error("userId is required.");
@@ -236,14 +273,15 @@ async function handleStartTarget(body) {
   const storedSession = activeDocument
     ? readDocumentTrainingSession(user.documents || {}, activeDocument.path)
     : null;
-  const liveSession = await tryReadLiveSession(storedSession?.activeSessionId || "");
+  const restartTraining = Boolean(body.restartTraining || body.forceNewSession);
+  const liveSession = restartTraining ? null : await tryReadLiveSession(storedSession?.activeSessionId || "");
   const resumableLiveSession = isResumableDocumentSession(liveSession, {
     userId: user.id,
     docPath: activeDocument?.path || "",
   }) ? liveSession : null;
   const restoredSession = resumableLiveSession
     ? null
-    : await tryRestoreSessionSnapshot(storedSession?.activeSessionSnapshot || null);
+    : (restartTraining ? null : await tryRestoreSessionSnapshot(storedSession?.activeSessionSnapshot || null));
   const resumableRestoredSession = isResumableDocumentSession(restoredSession, {
     userId: user.id,
     docPath: activeDocument?.path || "",
@@ -258,16 +296,6 @@ async function handleStartTarget(body) {
     return stripSessionPayload(resumedSession);
   }
 
-  memoryProfile.sessionsStarted += 1;
-  await memoryProfileStore.save(memoryProfile);
-  touchUserTarget(user, baselinePack, now, { incrementSessionsStarted: true });
-  user.documents = applyDocumentTrainingStarted(user.documents || {}, {
-    docPath: activeDocument?.path || body.docPath || "",
-    docTitle: activeDocument?.title || "",
-    timestamp: now,
-  });
-  user.lastActiveAt = now;
-  await userProfileStore.save(user);
   const source = activeDocument
     ? {
         kind: "knowledge-document",
@@ -280,6 +308,30 @@ async function handleStartTarget(body) {
         },
       }
     : createBaselinePackSource(baselinePack);
+
+  if (activeDocument && !hasSufficientKnowledgeContent(activeDocument)) {
+    const reasonMessage = "当前文档公开内容不足，暂时无法生成训练点，已保留为阅读材料。";
+    touchUserTarget(user, baselinePack, now);
+    user.documents = applyDocumentTrainingUnavailable(user.documents || {}, {
+      docPath: activeDocument.path,
+      docTitle: activeDocument.title || "",
+      reason: reasonMessage,
+      timestamp: now,
+    });
+    user.lastActiveAt = now;
+    await userProfileStore.save(user);
+    return {
+      trainingAvailability: "unavailable",
+      reasonCode: "insufficient_material",
+      reasonMessage,
+      source: {
+        title: activeDocument.title,
+        metadata: {
+          docPath: activeDocument.path,
+        },
+      },
+    };
+  }
 
   const aiPayload = {
     userId: user.id,
@@ -298,7 +350,48 @@ async function handleStartTarget(body) {
     interactionPreference: body.interactionPreference || "balanced",
   };
 
-  const { data: result, traceId } = await proxyJson("POST", "/api/interview/start-target", aiPayload);
+  let result;
+  let traceId = "";
+  try {
+    const upstream = await proxyJson("POST", "/api/interview/start-target", aiPayload);
+    result = upstream.data;
+    traceId = upstream.traceId;
+  } catch (error) {
+    if (activeDocument && isRecoverableTrainingPreparationFailure(error.message)) {
+      touchUserTarget(user, baselinePack, now);
+      user.documents = applyDocumentTrainingUnavailable(user.documents || {}, {
+        docPath: activeDocument.path,
+        docTitle: activeDocument.title || "",
+        reason: normalizeTrainingUnavailableMessage(error.message),
+        timestamp: now,
+      });
+      user.lastActiveAt = now;
+      await userProfileStore.save(user);
+      return {
+        trainingAvailability: "unavailable",
+        reasonCode: "decomposition_failed",
+        reasonMessage: normalizeTrainingUnavailableMessage(error.message),
+        source: {
+          title: activeDocument.title,
+          metadata: {
+            docPath: activeDocument.path,
+          },
+        },
+      };
+    }
+    throw error;
+  }
+
+  memoryProfile.sessionsStarted += 1;
+  await memoryProfileStore.save(memoryProfile);
+  touchUserTarget(user, baselinePack, now, { incrementSessionsStarted: true });
+  user.documents = applyDocumentTrainingStarted(user.documents || {}, {
+    docPath: activeDocument?.path || body.docPath || "",
+    docTitle: activeDocument?.title || "",
+    timestamp: now,
+  });
+  user.lastActiveAt = now;
+  await userProfileStore.save(user);
   const nextResult = {
     ...result,
     traceId,
@@ -312,7 +405,14 @@ async function handleAnswer(body) {
   const { data: result, traceId } = await proxyJson("POST", "/api/interview/answer", body);
   const memoryProfileSnapshot = result.memoryProfileSnapshot;
   if (memoryProfileSnapshot?.id) {
-    await memoryProfileStore.save(memoryProfileSnapshot);
+    const currentMemoryProfile = await getMemoryProfile(memoryProfileSnapshot.id);
+    await memoryProfileStore.save({
+      ...memoryProfileSnapshot,
+      sessionsStarted: Math.max(
+        Number(currentMemoryProfile.sessionsStarted || 0),
+        Number(memoryProfileSnapshot.sessionsStarted || 0)
+      ),
+    });
   }
   if (result.userId && result.targetBaseline?.id) {
     const user = await getUserProfile(result.userId);
@@ -397,11 +497,7 @@ async function handleReadingProgress(body) {
 }
 
 function buildFallbackKnowledgeAnswer(question = "", document = {}) {
-  const lines = String(document.markdown || "")
-    .replace(/\r/g, "")
-    .split("\n")
-    .map((line) => line.trim().replace(/^#+\s*/, "").replace(/^[-*]\s*/, ""))
-    .filter((line) => line && !line.startsWith("!"));
+  const lines = extractReadableKnowledgeLines(document.markdown || "");
   const headings = lines.filter((line) => line.length <= 48).slice(0, 8);
   const paragraphs = lines.filter((line) => line.length > 18).slice(0, 6);
   if (/总结|概括|3\s*句|三句/.test(question)) {
@@ -425,6 +521,18 @@ async function handleKnowledgeAnswer(body) {
   }
 
   const document = await readJavaGuideDocument(docPath);
+  if (!hasSufficientKnowledgeContent(document)) {
+    return {
+      mode: "knowledge_qa",
+      content: `《${document.title || "当前文档"}》当前公开内容不足，暂时无法支持问答。你可以先继续阅读其他正文更完整的材料。`,
+      suggestedFollowUp: "换一篇正文更完整的文档继续训练",
+      source: {
+        title: document.title,
+        path: document.path,
+      },
+      fallbackReason: "insufficient_public_content",
+    };
+  }
   try {
     const { data, traceId } = await proxyJson("POST", "/api/superapp/answer-knowledge-question", {
       userId: body.userId || "",

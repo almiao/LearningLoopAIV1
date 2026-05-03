@@ -10,14 +10,6 @@ import {
 
 const profileDirtyStorageKey = "learning-loop-profile-dirty-at";
 
-const promptChips = [
-  { label: "Java", query: "java" },
-  { label: "JVM", query: "jvm" },
-  { label: "数据库", query: "数据库" },
-  { label: "并发", query: "concurrent" },
-  { label: "Spring", query: "spring" },
-];
-
 const entryOptions = [
   { key: "javaguide", label: "Java面试（JavaGuide）" },
   { key: "ielts", label: "雅思考试" },
@@ -90,22 +82,6 @@ function simplifyPath(docPath = "") {
     .replace(/-/g, " / ");
 }
 
-function averageProgress(documents = [], target = null) {
-  if (!documents.length) {
-    return 0;
-  }
-  const total = documents.reduce((sum, document) => sum + getDocumentProgress(target, document.path), 0);
-  return Math.round(total / documents.length);
-}
-
-function averageMastery(documents = [], target = null) {
-  if (!documents.length) {
-    return 0;
-  }
-  const total = documents.reduce((sum, document) => sum + getDocumentLearningState(target, document.path).masteryPercentage, 0);
-  return Math.round(total / documents.length);
-}
-
 function getDocumentProgress(documentProgress = null, docPath = "") {
   const storedProgress = documentProgress?.docs?.[docPath]?.progressPercentage;
   if (Number.isFinite(Number(storedProgress))) {
@@ -136,31 +112,63 @@ function formatProgressBadge(progressPercentage = 0, isCurrent = false) {
     if (progressPercentage >= 100) {
       return "当前 · 已读";
     }
-    if (progressPercentage >= 25) {
-      return `当前 ${Math.max(10, progressPercentage)}%`;
+    if (progressPercentage > 0) {
+      return "当前 · 在读";
     }
     return "当前 · 已打开";
   }
   if (progressPercentage >= 100) {
     return "已读";
   }
-  if (progressPercentage >= 25) {
-    return `${progressPercentage}%`;
-  }
   if (progressPercentage > 0) {
-    return "已打开";
+    return "在读";
   }
   return "未读";
 }
 
 function formatLearningBadge(learning = {}) {
-  if (!learning.assessedConceptCount) {
-    return learning.learningStatusLabel || "未训练";
+  const status = learning.learningStatusLabel || "未训练";
+  if (status === "已开启训练") {
+    return "已开训练";
   }
-  if (learning.masteryPercentage >= 75) {
-    return `已掌握 ${learning.masteryPercentage}%`;
+  return status;
+}
+
+function formatLastStudiedAt(timestamp = "") {
+  if (!timestamp) {
+    return "上次学习时间未知";
   }
-  return `训练中 ${learning.masteryPercentage}%`;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return "上次学习时间未知";
+  }
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `上次学习 ${month}-${day} ${hour}:${minute}`;
+}
+
+function buildRecentReadingDocuments(documentProgress = null, catalogDocuments = []) {
+  const catalogByPath = new Map(catalogDocuments.map((document) => [document.path, document]));
+  const source = Array.isArray(documentProgress?.recentDocs)
+    ? documentProgress.recentDocs
+    : Object.values(documentProgress?.docs || {}).sort((left, right) => (
+      String(right.lastActivityAt || "").localeCompare(String(left.lastActivityAt || ""))
+    ));
+
+  return source
+    .filter((document) => document?.docPath || document?.path)
+    .map((document) => {
+      const docPath = document.docPath || document.path;
+      const catalogDocument = catalogByPath.get(docPath);
+      return {
+        path: docPath,
+        title: document.docTitle || catalogDocument?.label || "未命名文档",
+        lastStudiedAt: document.lastActivityAt || "",
+        isCurrent: Boolean(document.isCurrent || documentProgress?.currentDocPath === docPath),
+      };
+    });
 }
 
 export function HomePage() {
@@ -255,6 +263,12 @@ export function HomePage() {
     [knowledgeTree]
   );
   const allCatalogDocuments = useMemo(() => flattenDocuments(knowledgeTree), [knowledgeTree]);
+  const currentDocumentProgress = profile?.documentProgress || null;
+  const recentReadingDocuments = useMemo(
+    () => buildRecentReadingDocuments(currentDocumentProgress, allCatalogDocuments),
+    [allCatalogDocuments, currentDocumentProgress]
+  );
+  const selectedHistory = selectedSectionKey === "history";
   const selectedSection = useMemo(
     () => sections.find((section) => section.key === selectedSectionKey) || null,
     [sections, selectedSectionKey]
@@ -272,9 +286,18 @@ export function HomePage() {
       `${document.label} ${document.path} ${document.sectionLabel}`.toLowerCase().includes(normalizedQuery)
     ));
   }, [scopedDocuments, search]);
+  const visibleHistoryDocuments = useMemo(() => {
+    const normalizedQuery = search.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return recentReadingDocuments;
+    }
+    return recentReadingDocuments.filter((document) => (
+      `${document.title} ${document.path}`.toLowerCase().includes(normalizedQuery)
+    ));
+  }, [recentReadingDocuments, search]);
   const totalDocumentCount = knowledgeDocuments.length;
-  const matchingDocumentCount = visibleDocuments.length;
-  const currentDocumentProgress = profile?.documentProgress || null;
+  const displayDocuments = selectedHistory ? visibleHistoryDocuments : visibleDocuments;
+  const matchingDocumentCount = displayDocuments.length;
   const currentReading = currentDocumentProgress?.currentDocPath ? {
     path: currentDocumentProgress.currentDocPath,
     title: currentDocumentProgress.currentDocTitle || allCatalogDocuments.find((document) => document.path === currentDocumentProgress.currentDocPath)?.label || "继续当前文档",
@@ -287,23 +310,17 @@ export function HomePage() {
     return sections.find((section) => flattenDocuments(section.children || [], section.label).some((document) => document.path === currentReading.path)) || null;
   }, [currentReading?.path, sections]);
   const recommendedDocuments = useMemo(() => {
-    return visibleDocuments.slice(0, 18);
-  }, [visibleDocuments]);
-  const allProgress = useMemo(
-    () => averageProgress(allCatalogDocuments, currentDocumentProgress),
-    [allCatalogDocuments, currentDocumentProgress]
-  );
+    return displayDocuments.slice(0, 18);
+  }, [displayDocuments]);
   const sectionSummaries = useMemo(
     () => sections.map((section) => {
       const documents = flattenDocuments(section.children || [], section.label);
       return {
         ...section,
         documentCount: documents.length,
-        progressPercentage: averageProgress(documents, currentDocumentProgress),
-        masteryPercentage: averageMastery(documents, currentDocumentProgress),
       };
     }),
-    [currentDocumentProgress, sections]
+    [sections]
   );
 
   useEffect(() => {
@@ -315,6 +332,9 @@ export function HomePage() {
 
   useEffect(() => {
     if (selectedSectionKey === "all") {
+      return;
+    }
+    if (selectedSectionKey === "history") {
       return;
     }
     if (!sections.some((section) => section.key === selectedSectionKey)) {
@@ -430,38 +450,24 @@ export function HomePage() {
 
       {selectedEntry === "javaguide" ? (
       <section className="learning-browser-card compact-catalog">
-        <header className="catalog-hero">
-          <div className="catalog-stats" aria-label="文档数量">
-            <strong>{totalDocumentCount}</strong>
-            <span>篇文档</span>
-          </div>
-        </header>
-
-        <div className="catalog-search-row">
-          <div className="prompt-chip-row compact">
-            {promptChips.map((chip) => (
-              <button
-                key={chip.label}
-                type="button"
-                className={search === chip.query ? "topic-chip active" : "topic-chip"}
-                onClick={() => setSearch(chip.query)}
-              >
-                {chip.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div className="catalog-workbench">
           <nav className="catalog-section-rail" aria-label="文档分类">
-            {currentReading ? (
+            <label className="catalog-rail-search" aria-label="筛选左侧分类下的文档">
+              <span className="catalog-rail-search-icon">⌕</span>
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={selectedHistory ? "筛选历史文档" : "筛选当前目录"}
+              />
+            </label>
+            {recentReadingDocuments.length ? (
               <button
                 type="button"
-                className="catalog-section-tab current-reading-tab"
-                onClick={() => setSelectedSectionKey(currentReadingSection?.key || "all")}
+                className={selectedHistory ? "catalog-section-tab active" : "catalog-section-tab"}
+                onClick={() => setSelectedSectionKey("history")}
               >
-                <span>当前阅读</span>
-                <strong>{formatProgressBadge(currentReading.progress, true)}</strong>
+                <span>历史文档</span>
+                <strong>{recentReadingDocuments.length}</strong>
               </button>
             ) : null}
             <button
@@ -470,7 +476,7 @@ export function HomePage() {
               onClick={() => setSelectedSectionKey("all")}
             >
               <span>全部</span>
-              <strong>{totalDocumentCount} · {allProgress}%读</strong>
+              <strong>{totalDocumentCount}</strong>
             </button>
             {sectionSummaries.map((section) => (
               <button
@@ -478,10 +484,9 @@ export function HomePage() {
                 type="button"
                 className={selectedSectionKey === section.key ? "catalog-section-tab active" : "catalog-section-tab"}
                 onClick={() => setSelectedSectionKey(section.key)}
-                title={`${section.progressPercentage}% 阅读进度，${section.masteryPercentage}% 掌握度`}
               >
                 <span>{section.label}</span>
-                <strong>{section.documentCount} · {section.progressPercentage}%读</strong>
+                <strong>{section.documentCount}</strong>
               </button>
             ))}
           </nav>
@@ -492,14 +497,8 @@ export function HomePage() {
                 <p aria-live="polite">
                   {search.trim()
                     ? `找到 ${matchingDocumentCount} 篇匹配`
-                    : selectedSection ? "当前分类" : "全部文档"}
+                    : selectedHistory ? "历史文档" : selectedSection ? "当前分类" : "全部文档"}
                 </p>
-                <span
-                  className="catalog-progress-rule"
-                  title="打开文档记为已打开；阅读深度按最大滚动位置累计；滚到 90% 且停留 45 秒记为已读。训练掌握度另算。"
-                >
-                  进度规则
-                </span>
               </div>
               {search.trim() ? (
                 <button type="button" className="catalog-clear-button" onClick={() => setSearch("")}>
@@ -511,24 +510,28 @@ export function HomePage() {
             {recommendedDocuments.length ? (
               <div className="catalog-doc-grid">
                 {recommendedDocuments.map((document) => {
+                  const documentTitle = document.label || document.title || "未命名文档";
                   const isCurrent = document.path === currentReading?.path;
                   const progressPercentage = getDocumentProgress(currentDocumentProgress, document.path);
                   const mastery = getDocumentLearningState(currentDocumentProgress, document.path);
+                  const secondaryLabel = selectedHistory
+                    ? formatLastStudiedAt(document.lastStudiedAt)
+                    : isCurrent ? "当前阅读" : simplifyPath(document.path);
 
                   return (
                     <Link
-                      key={document.key}
+                      key={document.key || document.path}
                       className={isCurrent ? "catalog-doc-row current" : "catalog-doc-row"}
                       href={documentHref(document.path)}
                     >
                       <span className="catalog-doc-dot" />
-                      <span className="catalog-doc-title">{document.label}</span>
+                      <span className="catalog-doc-title">{documentTitle}</span>
                       <span className="catalog-doc-badges">
                         <span className="catalog-doc-progress">{formatProgressBadge(progressPercentage, isCurrent)}</span>
                         <span className="catalog-doc-mastery">{formatLearningBadge(mastery)}</span>
                       </span>
                       <span className="catalog-doc-path">
-                        {isCurrent ? "当前阅读" : simplifyPath(document.path)}
+                        {secondaryLabel}
                       </span>
                     </Link>
                   );

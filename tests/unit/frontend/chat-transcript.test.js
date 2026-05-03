@@ -74,8 +74,9 @@ test("chat transcript keeps tutor feedback and the next tutor question as separa
   assert.match(timeline[1].body, /抓到主要方向/);
   assert.equal(timeline[1].followUpQuestion, "");
   assert.equal(timeline[1].topicShiftLabel, "");
-  assert.equal(timeline[2].type, "event");
-  assert.match(timeline[2].label, /进入子项/);
+  assert.equal(timeline[2].role, "assistant");
+  assert.equal(timeline[2].isProgressUpdate, true);
+  assert.match(timeline[2].body, /现在进入/);
   assert.equal(timeline[3].role, "assistant");
   assert.match(timeline[3].body, /next-key lock/);
 });
@@ -117,7 +118,8 @@ test("chat transcript does not merge feedback with the next question when the co
   assert.equal(timeline[1].role, "assistant");
   assert.equal(timeline[1].conceptTitle, "MVCC 与 Repeatable Read 边界");
   assert.equal(timeline[1].followUpQuestion, "");
-  assert.equal(timeline[2].type, "event");
+  assert.equal(timeline[2].role, "assistant");
+  assert.equal(timeline[2].isProgressUpdate, true);
   assert.equal(timeline[3].role, "assistant");
   assert.equal(timeline[3].conceptTitle, "MySQL 索引设计与查询计划");
 });
@@ -168,10 +170,10 @@ test("chat transcript emits checkpoint transition only when checkpoint changes",
     }
   ]);
 
-  const eventLabels = timeline.filter((entry) => entry.type === "event").map((entry) => entry.label);
-  assert.equal(eventLabels.length, 2);
-  assert.match(eventLabels[0], /区分静态资源与动态请求/);
-  assert.match(eventLabels[1], /区分CDN与全站加速/);
+  const progressBodies = timeline.filter((entry) => entry.isProgressUpdate).map((entry) => entry.body);
+  assert.equal(progressBodies.length, 2);
+  assert.match(progressBodies[0], /区分静态资源与动态请求/);
+  assert.match(progressBodies[1], /区分CDN与全站加速/);
 });
 
 test("chat transcript keeps reply markdown body and candidate follow-up visible", () => {
@@ -229,4 +231,56 @@ test("chat transcript hides takeaway for in-progress verify turns", () => {
   ]);
 
   assert.equal(timeline[1].takeaway, "");
+});
+
+test("chat transcript exposes training progress and score metadata as assistant messages", () => {
+  const timeline = buildChatTimeline([
+    {
+      role: "tutor",
+      kind: "question",
+      action: "probe",
+      conceptId: "mysql-logs",
+      conceptTitle: "三大日志对比与协作",
+      checkpointId: "compare-logs-1-cp-2",
+      checkpointStatement: "能解释为什么需要两阶段提交来协同 redo log 和 binlog",
+      questionMeta: {
+        progress: { currentRound: 1, maxRounds: 2 },
+        trainingProgress: {
+          trainingPoint: { currentIndex: 5, total: 5, title: "三大日志对比与协作" },
+          checkpoint: {
+            currentIndex: 2,
+            total: 2,
+            statement: "能解释为什么需要两阶段提交来协同 redo log 和 binlog"
+          }
+        }
+      },
+      content: "为什么需要两阶段提交？",
+      timestamp: 40
+    },
+    {
+      role: "tutor",
+      kind: "feedback",
+      action: "deepen",
+      conceptId: "mysql-logs",
+      conceptTitle: "三大日志对比与协作",
+      content: "你抓到了 binlog 和 redo log 要一致。",
+      scoreSummary: {
+        state: "partial",
+        stateLabel: "部分掌握",
+        confidence: 58,
+        evidenceQuality: "partial",
+        evidenceLabel: "回答证据部分充分",
+        keyClaim: "用户能说出两阶段提交用于协调 redo log 和 binlog。"
+      },
+      timestamp: 41
+    }
+  ]);
+
+  assert.equal(timeline[0].role, "assistant");
+  assert.equal(timeline[0].isProgressUpdate, true);
+  assert.match(timeline[0].body, /训练点 5\/5/);
+  assert.match(timeline[0].body, /子项 2\/2/);
+  assert.match(timeline[2].body, /本轮评价：部分掌握/);
+  assert.equal(timeline[2].isEvaluationMessage, true);
+  assert.match(timeline[3].body, /binlog 和 redo log 要一致/);
 });

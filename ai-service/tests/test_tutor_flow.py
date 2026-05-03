@@ -196,6 +196,24 @@ class FakeVerifyForeverIntelligence:
         return "你已经抓到主线，我补一句后准备推进。"
 
 
+class FakeAdvanceQuestionIntelligence(FakeVerifyForeverIntelligence):
+    def __init__(self) -> None:
+        self.question_calls = []
+
+    def generate_probe_question(self, *, concept, context_packet, phase="diagnostic", revisit=False):
+        self.question_calls.append(
+            {
+                "concept_id": concept["id"],
+                "current_question": context_packet["dynamic"]["currentQuestion"],
+                "phase": phase,
+            }
+        )
+        return {
+            "question": f"动态下一题：请解释 {concept['title']}。",
+            "intent": "test_transition_question",
+        }
+
+
 class FakeWrongIntelligence:
     configured = True
 
@@ -380,6 +398,16 @@ class TutorFlowTests(unittest.TestCase):
 
         self.assertEqual(projected["source"]["metadata"]["docPath"], "docs/java/concurrent/threadlocal.md")
 
+    def test_session_starts_with_training_decomposition_intro_before_first_question(self):
+        session = create_session(make_multi_concept_session_payload())
+
+        self.assertEqual(session["turns"][0]["role"], "tutor")
+        self.assertEqual(session["turns"][0]["kind"], "feedback")
+        self.assertEqual(session["turns"][0]["action"], "intro")
+        self.assertIn("先看主线", session["turns"][0]["content"])
+        self.assertIn("下一训练点", session["turns"][0]["content"])
+        self.assertEqual(session["turns"][1]["kind"], "question")
+
     def test_teach_control_uses_unified_turn_generation_and_updates_anchor_state(self):
         session = create_session(make_session_payload())
         fake_intelligence = FakeTeachIntelligence()
@@ -395,13 +423,18 @@ class TutorFlowTests(unittest.TestCase):
 
         self.assertEqual(fake_intelligence.calls[0]["forced_action"], "teach")
         self.assertEqual(projected["latestFeedback"]["action"], "teach")
-        self.assertEqual(projected["currentProbe"], "")
-        self.assertIsNone(projected["currentQuestionMeta"])
-        self.assertEqual(projected["latestFeedback"]["turnResolution"]["mode"], "stop")
+        self.assertEqual(
+            projected["currentProbe"],
+            "那你现在用自己的话说一句：为什么当前读不能只靠 MVCC？"
+        )
+        self.assertEqual(projected["currentCheckpointId"], "mvcc-boundary-cp-1")
+        self.assertEqual(projected["currentQuestionMeta"]["phase"], "teach-back")
+        self.assertEqual(projected["latestFeedback"]["turnResolution"]["mode"], "stay")
         self.assertEqual(projected["currentAnchorState"]["lastLearnerIntent"], "teach")
         self.assertEqual(projected["currentAnchorState"]["lastTutorAction"], "teach")
         self.assertNotIn("lastTeachingPoint", projected["currentAnchorState"])
         self.assertEqual(projected["currentAnchorState"]["lastFollowupGoal"], "")
+        self.assertIsNone(projected["latestFeedback"]["scoreSummary"])
 
     def test_partial_answer_advances_without_waiting_for_budget(self):
         session = create_session(make_multi_concept_session_payload())
@@ -419,7 +452,44 @@ class TutorFlowTests(unittest.TestCase):
         self.assertEqual(first["currentTrainingPointId"], "next-anchor")
         self.assertEqual(first["currentProbe"], "进入下一题：请说明第二个训练点是什么？")
         self.assertEqual(first["latestFeedback"]["turnResolution"]["mode"], "switch")
+        self.assertEqual(first["latestFeedback"]["scoreSummary"]["stateLabel"], "部分掌握")
+        self.assertEqual(first["latestFeedback"]["scoreSummary"]["confidence"], 58)
+        self.assertEqual(first["latestFeedback"]["scoreSummary"]["evidenceQuality"], "")
         self.assertEqual(first["currentQuestionMeta"]["phase"], "diagnostic")
+        self.assertEqual(first["currentQuestionMeta"]["trainingProgress"]["trainingPoint"]["currentIndex"], 2)
+        self.assertEqual(first["currentQuestionMeta"]["trainingProgress"]["trainingPoint"]["total"], 2)
+
+    def test_dynamic_question_generation_clears_previous_probe_on_checkpoint_switch(self):
+        payload = make_multi_concept_session_payload()
+        payload.decomposition = {
+            **payload.decomposition,
+            "concepts": [
+                make_concept(),
+                {
+                    **make_second_concept(),
+                    "diagnosticQuestion": "",
+                    "retryQuestion": "",
+                    "checkQuestion": "",
+                },
+            ],
+        }
+        session = create_session(payload)
+        first_probe = session["currentProbe"]
+        fake_intelligence = FakeAdvanceQuestionIntelligence()
+        answer_payload = SimpleNamespace(
+            answer="这个点我已经知道主线了。",
+            interactionPreference=None,
+            burdenSignal="normal",
+            intent="",
+        )
+
+        with patch("app.engine.session_engine.get_tutor_intelligence", return_value=fake_intelligence):
+            projected = answer_session(session, answer_payload)
+
+        self.assertEqual(projected["currentTrainingPointId"], "next-anchor")
+        self.assertEqual(projected["currentProbe"], "动态下一题：请解释 下一训练点。")
+        self.assertEqual(fake_intelligence.question_calls[0]["current_question"], "")
+        self.assertNotEqual(first_probe, "")
 
     def test_teach_turn_counts_toward_round_budget(self):
         session = create_session(make_multi_concept_session_payload())
@@ -439,14 +509,40 @@ class TutorFlowTests(unittest.TestCase):
         with patch("app.engine.session_engine.get_tutor_intelligence", return_value=FakeTeachIntelligence()):
             taught = answer_session(session, teach_payload)
 
-        self.assertEqual(taught["currentTrainingPointId"], "next-anchor")
-        self.assertEqual(taught["currentQuestionMeta"]["progress"]["currentRound"], 1)
+        self.assertEqual(taught["currentTrainingPointId"], "mvcc-boundary")
+        self.assertEqual(taught["currentCheckpointId"], "mvcc-boundary-cp-1")
+        self.assertEqual(taught["currentQuestionMeta"]["phase"], "teach-back")
+        self.assertEqual(taught["currentQuestionMeta"]["progress"]["currentRound"], 2)
 
         with patch("app.engine.session_engine.get_tutor_intelligence", return_value=FakeVerifyForeverIntelligence()):
             first = answer_session(session, answer_payload)
 
         self.assertEqual(first["currentTrainingPointId"], "next-anchor")
-        self.assertEqual(first["latestFeedback"]["turnResolution"]["mode"], "stop")
+        self.assertEqual(first["latestFeedback"]["turnResolution"]["mode"], "switch")
+
+    def test_answer_session_emits_progress_preview_for_streaming_ui(self):
+        session = create_session(make_multi_concept_session_payload())
+        payload = SimpleNamespace(
+            answer="这个点我已经知道主线了。",
+            interactionPreference=None,
+            burdenSignal="normal",
+            intent="",
+        )
+        progress_events = []
+
+        with patch("app.engine.session_engine.get_tutor_intelligence", return_value=FakeVerifyForeverIntelligence()):
+            answer_session(
+                session,
+                payload,
+                progress_callback=lambda event, data: progress_events.append((event, data)),
+            )
+
+        event_names = [event for event, _ in progress_events]
+        self.assertIn("progress", event_names)
+        self.assertIn("assessment_preview", event_names)
+        assessment_preview = next(data for event, data in progress_events if event == "assessment_preview")
+        self.assertEqual(assessment_preview["scoreSummary"]["stateLabel"], "部分掌握")
+        self.assertEqual(assessment_preview["scoreSummary"]["confidence"], 58)
 
     def test_wrong_answer_only_gets_one_followup_before_advancing(self):
         session = create_session(make_multi_concept_session_payload())

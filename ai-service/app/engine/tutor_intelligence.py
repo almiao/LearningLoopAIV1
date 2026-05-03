@@ -36,16 +36,23 @@ def ensure_string(value: Any, fallback: str = "") -> str:
     return normalized or fallback
 
 
+def ensure_reply_text(value: Any, fallback: str = "") -> str:
+    if isinstance(value, str):
+        return value if value.strip() else fallback
+    normalized = str(value or "")
+    return normalized if normalized.strip() else fallback
+
+
 def build_knowledge_answer_prompt(*, question: str, context: str) -> str:
     clipped_context = ensure_string(context)[:12_000]
     return f"""
-你是 LearningLoopAI 的阅读助理。你只回答用户正在阅读的这篇材料，不评估用户掌握度，不追问训练题，不更新学习记忆。
+你是 LearningLoopAI 的阅读助理。你把用户正在阅读的材料当作主要参考，同时可以结合可靠的通用技术知识回答。
 
 回答规则：
-- 只基于【材料】回答，材料没有的信息要明确说“这篇材料里没有展开”。
+- 优先贴合【材料】里的概念和表述；当用户提出材料之外的延伸、反事实或原理追问时，可以用通用技术知识补足，并说明这是基于通用知识的推理。
+- 不要因为材料没有直接展开就拒答；只有问题明显需要材料中不存在的具体事实时，才说明材料未覆盖该细节。
 - 如果用户要求总结，直接给出总结，不要说“你是在提出请求”。
-- 用中文，结构清楚，尽量短。
-- 不要输出训练状态、掌握度、下一步训练决策。
+- 用中文回答。
 
 【材料】
 {clipped_context}
@@ -138,12 +145,7 @@ def _post_json(url: str, headers: Dict[str, str], payload: Dict[str, Any], timeo
         raise RuntimeError(f"LLM request timed out (>{round(timeout_ms / 1000)}s).") from exc
 
 
-def call_openai_json(*, api_key: str, model: str, prompt: str, schema: Dict[str, Any], timeout_ms: int = DEFAULT_PROVIDER_TIMEOUT_MS) -> Dict[str, Any]:
-    raw_text, _ = call_openai_raw_text(api_key=api_key, model=model, prompt=prompt, schema=schema, timeout_ms=timeout_ms)
-    return parse_provider_json_text(raw_text)
-
-
-def call_openai_raw_text(*, api_key: str, model: str, prompt: str, schema: Dict[str, Any], timeout_ms: int = DEFAULT_PROVIDER_TIMEOUT_MS) -> tuple[str, Dict[str, Any]]:
+def _call_openai_raw_text(*, api_key: str, model: str, prompt: str, schema: Dict[str, Any], timeout_ms: int = DEFAULT_PROVIDER_TIMEOUT_MS) -> tuple[str, Dict[str, Any]]:
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is required for AI tutor mode.")
     payload = _post_json(
@@ -187,7 +189,7 @@ def call_openai_raw_text(*, api_key: str, model: str, prompt: str, schema: Dict[
     return _extract_openai_text(payload), payload
 
 
-def call_openai_text(*, api_key: str, model: str, prompt: str, timeout_ms: int = DEFAULT_PROVIDER_TIMEOUT_MS) -> str:
+def _call_openai_text(*, api_key: str, model: str, prompt: str, timeout_ms: int = DEFAULT_PROVIDER_TIMEOUT_MS) -> str:
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is required for AI tutor mode.")
     payload = _post_json(
@@ -219,30 +221,10 @@ def call_openai_text(*, api_key: str, model: str, prompt: str, timeout_ms: int =
         },
         timeout_ms,
     )
-    return ensure_string(_extract_openai_text(payload))
+    return ensure_reply_text(_extract_openai_text(payload))
 
 
-def call_deepseek_json(
-    *,
-    api_key: str,
-    model: str,
-    prompt: str,
-    schema: Dict[str, Any],
-    base_url: str = DEFAULT_DEEPSEEK_BASE_URL,
-    timeout_ms: int = DEFAULT_PROVIDER_TIMEOUT_MS,
-) -> Dict[str, Any]:
-    raw_text, _ = call_deepseek_raw_text(
-        api_key=api_key,
-        model=model,
-        prompt=prompt,
-        schema=schema,
-        base_url=base_url,
-        timeout_ms=timeout_ms,
-    )
-    return parse_provider_json_text(raw_text)
-
-
-def call_deepseek_raw_text(
+def _call_deepseek_raw_text(
     *,
     api_key: str,
     model: str,
@@ -290,7 +272,7 @@ def call_deepseek_raw_text(
     return _extract_chat_message_content(payload, "DeepSeek"), payload
 
 
-def call_deepseek_text(
+def _call_deepseek_text(
     *,
     api_key: str,
     model: str,
@@ -325,10 +307,124 @@ def call_deepseek_text(
         },
         timeout_ms,
     )
-    return ensure_string(_extract_chat_message_content(payload, "DeepSeek"))
+    return ensure_reply_text(_extract_chat_message_content(payload, "DeepSeek"))
 
 
-def stream_deepseek_text_chunks(
+def normalize_provider_name(provider: str) -> str:
+    normalized = str(provider or "OPENAI").strip().upper()
+    if normalized in {"OPENAI", "DEEPSEEK"}:
+        return normalized
+    raise ValueError(f"Unsupported LLM provider: {provider}")
+
+
+def call_provider_raw_text(
+    *,
+    provider: str,
+    api_key: str,
+    model: str,
+    prompt: str,
+    schema: Dict[str, Any],
+    base_url: str | None = None,
+    timeout_ms: int = DEFAULT_PROVIDER_TIMEOUT_MS,
+) -> tuple[str, Dict[str, Any]]:
+    normalized_provider = normalize_provider_name(provider)
+    if normalized_provider == "DEEPSEEK":
+        return _call_deepseek_raw_text(
+            api_key=api_key,
+            model=model,
+            prompt=prompt,
+            schema=schema,
+            base_url=base_url or DEFAULT_DEEPSEEK_BASE_URL,
+            timeout_ms=timeout_ms,
+        )
+    return _call_openai_raw_text(
+        api_key=api_key,
+        model=model,
+        prompt=prompt,
+        schema=schema,
+        timeout_ms=timeout_ms,
+    )
+
+
+def call_provider_json(
+    *,
+    provider: str,
+    api_key: str,
+    model: str,
+    prompt: str,
+    schema: Dict[str, Any],
+    base_url: str | None = None,
+    timeout_ms: int = DEFAULT_PROVIDER_TIMEOUT_MS,
+) -> Dict[str, Any]:
+    raw_text, _ = call_provider_raw_text(
+        provider=provider,
+        api_key=api_key,
+        model=model,
+        prompt=prompt,
+        schema=schema,
+        base_url=base_url,
+        timeout_ms=timeout_ms,
+    )
+    return parse_provider_json_text(raw_text)
+
+
+def call_provider_text(
+    *,
+    provider: str,
+    api_key: str,
+    model: str,
+    prompt: str,
+    base_url: str | None = None,
+    timeout_ms: int = DEFAULT_PROVIDER_TIMEOUT_MS,
+) -> str:
+    normalized_provider = normalize_provider_name(provider)
+    if normalized_provider == "DEEPSEEK":
+        return _call_deepseek_text(
+            api_key=api_key,
+            model=model,
+            prompt=prompt,
+            base_url=base_url or DEFAULT_DEEPSEEK_BASE_URL,
+            timeout_ms=timeout_ms,
+        )
+    return _call_openai_text(
+        api_key=api_key,
+        model=model,
+        prompt=prompt,
+        timeout_ms=timeout_ms,
+    )
+
+
+def stream_provider_text_chunks(
+    *,
+    provider: str,
+    api_key: str,
+    model: str,
+    prompt: str,
+    base_url: str | None = None,
+    timeout_ms: int = DEFAULT_PROVIDER_TIMEOUT_MS,
+) -> Iterator[str]:
+    normalized_provider = normalize_provider_name(provider)
+    if normalized_provider == "DEEPSEEK":
+        yield from _stream_deepseek_text_chunks(
+            api_key=api_key,
+            model=model,
+            prompt=prompt,
+            base_url=base_url or DEFAULT_DEEPSEEK_BASE_URL,
+            timeout_ms=timeout_ms,
+        )
+        return
+    text = call_provider_text(
+        provider=normalized_provider,
+        api_key=api_key,
+        model=model,
+        prompt=prompt,
+        timeout_ms=timeout_ms,
+    )
+    if text:
+        yield text
+
+
+def _stream_deepseek_text_chunks(
     *,
     api_key: str,
     model: str,
@@ -810,6 +906,16 @@ def build_turn_diagnosis_prompt(*, concept: Dict[str, Any], context_packet: Dict
 
 
 def build_reply_stream_prompt(*, context_packet: Dict[str, Any], answer: str) -> str:
+    normalized_answer = ensure_string(answer)
+    explanation_request = normalized_answer in {"查看解析", "看解析", "讲解一下", "解释一下"} or "解析" in normalized_answer
+    extra_rules = []
+    if explanation_request:
+        extra_rules.extend([
+            "The learner is explicitly asking for an explanation of the current learner-facing question.",
+            "Answer that current question directly and concretely.",
+            "Stay tightly scoped to the current checkpoint question instead of summarizing the broader training point.",
+            "If the question asks 'which capability / why / how', make sure your explanation explicitly answers that exact ask.",
+        ])
     return "\n".join(
         [
             "You are writing the learner-facing reply for one AI tutor turn.",
@@ -821,11 +927,39 @@ def build_reply_stream_prompt(*, context_packet: Dict[str, Any], answer: str) ->
             "If useful, end with one stable takeaway sentence naturally inside the prose.",
             "If the learner is mainly asking for explanation, give a direct explanation instead of interrogating.",
             "Keep the reply self-contained and valuable even if the learner stops here.",
+            *extra_rules,
             "",
             "CONTEXT_PACKET_JSON:",
             json.dumps(context_packet, ensure_ascii=False, indent=2),
             "",
             f"CURRENT_LEARNER_INPUT: {answer}",
+        ]
+    )
+
+
+def build_teach_reply_prompt(*, context_packet: Dict[str, Any], answer: str) -> str:
+    # Teach mode is a separate task from answer evaluation. The model should
+    # explain the current learner-facing question directly, not infer whether
+    # "查看解析" was correct or incorrect as an answer.
+    return "\n".join(
+        [
+            "You are writing the learner-facing explanation for the current checkpoint question.",
+            "Use Chinese markdown only. Do not return JSON.",
+            "The learner has explicitly requested an explanation instead of answering this question.",
+            "Treat the current learner input as an explanation request, not as an answer to evaluate.",
+            "Explain the current learner-facing question directly and concretely.",
+            "Stay tightly scoped to the current checkpoint question instead of summarizing the broader training point.",
+            "Do not assume the learner already answered correctly or incorrectly.",
+            "Do not promise what the system will ask next.",
+            "Do not say you will switch topics, stop, or move on.",
+            "Do not include labels such as '下一步' or 'gap' or 'runtime'.",
+            "If useful, end with one stable takeaway sentence naturally inside the prose.",
+            "Keep the reply self-contained and valuable even if the learner stops here.",
+            "",
+            "CONTEXT_PACKET_JSON:",
+            json.dumps(context_packet, ensure_ascii=False, indent=2),
+            "",
+            f"CURRENT_LEARNER_INPUT: {ensure_string(answer)}",
         ]
     )
 
@@ -837,6 +971,7 @@ def build_turn_envelope_prompt(
     diagnosis: Dict[str, Any],
     forced_action: str | None = None,
     concept: Dict[str, Any] | None = None,
+    retry_missing_followup: bool = False,
 ) -> str:
     sections = [
         "You are the main decision engine for one AI tutor turn. Return json only.",
@@ -874,6 +1009,17 @@ def build_turn_envelope_prompt(
 
     if forced_action:
         sections.extend(["", f"FORCED_ACTION: {forced_action}"])
+
+    if retry_missing_followup:
+        sections.extend(
+            [
+                "",
+                "RETRY REQUIREMENT:",
+                "Your previous output was rejected because next_move.follow_up_question was missing.",
+                "If next_move.ui_mode is probe, teach, or verify, you MUST provide one concrete learner-facing follow_up_question.",
+                "If next_move.ui_mode is advance, stop, or revisit, follow_up_question MUST be empty.",
+            ]
+        )
 
     if forced_action == "teach" and concept:
         sections.extend(
@@ -1120,15 +1266,14 @@ class ProviderTutorIntelligence:
         )
 
     def _call_json(self, prompt: str, schema: Dict[str, Any]) -> Dict[str, Any]:
-        if self.provider == "DEEPSEEK":
-            return call_deepseek_json(
-                api_key=self.api_key,
-                model=self.model,
-                base_url=self.base_url or DEFAULT_DEEPSEEK_BASE_URL,
-                prompt=prompt,
-                schema=schema,
-            )
-        return call_openai_json(api_key=self.api_key, model=self.model, prompt=prompt, schema=schema)
+        return call_provider_json(
+            provider=self.provider,
+            api_key=self.api_key,
+            model=self.model,
+            base_url=self.base_url,
+            prompt=prompt,
+            schema=schema,
+        )
 
     def _call_json_traced(
         self,
@@ -1154,21 +1299,13 @@ class ProviderTutorIntelligence:
             system_prompt=system_prompt,
             messages=messages,
             provider=self.provider,
-            request_fn=lambda: (
-                call_deepseek_raw_text(
-                    api_key=self.api_key,
-                    model=self.model,
-                    prompt=prompt,
-                    schema=schema,
-                    base_url=self.base_url or DEFAULT_DEEPSEEK_BASE_URL,
-                )
-                if self.provider == "DEEPSEEK"
-                else call_openai_raw_text(
-                    api_key=self.api_key,
-                    model=self.model,
-                    prompt=prompt,
-                    schema=schema,
-                )
+            request_fn=lambda: call_provider_raw_text(
+                provider=self.provider,
+                api_key=self.api_key,
+                model=self.model,
+                prompt=prompt,
+                schema=schema,
+                base_url=self.base_url,
             ),
             parser=parse_provider_json_text,
             validator=validator,
@@ -1277,21 +1414,30 @@ class ProviderTutorIntelligence:
             if forced_action == "teach"
             else self.diagnose_turn(concept=concept, context_packet=context_packet, answer=answer)
         )
-        result = self._call_json_traced(
-            call_type="answer_turn",
-            prompt=build_turn_envelope_prompt(
-                context_packet=context_packet,
-                answer=answer,
-                diagnosis=diagnosis,
-                forced_action=forced_action,
-                concept=concept,
-            ),
-            schema=TURN_ENVELOPE_SCHEMA,
-            validator=lambda payload: validate_turn_envelope_payload(
-                normalize_turn_envelope_payload(payload, concept),
-                concept.get("id", "")
-            ),
-        )
+        def call_with_prompt(*, retry_missing_followup: bool = False):
+            return self._call_json_traced(
+                call_type="answer_turn",
+                prompt=build_turn_envelope_prompt(
+                    context_packet=context_packet,
+                    answer=answer,
+                    diagnosis=diagnosis,
+                    forced_action=forced_action,
+                    concept=concept,
+                    retry_missing_followup=retry_missing_followup,
+                ),
+                schema=TURN_ENVELOPE_SCHEMA,
+                validator=lambda payload: validate_turn_envelope_payload(
+                    normalize_turn_envelope_payload(payload, concept),
+                    concept.get("id", "")
+                ),
+            )
+
+        try:
+            result = call_with_prompt()
+        except Exception as exc:
+            if "follow_up_question" not in str(exc):
+                raise
+            result = call_with_prompt(retry_missing_followup=True)
         envelope = normalize_turn_envelope_payload(result.parsed, concept)
         envelope["turn_diagnosis"] = diagnosis
         return envelope
@@ -1304,14 +1450,13 @@ class ProviderTutorIntelligence:
         answer: str,
     ) -> str:
         prompt = build_reply_stream_prompt(context_packet=context_packet, answer=answer)
-        if self.provider == "DEEPSEEK":
-            return call_deepseek_text(
-                api_key=self.api_key,
-                model=self.model,
-                prompt=prompt,
-                base_url=self.base_url or DEFAULT_DEEPSEEK_BASE_URL,
-            )
-        return call_openai_text(api_key=self.api_key, model=self.model, prompt=prompt)
+        return call_provider_text(
+            provider=self.provider,
+            api_key=self.api_key,
+            model=self.model,
+            prompt=prompt,
+            base_url=self.base_url,
+        )
 
     def generate_reply_stream_events(
         self,
@@ -1321,28 +1466,55 @@ class ProviderTutorIntelligence:
         answer: str,
     ) -> Iterator[str]:
         prompt = build_reply_stream_prompt(context_packet=context_packet, answer=answer)
-        if self.provider == "DEEPSEEK":
-            yield from stream_deepseek_text_chunks(
-                api_key=self.api_key,
-                model=self.model,
-                prompt=prompt,
-                base_url=self.base_url or DEFAULT_DEEPSEEK_BASE_URL,
-            )
-            return
-        text = call_openai_text(api_key=self.api_key, model=self.model, prompt=prompt)
-        if text:
-            yield text
+        yield from stream_provider_text_chunks(
+            provider=self.provider,
+            api_key=self.api_key,
+            model=self.model,
+            prompt=prompt,
+            base_url=self.base_url,
+        )
+
+    def generate_teach_reply_stream(
+        self,
+        *,
+        concept: Dict[str, Any],
+        context_packet: Dict[str, Any],
+        answer: str,
+    ) -> str:
+        prompt = build_teach_reply_prompt(context_packet=context_packet, answer=answer)
+        return call_provider_text(
+            provider=self.provider,
+            api_key=self.api_key,
+            model=self.model,
+            prompt=prompt,
+            base_url=self.base_url,
+        )
+
+    def generate_teach_reply_stream_events(
+        self,
+        *,
+        concept: Dict[str, Any],
+        context_packet: Dict[str, Any],
+        answer: str,
+    ) -> Iterator[str]:
+        prompt = build_teach_reply_prompt(context_packet=context_packet, answer=answer)
+        yield from stream_provider_text_chunks(
+            provider=self.provider,
+            api_key=self.api_key,
+            model=self.model,
+            prompt=prompt,
+            base_url=self.base_url,
+        )
 
     def answer_knowledge_question(self, *, question: str, context: str) -> str:
         prompt = build_knowledge_answer_prompt(question=question, context=context)
-        if self.provider == "DEEPSEEK":
-            return call_deepseek_text(
-                api_key=self.api_key,
-                model=self.model,
-                prompt=prompt,
-                base_url=self.base_url or DEFAULT_DEEPSEEK_BASE_URL,
-            )
-        return call_openai_text(api_key=self.api_key, model=self.model, prompt=prompt)
+        return call_provider_text(
+            provider=self.provider,
+            api_key=self.api_key,
+            model=self.model,
+            prompt=prompt,
+            base_url=self.base_url,
+        )
 
     def explain_concept(self, *, session: Dict[str, Any], concept: Dict[str, Any], context_packet: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         envelope = self.generate_turn_envelope(
@@ -1577,6 +1749,26 @@ class HeuristicTutorIntelligence:
         answer: str,
     ) -> Iterator[str]:
         text = self.generate_reply_stream(concept=concept, context_packet=context_packet, answer=answer)
+        if text:
+            yield text
+
+    def generate_teach_reply_stream(
+        self,
+        *,
+        concept: Dict[str, Any],
+        context_packet: Dict[str, Any],
+        answer: str,
+    ) -> str:
+        return self.generate_reply_stream(concept=concept, context_packet=context_packet, answer=answer)
+
+    def generate_teach_reply_stream_events(
+        self,
+        *,
+        concept: Dict[str, Any],
+        context_packet: Dict[str, Any],
+        answer: str,
+    ) -> Iterator[str]:
+        text = self.generate_teach_reply_stream(concept=concept, context_packet=context_packet, answer=answer)
         if text:
             yield text
 

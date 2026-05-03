@@ -168,3 +168,139 @@ test("document progress remembers training start before evidence exists", () => 
     "已读"
   );
 });
+
+test("document progress marks decomposition-failed documents as reading-only", () => {
+  const profile = buildUserProfileView({
+    user: {
+      ...makeUser(makeUserTarget()),
+      documents: {
+        currentDocPath: "docs/high-availability/idempotency.md",
+        currentDocTitle: "接口幂等方案总结(付费)",
+        lastUpdatedAt: "2026-05-01T10:03:00.000Z",
+        docs: {
+          "docs/high-availability/idempotency.md": {
+            docPath: "docs/high-availability/idempotency.md",
+            docTitle: "接口幂等方案总结(付费)",
+            progressPercentage: 100,
+            trainingAvailability: "unavailable",
+            trainingUnavailableReason: "当前文档缺少足够可训练内容，已保留为阅读材料。",
+            sessionUpdatedAt: "2026-05-01T10:03:00.000Z",
+          },
+        },
+      },
+    },
+    memoryProfile: { id: "mem-1", sessionsStarted: 0, abilityItems: {} },
+  });
+
+  assert.equal(
+    profile.documentProgress.docs["docs/high-availability/idempotency.md"]?.learningStatusLabel,
+    "仅阅读"
+  );
+  assert.equal(
+    profile.documentProgress.docs["docs/high-availability/idempotency.md"]?.trainingUnavailableReason,
+    "当前文档缺少足够可训练内容，已保留为阅读材料。"
+  );
+});
+
+test("document progress exposes checkpoint fraction for in-progress training", () => {
+  const targetRecord = applyReadingProgress(makeUserTarget(), {
+    targetBaselineId: "bigtech-java-backend",
+    docPath: "docs/ai/agent/mcp.md",
+    scrollRatio: 0.91,
+    dwellMs: 50_000,
+    timestamp: "2026-05-01T10:00:00.000Z",
+  });
+
+  const profile = buildUserProfileView({
+    user: {
+      ...makeUser(targetRecord),
+      documents: {
+        currentDocPath: "docs/ai/agent/mcp.md",
+        currentDocTitle: "万字拆解 MCP，附带工程实践",
+        lastUpdatedAt: "2026-05-01T10:03:00.000Z",
+        docs: {
+          "docs/ai/agent/mcp.md": {
+            docPath: "docs/ai/agent/mcp.md",
+            docTitle: "万字拆解 MCP，附带工程实践",
+            progressPercentage: 100,
+            status: "completed",
+            trainingStartedAt: "2026-05-01T10:03:00.000Z",
+            trainingSessionCount: 1,
+            currentTrainingPointId: "mcp-architecture",
+            currentCheckpointId: "mcp-architecture-cp-2",
+            decompositionSnapshot: {
+              trainingPoints: [
+                {
+                  id: "mcp-architecture",
+                  title: "MCP 架构分层",
+                  checkpoints: [
+                    { id: "mcp-architecture-cp-1", statement: "解释 Host / Client / Server 分工" },
+                    { id: "mcp-architecture-cp-2", statement: "说明为什么要统一协议层" },
+                    { id: "mcp-architecture-cp-3", statement: "说清工具发现与调用闭环" },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+    memoryProfile: { id: "mem-1", sessionsStarted: 1, abilityItems: {} },
+  });
+
+  assert.equal(
+    profile.documentProgress.docs["docs/ai/agent/mcp.md"]?.trainingCheckpointProgressLabel,
+    "2/3"
+  );
+});
+
+test("document progress exposes recent document history with current marker", () => {
+  const profile = buildUserProfileView({
+    user: {
+      ...makeUser(makeUserTarget()),
+      documents: {
+        currentDocPath: "docs/ai/agent/mcp.md",
+        currentDocTitle: "万字拆解 MCP，附带工程实践",
+        lastUpdatedAt: "2026-05-01T10:08:00.000Z",
+        docs: {
+          "docs/ai/agent/mcp.md": {
+            docPath: "docs/ai/agent/mcp.md",
+            docTitle: "万字拆解 MCP，附带工程实践",
+            progressPercentage: 42,
+            lastActivityAt: "2026-05-01T10:03:00.000Z",
+          },
+          "docs/system-design/framework/spring/spring-transaction.md": {
+            docPath: "docs/system-design/framework/spring/spring-transaction.md",
+            docTitle: "Spring 事务详解",
+            progressPercentage: 76,
+            lastActivityAt: "2026-05-01T10:08:00.000Z",
+          },
+        },
+      },
+    },
+    memoryProfile: {
+      id: "mem-1",
+      sessionsStarted: 0,
+      abilityItems: {
+        "memory-only-doc": {
+          abilityItemId: "memory-only-doc",
+          title: "只来自记忆证据的文档",
+          evidenceCount: 1,
+          lastUpdatedAt: "2026-05-01T10:12:00.000Z",
+          sourceDocPath: "docs/database/mysql/mysql-index.md",
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(
+    profile.documentProgress.recentDocs.map((document) => document.docPath),
+    [
+      "docs/ai/agent/mcp.md",
+      "docs/system-design/framework/spring/spring-transaction.md",
+    ]
+  );
+  assert.equal(profile.documentProgress.recentDocs[0].isCurrent, true);
+  assert.equal(profile.documentProgress.recentDocs[1].isCurrent, false);
+  assert.equal(profile.documentProgress.recentDocs[0].lastActivityAt, "2026-05-01T10:03:00.000Z");
+});

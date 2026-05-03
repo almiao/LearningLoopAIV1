@@ -70,6 +70,8 @@ export function readDocumentTrainingSession(documents = {}, docPath = "") {
     currentTrainingPointId: entry.currentTrainingPointId || "",
     currentCheckpointId: entry.currentCheckpointId || "",
     sessionUpdatedAt: entry.sessionUpdatedAt || "",
+    trainingAvailability: entry.trainingAvailability || "",
+    trainingUnavailableReason: entry.trainingUnavailableReason || "",
   };
 }
 
@@ -116,6 +118,9 @@ function mergeReadingEntry(target = {}, source = {}) {
 }
 
 function buildLearningStatusLabel(entry = {}) {
+  if (entry.trainingAvailability === "unavailable") {
+    return "仅阅读";
+  }
   if ((entry.assessedConceptCount || 0) > 0) {
     if ((entry.masteryPercentage || 0) >= 75) {
       return "已掌握";
@@ -126,6 +131,53 @@ function buildLearningStatusLabel(entry = {}) {
     return "已开启训练";
   }
   return "未训练";
+}
+
+function buildTrainingCheckpointProgressLabel(readingEntry = {}) {
+  const decomposition = readingEntry.decompositionSnapshot || {};
+  const trainingPoints = Array.isArray(decomposition.trainingPoints) ? decomposition.trainingPoints : [];
+  const currentTrainingPointId = readingEntry.currentTrainingPointId || "";
+  const currentCheckpointId = readingEntry.currentCheckpointId || "";
+  if (!trainingPoints.length || !currentTrainingPointId || !currentCheckpointId) {
+    return "";
+  }
+
+  const currentPoint = trainingPoints.find((point) => point?.id === currentTrainingPointId);
+  const checkpoints = Array.isArray(currentPoint?.checkpoints) ? currentPoint.checkpoints : [];
+  if (!checkpoints.length) {
+    return "";
+  }
+
+  const currentIndex = checkpoints.findIndex((checkpoint) => checkpoint?.id === currentCheckpointId);
+  if (currentIndex < 0) {
+    return "";
+  }
+  return `${currentIndex + 1}/${checkpoints.length}`;
+}
+
+function buildRecentDocumentHistory(documentEntries = {}, currentDocPath = "") {
+  return Object.values(documentEntries)
+    .filter((entry) => entry.documentActivityAt)
+    .sort((left, right) => {
+      if (left.docPath === currentDocPath && right.docPath !== currentDocPath) {
+        return -1;
+      }
+      if (right.docPath === currentDocPath && left.docPath !== currentDocPath) {
+        return 1;
+      }
+      return compareIsoTimestamp(right.documentActivityAt || "", left.documentActivityAt || "");
+    })
+    .map((entry) => ({
+      docPath: entry.docPath,
+      docTitle: entry.docTitle,
+      progressPercentage: entry.progressPercentage,
+      readingLabel: entry.readingLabel,
+      trainingStarted: entry.trainingStarted,
+      learningStatusLabel: entry.learningStatusLabel,
+      trainingCheckpointProgressLabel: entry.trainingCheckpointProgressLabel,
+      lastActivityAt: entry.documentActivityAt,
+      isCurrent: currentDocPath === entry.docPath,
+    }));
 }
 
 export function applyDocumentReadingEvent(documents = {}, {
@@ -261,11 +313,54 @@ export function applyDocumentTrainingSession(documents = {}, {
   });
   const nextEntry = {
     ...previousEntry,
+    trainingAvailability: "available",
+    trainingUnavailableReason: "",
     activeSessionId: sessionId || previousEntry.activeSessionId || "",
     activeSessionSnapshot: sessionSnapshot || previousEntry.activeSessionSnapshot || null,
     decompositionSnapshot: decompositionSnapshot || previousEntry.decompositionSnapshot || null,
     currentTrainingPointId: currentTrainingPointId || previousEntry.currentTrainingPointId || "",
     currentCheckpointId: currentCheckpointId || previousEntry.currentCheckpointId || "",
+    sessionUpdatedAt: timestamp,
+    lastActivityAt: timestamp,
+  };
+
+  return {
+    ...state,
+    currentDocPath: normalizedDocPath,
+    currentDocTitle: docTitle || nextEntry.docTitle || state.currentDocTitle || "",
+    lastUpdatedAt: timestamp,
+    docs: {
+      ...state.docs,
+      [normalizedDocPath]: nextEntry,
+    },
+  };
+}
+
+export function applyDocumentTrainingUnavailable(documents = {}, {
+  docPath = "",
+  docTitle = "",
+  reason = "",
+  timestamp = new Date().toISOString(),
+} = {}) {
+  const normalizedDocPath = normalizeReadingDocPath(docPath);
+  if (!normalizedDocPath) {
+    return documents;
+  }
+
+  const state = ensureDocumentsState(documents);
+  const previousEntry = ensureDocumentEntry(state.docs[normalizedDocPath] || {}, {
+    docPath: normalizedDocPath,
+    docTitle,
+  });
+  const nextEntry = {
+    ...previousEntry,
+    trainingAvailability: "unavailable",
+    trainingUnavailableReason: reason || previousEntry.trainingUnavailableReason || "",
+    activeSessionId: "",
+    activeSessionSnapshot: null,
+    decompositionSnapshot: null,
+    currentTrainingPointId: "",
+    currentCheckpointId: "",
     sessionUpdatedAt: timestamp,
     lastActivityAt: timestamp,
   };
@@ -297,7 +392,7 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
         ...stored,
         docPath: normalizedDocPath,
         docTitle: stored.docTitle || "",
-        lastActivityAt: targetRecord.lastActivityAt || stored.lastReadAt || "",
+        lastActivityAt: stored.lastActivityAt || stored.lastReadAt || "",
       }));
     }
   }
@@ -373,9 +468,17 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
           hasEvidence: Number(memoryEntry.assessedConceptCount || 0) > 0,
           hasReading: progressPercentage > 0,
         });
+        const documentActivityAt = maxIsoTimestamp(
+          readingEntry.lastActivityAt || "",
+          readingEntry.lastReadAt || "",
+          readingEntry.lastTrainingAt || "",
+          readingEntry.lastTrainingStartedAt || "",
+          readingEntry.sessionUpdatedAt || ""
+        );
         const entry = {
           docPath,
           docTitle: readingEntry.docTitle || "",
+          activeSessionId: readingEntry.activeSessionId || "",
           progressPercentage,
           readingStatus: readingEntry.status || (progressPercentage > 0 ? "opened" : "unread"),
           readingLabel: progressLabel(progressPercentage),
@@ -389,12 +492,13 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
           evidenceCount: Number(memoryEntry.evidenceCount || 0),
           masteryPercentage,
           masteryLabel,
+          trainingCheckpointProgressLabel: buildTrainingCheckpointProgressLabel(readingEntry),
+          trainingAvailability: readingEntry.trainingAvailability || "",
+          trainingUnavailableReason: readingEntry.trainingUnavailableReason || "",
           learningStatusLabel: "",
+          documentActivityAt,
           lastActivityAt: maxIsoTimestamp(
-            readingEntry.lastActivityAt || "",
-            readingEntry.lastReadAt || "",
-            readingEntry.lastTrainingAt || "",
-            readingEntry.lastTrainingStartedAt || "",
+            documentActivityAt,
             memoryEntry.lastEvidenceAt || ""
           ),
           isCurrent: currentDocPath === docPath,
@@ -408,6 +512,7 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
   return {
     currentDocPath,
     currentDocTitle,
+    recentDocs: buildRecentDocumentHistory(documentEntries, currentDocPath),
     docs: documentEntries,
     stats: {
       startedReadingCount: docList.filter((item) => item.progressPercentage > 0).length,

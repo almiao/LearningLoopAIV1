@@ -117,6 +117,24 @@ class StreamingTutorIntelligence:
         self.on_done()
         return "".join(chunks)
 
+    def generate_teach_reply_stream(self, **kwargs) -> str:
+        chunks = []
+        if hasattr(self.base, "generate_teach_reply_stream_events"):
+            for chunk in self.base.generate_teach_reply_stream_events(**kwargs):
+                if not chunk:
+                    continue
+                chunks.append(chunk)
+                self.on_chunk(chunk)
+            self.on_done()
+            return "".join(chunks)
+
+        text = self.base.generate_teach_reply_stream(**kwargs) if hasattr(self.base, "generate_teach_reply_stream") else self.generate_reply_stream(**kwargs)
+        if text:
+            chunks.append(text)
+            self.on_chunk(text)
+        self.on_done()
+        return "".join(chunks)
+
 
 class StartTargetRequest(BaseModel):
     userId: str = ""
@@ -564,12 +582,20 @@ def answer_stream(payload: AnswerRequest) -> StreamingResponse:
         def emit_reply_done() -> None:
             event_queue.put(("reply_done", {}))
 
+        def emit_progress(event: str, data: Dict[str, Any]) -> None:
+            event_queue.put((event, data))
+
         base_intelligence = get_tutor_intelligence()
         intelligence = StreamingTutorIntelligence(base_intelligence, emit_delta, emit_reply_done) if base_intelligence else None
 
         def worker():
             try:
-                result = answer_session(session, payload, intelligence_override=intelligence)
+                result = answer_session(
+                    session,
+                    payload,
+                    intelligence_override=intelligence,
+                    progress_callback=emit_progress,
+                )
                 SESSIONS[payload.sessionId] = session
                 event_queue.put(("turn_result", result))
             except Exception as exc:  # pragma: no cover - streamed back to client

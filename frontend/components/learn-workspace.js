@@ -63,77 +63,31 @@ function splitTextBlocks(value) {
     .filter(Boolean);
 }
 
-function renderQuestionPhase(meta) {
-  switch (meta?.phase) {
-    case "teach-back":
-      return "讲解后复述";
-    case "follow-up":
-      return "追问";
-    case "revisit":
-      return "回访";
-    default:
-      return "首问";
+const trainingProgressPhaseOrder = {
+  intent: 0,
+  reply: 1,
+  assessment: 2,
+  next_step: 3,
+};
+
+function upsertTrainingProgressStep(steps = [], nextStep = null) {
+  if (!nextStep?.phase) {
+    return steps;
   }
+  const remainingSteps = steps.filter((step) => step.phase !== nextStep.phase);
+  return remainingSteps
+    .concat({
+      ...nextStep,
+    })
+    .sort((left, right) => {
+      const leftOrder = trainingProgressPhaseOrder[left.phase] ?? 99;
+      const rightOrder = trainingProgressPhaseOrder[right.phase] ?? 99;
+      return leftOrder - rightOrder;
+    });
 }
 
-function getTrainingPointProgress(points = [], currentPointId = "") {
-  if (!points.length) {
-    return null;
-  }
-  const currentIndex = Math.max(0, points.findIndex((point) => point.id === currentPointId));
-  return {
-    currentIndex: currentIndex + 1,
-    total: points.length,
-  };
-}
-
-function getTrainingPointStatus(session, concept, isActive = false) {
-  if (isActive) {
-    return "当前训练点";
-  }
-  const pointState = (session?.trainingPointStates || []).find((item) => item.pointId === concept.id);
-  if (pointState?.completed) {
-    return pointState.result === "passed" ? "已通过" : "已完成";
-  }
-  if (pointState?.result === "in_progress") {
-    return "进行中";
-  }
-  return "待开始";
-}
-
-function getCheckpointProgress(point = null, currentCheckpointId = "") {
-  const checkpoints = point?.checkpoints || [];
-  if (!checkpoints.length) {
-    return null;
-  }
-  const currentIndex = Math.max(0, checkpoints.findIndex((checkpoint) => checkpoint.id === currentCheckpointId));
-  return {
-    currentIndex: currentIndex + 1,
-    total: checkpoints.length,
-  };
-}
-
-function getCheckpointStatus(session, checkpoint = {}, isActive = false) {
-  if (isActive) {
-    return "当前子项";
-  }
-  const checkpointState = session?.conceptStates?.[checkpoint.id] || {};
-  if (checkpointState.completed) {
-    if (checkpointState.result === "passed") {
-      return "已通过";
-    }
-    if (checkpointState.result === "partial") {
-      return "已讲解";
-    }
-    if (checkpointState.result === "skipped") {
-      return "已跳过";
-    }
-    return "已结束";
-  }
-  if ((checkpointState.attempts || 0) > 0 || (checkpointState.teachCount || 0) > 0) {
-    return "进行中";
-  }
-  return "待开始";
+function pickLatestProgressStep(steps = [], phase = "") {
+  return [...steps].reverse().find((step) => step.phase === phase) || null;
 }
 
 function buildDomainMap(session) {
@@ -229,6 +183,51 @@ function buildDocumentHeadings(markdown = "") {
   return headings;
 }
 
+function getTrainingCtaLabel(documentProgressEntry = null) {
+  if (documentProgressEntry?.trainingAvailability === "unavailable") {
+    return "暂不支持训练";
+  }
+  if (!documentProgressEntry?.trainingStarted) {
+    return "开始训练";
+  }
+  const checkpointProgressLabel = String(documentProgressEntry?.trainingCheckpointProgressLabel || "").trim();
+  if (checkpointProgressLabel) {
+    return `继续训练（${checkpointProgressLabel}）`;
+  }
+  return "继续训练";
+}
+
+function buildTrainingCompletion(session = null, points = []) {
+  if (!session || session.currentProbe || !points.length) {
+    return null;
+  }
+  const checkpointIds = points.flatMap((point) => (point.checkpoints || []).map((checkpoint) => checkpoint.id));
+  if (!checkpointIds.length) {
+    return null;
+  }
+  const states = checkpointIds.map((id) => session.conceptStates?.[id] || {});
+  const completedCount = states.filter((state) => state.completed).length;
+  const passedCount = states.filter((state) => state.completed && state.result === "passed").length;
+  const skippedCount = states.filter((state) => state.result === "skipped").length;
+  const reviewCount = states.filter((state) => state.completed && state.result !== "passed").length;
+  const reviewPoint = points.find((point) =>
+    (point.checkpoints || []).some((checkpoint) => {
+      const state = session.conceptStates?.[checkpoint.id] || {};
+      return state.completed && state.result !== "passed";
+    })
+  );
+  return {
+    completedCount,
+    passedCount,
+    reviewCount,
+    skippedCount,
+    totalCount: checkpointIds.length,
+    reviewPointId: reviewPoint?.id || "",
+    assessment: session.latestFeedback?.scoreSummary || null,
+    takeaway: session.latestFeedback?.takeaway || "",
+  };
+}
+
 export function LearnWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -265,6 +264,7 @@ export function LearnWorkspace() {
   const [panelLayoutLoaded, setPanelLayoutLoaded] = useState(false);
   const [isDraggingLayout, setIsDraggingLayout] = useState(false);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
+  const [sessionIdCopied, setSessionIdCopied] = useState(false);
   const deferredSession = useDeferredValue(session);
   const visibleView = buildVisibleSessionView(deferredSession || {});
   const chatTimeline = visibleView.chatTimeline || [];
@@ -345,25 +345,28 @@ export function LearnWorkspace() {
       return docConceptIds.has(entry.conceptId);
     });
   }, [docConceptIds, docTrainingReady, visibleChatTimeline]);
-  const questionProgress = session?.currentQuestionMeta?.progress || null;
-  const trainingTakeaway = session?.latestFeedback?.takeaway || "";
-  const trainingClosed = workspaceMode === "training" && Boolean(session) && !session?.currentProbe;
-  const trainingPointProgress = useMemo(
-    () => getTrainingPointProgress(docConcepts, trainingConcept?.id || session?.currentTrainingPointId || ""),
-    [docConcepts, session?.currentTrainingPointId, trainingConcept?.id]
+  const trainingCompletion = useMemo(
+    () => buildTrainingCompletion(sessionBelongsToDocument(session, activeDocPath) ? session : null, docConcepts),
+    [activeDocPath, docConcepts, session]
   );
-  const checkpointProgress = useMemo(
-    () => getCheckpointProgress(trainingConcept, session?.currentCheckpointId || ""),
-    [trainingConcept, session?.currentCheckpointId]
-  );
+  const latestMemorySummary = visibleView.latestMemorySummary || "";
   const knowledgeTree = useMemo(() => buildKnowledgeTree(knowledgeDocuments), [knowledgeDocuments]);
   const documentHeadings = useMemo(
     () => buildDocumentHeadings(knowledgeDoc?.markdown || ""),
     [knowledgeDoc?.markdown]
   );
+  const activeDocumentProgressEntry = profile?.documentProgress?.docs?.[activeDocPath] || null;
+  const trainingCtaLabel = getTrainingCtaLabel(activeDocumentProgressEntry);
+  const visibleSessionId = session?.sessionId || activeDocumentProgressEntry?.activeSessionId || "";
   const outlineAvailable = documentHeadings.length > 0 || knowledgeTree.length > 0;
+  const isPreparingTraining = isStarting && sessionStartMode === "training";
+  const activeWorkspaceMode = isPreparingTraining ? "training" : workspaceMode;
   const readingCompanionHasHistory = readingChatTimeline.length > 0 || streamingTurn?.mode === "reading";
   const trainingHasHistory = trainingChatTimeline.length > 0 || streamingTurn?.mode === "training";
+  const latestTrainingAssistantEntryId = useMemo(
+    () => [...trainingChatTimeline].reverse().find((entry) => entry.type === "message" && entry.role === "assistant" && !entry.isProgressUpdate)?.id || "",
+    [trainingChatTimeline]
+  );
   const qaNeedsAttention = Boolean(
     trainingUnlocked ||
     sessionBelongsToDocument(session, activeDocPath) ||
@@ -376,7 +379,7 @@ export function LearnWorkspace() {
     answer.trim() ||
     isComposerFocused
   );
-  const autoQaPanelPercent = workspaceMode === "training"
+  const autoQaPanelPercent = activeWorkspaceMode === "training"
     ? (trainingHasHistory || qaNeedsAttention ? 52 : 48)
     : (qaNeedsAttention ? 42 : 34);
   const qaPanelPercent = panelLayout.mode === "manual" && Number.isFinite(panelLayout.qaPercent)
@@ -653,7 +656,33 @@ export function LearnWorkspace() {
     setProfile(data);
   }
 
-  async function startSession({ mode = "reading" } = {}) {
+  async function copySessionId() {
+    if (!visibleSessionId || typeof navigator === "undefined" || !navigator.clipboard) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(visibleSessionId);
+      setSessionIdCopied(true);
+      window.setTimeout(() => setSessionIdCopied(false), 1500);
+    } catch {}
+  }
+
+  function appendReadingSystemNote(message = "") {
+    const body = String(message || "").trim();
+    if (!body) {
+      return;
+    }
+    setReadingChatTimeline((items) => items.concat([
+      {
+        id: `reading-note:${Date.now()}`,
+        role: "assistant",
+        body,
+        isProgressUpdate: true,
+      },
+    ]));
+  }
+
+  async function startSession({ mode = "reading", restart = false } = {}) {
     if (!profile?.user?.id) {
       return null;
     }
@@ -665,7 +694,16 @@ export function LearnWorkspace() {
         userId: profile.user.id,
         docPath: activeDocPath,
         interactionPreference,
+        restartTraining: restart,
       });
+      if (nextSession?.trainingAvailability === "unavailable") {
+        setSession(null);
+        setTrainingUnlocked(false);
+        setWorkspaceMode("reading");
+        appendReadingSystemNote(nextSession.reasonMessage || "当前文档暂时无法生成训练点，已保留为阅读材料。");
+        await refreshProfile();
+        return null;
+      }
       setSession(nextSession);
       await refreshProfile();
       return nextSession;
@@ -678,6 +716,10 @@ export function LearnWorkspace() {
   }
 
   async function unlockTraining() {
+    if (activeDocumentProgressEntry?.trainingAvailability === "unavailable") {
+      appendReadingSystemNote(activeDocumentProgressEntry.trainingUnavailableReason || "当前文档暂时无法生成训练点，已保留为阅读材料。");
+      return;
+    }
     let nextSession = sessionBelongsToDocument(session, activeDocPath) ? session : null;
     if (!nextSession) {
       nextSession = await startSession({ mode: "training" });
@@ -687,6 +729,23 @@ export function LearnWorkspace() {
     }
     setTrainingUnlocked(true);
     setWorkspaceMode("training");
+  }
+
+  async function restartTraining() {
+    setTrainingUnlocked(true);
+    setWorkspaceMode("training");
+    setPendingSubmittedAnswer("");
+    setAnswer("");
+    await startSession({ mode: "training", restart: true });
+  }
+
+  async function reviewWeakPoint() {
+    if (!trainingCompletion?.reviewPointId) {
+      return;
+    }
+    setTrainingUnlocked(true);
+    setWorkspaceMode("training");
+    await focusConcept(trainingCompletion.reviewPointId);
   }
 
   async function ensureSessionForReading() {
@@ -714,6 +773,9 @@ export function LearnWorkspace() {
         assistantText: "",
         replyComplete: false,
         decisionPending: false,
+        progressSteps: [],
+        assessmentPreview: null,
+        nextMovePreview: null,
       });
       if (shouldClearComposer) {
         setAnswer("");
@@ -734,6 +796,27 @@ export function LearnWorkspace() {
             setStreamingTurn((turn) => (
               turn
                 ? { ...turn, assistantText: `${turn.assistantText}${data.delta || ""}`, decisionPending: false }
+                : turn
+            ));
+          }
+          if (event === "progress") {
+            setStreamingTurn((turn) => (
+              turn
+                ? {
+                    ...turn,
+                    progressSteps: upsertTrainingProgressStep(turn.progressSteps || [], data),
+                  }
+                : turn
+            ));
+          }
+          if (event === "assessment_preview") {
+            setStreamingTurn((turn) => (
+              turn
+                ? {
+                    ...turn,
+                    assessmentPreview: data.scoreSummary || null,
+                    nextMovePreview: data.nextMove || null,
+                  }
                 : turn
             ));
           }
@@ -783,6 +866,9 @@ export function LearnWorkspace() {
         assistantText: "",
         replyComplete: false,
         decisionPending: false,
+        progressSteps: [],
+        assessmentPreview: null,
+        nextMovePreview: null,
       });
       if (shouldClearComposer) {
         setAnswer("");
@@ -837,6 +923,17 @@ export function LearnWorkspace() {
     }
     setPendingSubmittedAnswer("");
     await submitAnswerWithSession(activeSession, options);
+  }
+
+  function handleComposerKeyDown(event) {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent?.isComposing) {
+      return;
+    }
+    event.preventDefault();
+    if (isAnswering || !answer.trim()) {
+      return;
+    }
+    submitAnswer();
   }
 
   async function focusConcept(conceptId) {
@@ -1011,16 +1108,16 @@ export function LearnWorkspace() {
   const readingStarterPrompts = [
     {
       label: "总结全文",
-      value: `请只基于《${documentTitle}》这篇文档，用 3 句话总结核心内容。`,
+      value: `请参考《${documentTitle}》这篇文档，用 3 句话总结核心内容。`,
     },
     {
       label: "列面试追问",
-      value: `请只基于《${documentTitle}》这篇文档，列出 5 个高频面试追问，并说明每题想考什么。`,
+      value: `请参考《${documentTitle}》这篇文档，列出 5 个高频面试追问，并说明每题想考什么。`,
     },
   ];
   const studyMainClassName = focusMode
-    ? `study-main study-mode-${workspaceMode} focus-reader-layout`
-    : `study-main study-mode-${workspaceMode}${workspaceMode === "reading" && !trainingUnlocked ? " pre-training-layout" : ""}`;
+    ? `study-main study-mode-${activeWorkspaceMode} focus-reader-layout`
+    : `study-main study-mode-${activeWorkspaceMode}${activeWorkspaceMode === "reading" && !trainingUnlocked ? " pre-training-layout" : ""}`;
   const studyMainStyle = focusMode
     ? undefined
     : {
@@ -1055,14 +1152,14 @@ export function LearnWorkspace() {
               <div className="workspace-tabs" aria-label="学习模式">
                 <button
                   type="button"
-                  className={workspaceMode === "reading" ? "workspace-tab active" : "workspace-tab"}
+                  className={activeWorkspaceMode === "reading" ? "workspace-tab active" : "workspace-tab"}
                   onClick={() => setWorkspaceMode("reading")}
                 >
                   阅读
                 </button>
                 <button
                   type="button"
-                  className={workspaceMode === "training" ? "workspace-tab active" : "workspace-tab locked"}
+                  className={activeWorkspaceMode === "training" ? "workspace-tab active" : "workspace-tab locked"}
                   onClick={() => trainingUnlocked && setWorkspaceMode("training")}
                   disabled={!trainingUnlocked}
                 >
@@ -1211,16 +1308,24 @@ export function LearnWorkspace() {
           </div>
         ) : null}
 
-        <aside className={`qa-panel qa-panel-${workspaceMode}`} data-testid="qa-panel">
+        <aside className={`qa-panel qa-panel-${activeWorkspaceMode}`} data-testid="qa-panel">
           <header className="qa-header">
             <div className="qa-title-group">
-              <strong>{workspaceMode === "training" ? "训练" : "阅读助理"}</strong>
+              <strong>{activeWorkspaceMode === "training" ? "训练" : "阅读助理"}</strong>
             </div>
             <span className="qa-header-spacer" />
             <div className={`qa-header-controls ${!trainingUnlocked ? "qa-header-controls-locked" : ""}`}>
-              {!trainingUnlocked ? (
+              {visibleSessionId ? (
+                <div className="qa-session-debug">
+                  <span className="qa-session-id" title={visibleSessionId}>sessionId {visibleSessionId}</span>
+                  <button type="button" className="qa-session-copy" onClick={copySessionId}>
+                    {sessionIdCopied ? "已复制" : "复制"}
+                  </button>
+                </div>
+              ) : null}
+              {activeWorkspaceMode === "reading" ? (
                 <button type="button" className="qa-header-lock" disabled={isStarting} onClick={() => unlockTraining()}>
-                  <span>{isStarting ? "准备中" : "开始训练"}</span>
+                  <span>{isStarting ? "准备中" : (trainingUnlocked ? "进入训练" : trainingCtaLabel)}</span>
                 </button>
               ) : null}
             </div>
@@ -1228,9 +1333,9 @@ export function LearnWorkspace() {
 
           <div className="qa-scroll" ref={qaScrollRef}>
             <section className="chat-stack">
-              {workspaceMode === "reading" ? (
+              {activeWorkspaceMode === "reading" ? (
                 <article className={readingCompanionHasHistory ? "reading-companion-card compact" : "reading-companion-card"}>
-                  <div className="reading-companion-source">基于本文 · {documentTitle}</div>
+                  <div className="reading-companion-source">参考本文 · {documentTitle}</div>
                   <h3>问这篇文档</h3>
                   <p>总结、解释原文，或生成面试追问。</p>
                   <div className="reading-companion-actions">
@@ -1267,119 +1372,73 @@ export function LearnWorkspace() {
                 </article>
               ) : null}
 
-              {workspaceMode === "training" ? (
-                <article className="training-hero-card">
-                  <div className="training-hero-title">训练模式</div>
-                  <p>
-                    {docTrainingReady
-                      ? "直接作答，或先看解析。"
-                      : "继续阅读，或直接围绕原文提问。"}
-                  </p>
-                  {trainingPointProgress ? (
-                    <div className="training-progress-copy">
-                      <p className="muted">
-                        当前训练点：第 {trainingPointProgress.currentIndex} / {trainingPointProgress.total} 个
-                        {checkpointProgress ? ` · 当前子项：第 ${checkpointProgress.currentIndex} / ${checkpointProgress.total} 个` : ""}
-                        {questionProgress ? ` · 本题第 ${questionProgress.currentRound} / ${questionProgress.maxRounds} 次交互 · ${renderQuestionPhase(session?.currentQuestionMeta)}` : ""}
-                      </p>
-                      {currentCheckpoint?.checkpointStatement ? (
-                        <p className="training-current-checkpoint">
-                          当前子项：{currentCheckpoint.checkpointStatement}
-                        </p>
-                      ) : null}
-                      {questionProgress ? (
-                        <p className="training-progress-note">
-                          每个子项会尽量在 2-3 次内决定是追问、讲解还是切到下一个子项，避免一直卡在同一题。
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : questionProgress ? (
-                    <div className="training-progress-copy">
-                      <p className="muted">
-                        本题第 {questionProgress.currentRound} / {questionProgress.maxRounds} 次交互 · {renderQuestionPhase(session?.currentQuestionMeta)}
-                      </p>
-                      <p className="training-progress-note">
-                        这表示当前训练点内部的来回次数，不是整场训练的总题数。
-                      </p>
-                    </div>
-                  ) : null}
-                  {docConcepts.length ? (
-                    <section className="training-point-panel">
-                      <div className="training-point-panel-head">
-                        <strong>LLM 拆解结果</strong>
-                        <span>当前文档共 {docConcepts.length} 个训练点</span>
-                      </div>
-                      <div className="training-point-list">
-                        {docConcepts.map((concept, index) => {
-                          const isActive = concept.id === trainingConcept?.id;
-                          return (
-                            <button
-                              type="button"
-                              key={concept.id}
-                              className={isActive ? "training-point-chip active" : "training-point-chip"}
-                              onClick={() => focusConcept(concept.id)}
-                              disabled={!session?.sessionId || isAnswering}
-                            >
-                              <span className="training-point-order">{index + 1}</span>
-                              <span className="training-point-copy">
-                                <span className="training-point-name">{concept.title}</span>
-                                <span className="training-point-meta">{getTrainingPointStatus(session, concept, isActive)}</span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {trainingConcept?.checkpoints?.length ? (
-                        <section className="checkpoint-panel">
-                          <div className="checkpoint-panel-head">
-                            <strong>当前训练点的子项推进</strong>
-                            <span>共 {trainingConcept.checkpoints.length} 个子项</span>
-                          </div>
-                          <div className="checkpoint-list">
-                            {trainingConcept.checkpoints.map((checkpoint, index) => {
-                              const isActive = checkpoint.id === session?.currentCheckpointId;
-                              return (
-                                <div className={isActive ? "checkpoint-chip active" : "checkpoint-chip"} key={checkpoint.id}>
-                                  <span className="checkpoint-order">{index + 1}</span>
-                                  <span className="checkpoint-copy">
-                                    <span className="checkpoint-name">{checkpoint.statement}</span>
-                                    <span className="checkpoint-meta">{getCheckpointStatus(session, checkpoint, isActive)}</span>
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </section>
-                      ) : null}
-                    </section>
-                  ) : null}
-                  {trainingClosed && trainingTakeaway ? (
-                    <p className="muted">
-                      本题已收口：{trainingTakeaway}
-                    </p>
-                  ) : null}
-                </article>
-              ) : null}
-
-              {(workspaceMode === "training" ? trainingChatTimeline : readingChatTimeline).map((entry) => (
+              {(activeWorkspaceMode === "training" ? trainingChatTimeline : readingChatTimeline).map((entry) => (
                 entry.type === "event" ? (
                   <div className="chat-event-row" key={entry.id}>{entry.label}</div>
                 ) : (
-                  <article className={entry.role === "assistant" ? "message-card assistant" : "message-card learner"} key={entry.id}>
-                    <div className={`message-body ${entry.role === "assistant" ? "markdown-content" : ""}`}>
-                      {entry.role === "assistant"
-                        ? renderMarkdownContent(
-                            (entry.bodyParts?.length ? entry.bodyParts.join("\n\n") : entry.body) || "",
-                            `${entry.id}-assistant`
-                          )
-                        : (entry.bodyParts?.length ? entry.bodyParts : [entry.body]).filter(Boolean).map((block, index) => (
-                            <p key={`${entry.id}:${index}`}>{block}</p>
-                          ))}
-                      {entry.takeaway ? <p><strong>带走一句：</strong>{entry.takeaway}</p> : null}
-                    </div>
-                  </article>
+                  <div
+                    key={`${entry.id}:group-shell`}
+                    className={entry.role === "assistant" ? "chat-message-group assistant-group" : "chat-message-group learner-group"}
+                  >
+                    <article className={entry.role === "assistant" ? `message-card assistant ${entry.isProgressUpdate ? "progress-update" : ""}` : "message-card learner"} key={entry.id}>
+                      <div className={`message-body ${entry.role === "assistant" ? "markdown-content" : ""}`}>
+                        {entry.role === "assistant"
+                          ? renderMarkdownContent(
+                              (entry.bodyParts?.length ? entry.bodyParts.join("\n\n") : entry.body) || "",
+                              `${entry.id}-assistant`
+                            )
+                          : (entry.bodyParts?.length ? entry.bodyParts : [entry.body]).filter(Boolean).map((block, index) => (
+                              <p key={`${entry.id}:${index}`}>{block}</p>
+                            ))}
+                        {entry.takeaway ? <p><strong>带走一句：</strong>{entry.takeaway}</p> : null}
+                      </div>
+                    </article>
+                    {entry.role === "assistant" && !entry.isProgressUpdate && !entry.isEvaluationMessage && entry.id === latestTrainingAssistantEntryId && latestMemorySummary ? (
+                      <article className="message-card assistant progress-update" key={`${entry.id}:memory`}>
+                        <div className="message-body">
+                          <p className="assistant-weak-line">{latestMemorySummary}</p>
+                        </div>
+                      </article>
+                    ) : null}
+                  </div>
                 )
               ))}
+
+              {activeWorkspaceMode === "training" && trainingCompletion && !streamingTurn ? (
+                <article className="message-card assistant training-complete-card" data-testid="training-complete-card">
+                  <div className="training-complete-kicker">本轮训练结束</div>
+                  <div className="training-complete-title">这篇文档已经收口，可以选择下一步。</div>
+                  <p>
+                    已完成 {trainingCompletion.completedCount} / {trainingCompletion.totalCount} 个子项，
+                    {trainingCompletion.reviewCount > 0
+                      ? `其中 ${trainingCompletion.reviewCount} 个建议复习`
+                      : "当前没有明显薄弱子项"}
+                    {trainingCompletion.skippedCount > 0 ? `，跳过 ${trainingCompletion.skippedCount} 个` : ""}。
+                  </p>
+                  {trainingCompletion.assessment ? (
+                    <p className="assistant-weak-line assistant-score-line">
+                      <strong>本次评分：</strong>{trainingCompletion.assessment.stateLabel || trainingCompletion.assessment.state || "已评分"}
+                    </p>
+                  ) : null}
+                  {trainingCompletion.takeaway ? (
+                    <p className="training-complete-takeaway">最后带走：{trainingCompletion.takeaway}</p>
+                  ) : null}
+                  <div className="training-complete-actions">
+                    <button type="button" className="secondary-pill" disabled={isStarting || isAnswering || !trainingCompletion.reviewPointId} onClick={reviewWeakPoint}>
+                      再练薄弱点
+                    </button>
+                    <button type="button" className="secondary-pill" disabled={isStarting || isAnswering} onClick={restartTraining}>
+                      重新训练一轮
+                    </button>
+                    <button type="button" className="secondary-pill" disabled={isStarting || isAnswering} onClick={() => {
+                      setWorkspaceMode("reading");
+                      setTrainingUnlocked(false);
+                    }}>
+                      回到阅读
+                    </button>
+                  </div>
+                </article>
+              ) : null}
 
               {streamingTurn ? (
                 <>
@@ -1396,16 +1455,23 @@ export function LearnWorkspace() {
                       )}
                     </div>
                   </article>
+                  {/* Process hints are rendered as separate weak rows so the final
+                      explanation and the follow-up question stay in chat history
+                      as stable primary messages instead of being overwritten. */}
+                  {streamingTurn.mode === "training" && streamingTurn.intent === "teach" && !streamingTurn.assistantText ? (
+                    <div className="chat-event-row weak-chat-event" aria-live="polite">
+                      已切换为讲解模式，本轮不评分。
+                    </div>
+                  ) : null}
+                  {streamingTurn.mode === "training" && !streamingTurn.assistantText && !streamingTurn.replyComplete ? (
+                    <div className="chat-event-row weak-chat-event" aria-live="polite">
+                      {(pickLatestProgressStep(streamingTurn.progressSteps || [], "reply") || {}).detail || "正在生成解析..."}
+                    </div>
+                  ) : null}
                   {streamingTurn.mode === "training" && streamingTurn.replyComplete && streamingTurn.decisionPending ? (
-                    <article className="message-card assistant pending-decision-card" aria-live="polite">
-                      <div className="pending-decision-kicker">下一步生成中</div>
-                      <p>正在评估你的答案、更新掌握度，并决定是追问、讲解还是进入下一个训练点。</p>
-                      <div className="pending-decision-dots" aria-hidden="true">
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-                    </article>
+                    <div className="chat-event-row weak-chat-event" aria-live="polite">
+                      {(pickLatestProgressStep(streamingTurn.progressSteps || [], "next_step") || {}).detail || "正在安排下一步..."}
+                    </div>
                   ) : null}
                 </>
               ) : null}
@@ -1423,23 +1489,20 @@ export function LearnWorkspace() {
               rows="1"
               value={answer}
               onChange={(event) => setAnswer(event.target.value)}
+              onKeyDown={handleComposerKeyDown}
               onFocus={() => setIsComposerFocused(true)}
               onBlur={() => setIsComposerFocused(false)}
               placeholder={isAnswering ? "已发送，正在等待下一步..." : "输入回答、追问，或引用原文段落。"}
             />
 
             <div className="question-input-row">
-              {workspaceMode === "training" ? (
+              {activeWorkspaceMode === "training" ? (
                 <div className="suggested-actions">
                   <button type="button" className="secondary-pill" disabled={!session || isAnswering || !docTrainingReady} onClick={() => submitAnswer({ nextAnswer: "查看解析", intent: "teach" })}>
                     查看解析
                   </button>
                 </div>
-              ) : (
-                <div className="suggested-actions">
-                  <span className="composer-source-badge">基于本文回答</span>
-                </div>
-              )}
+              ) : null}
               <button type="submit" className="send-button" disabled={isAnswering || !answer.trim()}>
                 ↑
               </button>

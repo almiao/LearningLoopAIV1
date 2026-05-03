@@ -38,10 +38,6 @@ function renderResolution(turnResolution) {
   return "这一轮先收口";
 }
 
-function renderMemoryEventLabel(event) {
-  return event.summary || event.message || event.title || "有新的进展更新";
-}
-
 function splitTextBlocks(value) {
   return String(value || "")
     .split(/\n{2,}/)
@@ -87,10 +83,7 @@ export function AppShell() {
   const deferredSession = useDeferredValue(session);
   const visibleView = buildVisibleSessionView(deferredSession || {});
   const chatTimeline = visibleView.chatTimeline || [];
-  const visibleMemoryEvents = (visibleView.latestMemoryEvents?.length
-    ? visibleView.latestMemoryEvents
-    : deferredSession?.memoryEvents || []).slice(-4);
-  const questionProgress = session?.currentQuestionMeta?.progress || null;
+  const latestMemorySummary = visibleView.latestMemorySummary || "";
   const sessionTakeaway = session?.latestFeedback?.takeaway || "";
   const sessionClosed = Boolean(session) && !session?.currentProbe;
   const trainingPointProgress = getTrainingPointProgress(session?.trainingPoints || [], session?.currentTrainingPointId || "");
@@ -463,10 +456,9 @@ export function AppShell() {
               <div className="card">
                 <div className="tag">待你回答</div>
                 <p>{session.currentProbe || "当前没有待回答问题。"}</p>
-                {questionProgress ? (
+                {trainingPointProgress ? (
                   <p className="muted">
-                    {trainingPointProgress ? `训练点 ${trainingPointProgress.currentIndex} / ${trainingPointProgress.total} · ` : ""}
-                    本题第 {questionProgress.currentRound} / {questionProgress.maxRounds} 次交互 · {renderQuestionPhase(session.currentQuestionMeta)}
+                    训练点 {trainingPointProgress.currentIndex} / {trainingPointProgress.total} · {renderQuestionPhase(session.currentQuestionMeta)}
                   </p>
                 ) : null}
                 {session.latestFeedback?.turnResolution ? (
@@ -509,13 +501,11 @@ export function AppShell() {
                 </div>
               ) : null}
               <div className="list" style={{ marginTop: 12 }}>
-                {visibleMemoryEvents.length ? (
-                  visibleMemoryEvents.map((event, index) => (
-                    <article className="card compact-card" key={`${event.type || "memory"}-${index}`}>
-                      <small className="muted">{event.type || "memory"}</small>
-                      <div>{renderMemoryEventLabel(event)}</div>
-                    </article>
-                  ))
+                {latestMemorySummary ? (
+                  <article className="card compact-card">
+                    <small className="muted">learning memory</small>
+                    <div>{latestMemorySummary}</div>
+                  </article>
                 ) : (
                   <div className="card compact-card">
                     <div className="muted">这一轮还没有新的记忆写回或进展事件。</div>

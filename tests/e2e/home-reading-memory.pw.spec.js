@@ -23,30 +23,53 @@ async function loginAndSeed(page, request) {
   return payload.profile.user.id;
 }
 
+async function seedReadingProgress(request, userId, docPath, docTitle) {
+  const response = await request.post(`${bffBaseUrl}/api/profile/reading-progress`, {
+    data: {
+      userId,
+      docPath,
+      docTitle,
+      scrollRatio: 0.52,
+      dwellMs: 25_000,
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+}
+
 test("home page lists the full static catalog and opens documents without target hints", async ({ page }) => {
   await page.goto("/", { waitUntil: "networkidle" });
-  await expect(page.getByText("JavaGuide 全量目录")).toBeVisible();
-  await expect(page.getByText("304")).toBeVisible();
-  await expect(page.locator(".knowledge-doc-row").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "搜索技术资料或选择入口" })).toBeVisible();
+  await expect(page.locator(".catalog-section-tab").first()).toBeVisible();
+  await expect(page.locator(".catalog-doc-row").first()).toBeVisible();
 
-  await page.locator(".knowledge-doc-row").first().click();
+  await page.locator(".catalog-doc-row").first().click();
   await page.waitForURL(/\/learn\?/);
   expect(new URL(page.url()).searchParams.has("doc")).toBe(true);
   expect(new URL(page.url()).searchParams.has("target")).toBe(false);
   expect(new URL(page.url()).searchParams.has("autostart")).toBe(false);
 });
 
-test("home page does not surface history-driven current or recommendation labels", async ({ page, request }) => {
-  await loginAndSeed(page, request);
+test("home page exposes reading history as a catalog section", async ({ page, request }) => {
+  const userId = await loginAndSeed(page, request);
+  await seedReadingProgress(
+    request,
+    userId,
+    "docs/system-design/framework/spring/spring-transaction.md",
+    "Spring 事务详解"
+  );
 
   await page.goto("/", { waitUntil: "networkidle" });
-  await expect(page.getByText("JavaGuide 全量目录")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "搜索技术资料或选择入口" })).toBeVisible();
+  await page.getByRole("button", { name: /历史文档/ }).click();
+  await expect(page.locator(".catalog-list-head")).toContainText("历史文档");
+  await expect(page.locator(".catalog-doc-grid")).toContainText("Spring 事务详解");
+  await expect(page.locator(".catalog-doc-grid")).toContainText("上次学习");
   await expect(page.getByText("继续学习（推荐）")).toHaveCount(0);
   await expect(page.getByText("当前章节")).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("你上次读到");
 
   await page.goto("/learn?doc=docs/system-design/framework/spring/spring-transaction.md&autostart=1", {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
   });
   await expect(page.getByTestId("document-surface")).toContainText("Spring");
 
@@ -58,7 +81,7 @@ test("home page does not surface history-driven current or recommendation labels
 
   await page.goto("/", { waitUntil: "networkidle" });
 
-  await expect(page.getByText("JavaGuide 全量目录")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "搜索技术资料或选择入口" })).toBeVisible();
   await expect(page.getByText("继续学习（推荐）")).toHaveCount(0);
   await expect(page.getByText("当前章节")).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("你上次读到");

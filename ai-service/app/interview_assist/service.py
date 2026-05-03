@@ -12,9 +12,7 @@ from app.engine.tutor_intelligence import (
     DEFAULT_DEEPSEEK_BASE_URL,
     DEFAULT_DEEPSEEK_MODEL,
     DEFAULT_OPENAI_MODEL,
-    call_deepseek_text,
-    call_openai_text,
-    stream_deepseek_text_chunks,
+    stream_provider_text_chunks,
 )
 from app.observability import events
 from app.observability.logger import logger
@@ -183,17 +181,15 @@ class ProviderInterviewAssistIntelligence:
 
     def stream_answer(self, *, question_text: str, recent_turns: List[Dict[str, Any]]) -> List[str]:
         prompt = _answer_prompt(question_text, recent_turns)
-        if self.provider == "DEEPSEEK":
-            return list(
-                stream_deepseek_text_chunks(
-                    api_key=self.api_key,
-                    model=self.model,
-                    prompt=prompt,
-                    base_url=self.base_url or DEFAULT_DEEPSEEK_BASE_URL,
-                )
+        return list(
+            stream_provider_text_chunks(
+                provider=self.provider,
+                api_key=self.api_key,
+                model=self.model,
+                prompt=prompt,
+                base_url=self.base_url,
             )
-        text = call_openai_text(api_key=self.api_key, model=self.model, prompt=prompt)
-        return [text] if text else []
+        )
 
 
 def _resolved_interview_assist_provider() -> str:
