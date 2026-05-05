@@ -37,11 +37,13 @@ function progressLabel(progressPercentage = 0) {
 
 function ensureDocumentsState(documents = {}) {
   const safeDocs = isPlainObject(documents.docs) ? documents.docs : {};
+  const safeIgnoredDocs = isPlainObject(documents.ignoredDocs) ? documents.ignoredDocs : {};
   return {
     currentDocPath: documents.currentDocPath || "",
     currentDocTitle: documents.currentDocTitle || "",
     lastUpdatedAt: documents.lastUpdatedAt || "",
     docs: safeDocs,
+    ignoredDocs: safeIgnoredDocs,
   };
 }
 
@@ -377,6 +379,39 @@ export function applyDocumentTrainingUnavailable(documents = {}, {
   };
 }
 
+export function applyDocumentIgnored(documents = {}, {
+  docPath = "",
+  docTitle = "",
+  timestamp = new Date().toISOString(),
+} = {}) {
+  const normalizedDocPath = normalizeReadingDocPath(docPath);
+  if (!normalizedDocPath) {
+    return documents;
+  }
+
+  const state = ensureDocumentsState(documents);
+  const previousEntry = state.docs[normalizedDocPath] || {};
+  const nextIgnoredEntry = {
+    docPath: normalizedDocPath,
+    docTitle: docTitle || previousEntry.docTitle || "",
+    ignoredAt: timestamp,
+  };
+  const normalizedCurrentDocPath = normalizeReadingDocPath(state.currentDocPath);
+  const nextCurrentDocPath = normalizedCurrentDocPath === normalizedDocPath ? "" : state.currentDocPath;
+  const nextCurrentDocTitle = normalizedCurrentDocPath === normalizedDocPath ? "" : state.currentDocTitle;
+
+  return {
+    ...state,
+    currentDocPath: nextCurrentDocPath,
+    currentDocTitle: nextCurrentDocTitle,
+    lastUpdatedAt: timestamp,
+    ignoredDocs: {
+      ...state.ignoredDocs,
+      [normalizedDocPath]: nextIgnoredEntry,
+    },
+  };
+}
+
 export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}) {
   const docsByPath = new Map();
 
@@ -398,6 +433,11 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
   }
 
   const storedDocuments = ensureDocumentsState(user.documents);
+  const ignoredDocPaths = new Set(
+    Object.keys(storedDocuments.ignoredDocs || {})
+      .map((docPath) => normalizeReadingDocPath(docPath))
+      .filter(Boolean)
+  );
   for (const [docPath, stored] of Object.entries(storedDocuments.docs || {})) {
     const normalizedDocPath = normalizeReadingDocPath(docPath);
     if (!normalizedDocPath) {
@@ -414,6 +454,9 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
   for (const memoryItem of Object.values(memoryProfile.abilityItems || {})) {
     const docPaths = getMemoryDocPaths(memoryItem);
     for (const docPath of docPaths) {
+      if (ignoredDocPaths.has(docPath)) {
+        continue;
+      }
       if (!memoryByDocPath.has(docPath)) {
         memoryByDocPath.set(docPath, {
           assessedConceptCount: 0,
@@ -439,8 +482,9 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
   }
 
   const currentDocPath = normalizeReadingDocPath(
-    storedDocuments.currentDocPath
+    (storedDocuments.currentDocPath && !ignoredDocPaths.has(normalizeReadingDocPath(storedDocuments.currentDocPath)) ? storedDocuments.currentDocPath : "")
     || [...docsByPath.values()]
+      .filter((entry) => !ignoredDocPaths.has(entry.docPath))
       .sort((left, right) => compareIsoTimestamp(right.lastActivityAt || "", left.lastActivityAt || ""))[0]?.docPath
     || ""
   );
@@ -452,6 +496,7 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
       ...docsByPath.keys(),
       ...memoryByDocPath.keys(),
     ])]
+      .filter((docPath) => !ignoredDocPaths.has(docPath))
       .sort((left, right) => left.localeCompare(right))
       .map((docPath) => {
         const readingEntry = docsByPath.get(docPath) || {};
@@ -512,6 +557,8 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
   return {
     currentDocPath,
     currentDocTitle,
+    ignoredDocPaths: [...ignoredDocPaths],
+    ignoredDocs: storedDocuments.ignoredDocs,
     recentDocs: buildRecentDocumentHistory(documentEntries, currentDocPath),
     docs: documentEntries,
     stats: {

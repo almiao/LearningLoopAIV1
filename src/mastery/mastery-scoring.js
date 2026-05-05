@@ -1,7 +1,7 @@
 import { masteryScoringConfig } from "./scoring-config.js";
 
 const stateRank = masteryScoringConfig.stateRank;
-const confidenceLevelScore = masteryScoringConfig.confidenceLevelScore;
+const answerScoreConfig = masteryScoringConfig.answerScore;
 const readingScoreConfig = masteryScoringConfig.readingScore;
 const trainingScoreConfig = masteryScoringConfig.trainingScore;
 const stabilityScoreConfig = masteryScoringConfig.stabilityScore;
@@ -28,18 +28,19 @@ export function rankState(state = "不可判") {
   return stateRank[state] ?? stateRank.weak;
 }
 
-export function confidenceLevelToScore(level = "low") {
-  return confidenceLevelScore[level] ?? confidenceLevelScore.low;
+export function scoreToState(score = 0) {
+  const numericScore = Number(score || 0);
+  if (numericScore >= answerScoreConfig.solidMin) {
+    return "solid";
+  }
+  if (numericScore < answerScoreConfig.weakMaxExclusive) {
+    return "weak";
+  }
+  return "partial";
 }
 
-export function scoreToConfidenceLevel(score = 0) {
-  if (score >= 0.75) {
-    return "high";
-  }
-  if (score >= 0.45) {
-    return "medium";
-  }
-  return "low";
+export function defaultScoreForState(state = "不可判") {
+  return answerScoreConfig.defaultByState[state] ?? answerScoreConfig.defaultByState.weak;
 }
 
 export function buildMasteryLabel(score = 0, { hasEvidence = false, hasReading = false } = {}) {

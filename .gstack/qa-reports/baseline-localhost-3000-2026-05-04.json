@@ -1,0 +1,15 @@
+{
+  "date": "2026-05-04",
+  "url": "http://127.0.0.1:3000",
+  "scope": "document training completion",
+  "healthScore": 9,
+  "issues": [
+    {
+      "id": "ISSUE-001",
+      "title": "Training completion summary showed 0 / 14 after a completed BFF-backed document session",
+      "severity": "high",
+      "category": "data-display",
+      "status": "fixed"
+    }
+  ]
+}

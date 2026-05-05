@@ -14,6 +14,7 @@ from app.engine.tutor_intelligence import (
     ProviderTutorIntelligence,
     HeuristicTutorIntelligence,
     build_knowledge_answer_prompt,
+    build_turn_diagnosis_prompt,
     build_teach_reply_prompt,
     call_provider_text,
 )
@@ -29,11 +30,27 @@ class KnowledgeAnswerTests(unittest.TestCase):
         self.assertIn("可以结合可靠的通用技术知识回答", prompt)
         self.assertIn("不要因为材料没有直接展开就拒答", prompt)
         self.assertIn("如果用户要求总结，直接给出总结", prompt)
+        self.assertIn("当前用户目标：面试准备", prompt)
+        self.assertIn("不要固定输出数量", prompt)
         self.assertIn("用中文回答", prompt)
         self.assertNotIn("不评估用户掌握度", prompt)
         self.assertNotIn("不要输出训练状态", prompt)
         self.assertNotIn("尽量短", prompt)
         self.assertNotIn("只基于【材料】回答", prompt)
+
+    def test_reading_task_prompts_are_goal_directed_without_fixed_counts(self) -> None:
+        prompt = build_knowledge_answer_prompt(
+            question="生成自测问题",
+            context="AES 适合大量数据加密。RSA 常用于密钥交换和签名验签。",
+            goal="interview",
+            task_type="question_points",
+        )
+
+        self.assertIn("当前用户目标：面试准备", prompt)
+        self.assertIn("当前能力：生成自测问题", prompt)
+        self.assertIn("问题不要停留在标题复述", prompt)
+        self.assertIn("根据文章内容自行决定问题数量", prompt)
+        self.assertNotIn("5-8", prompt)
 
     def test_text_llm_calls_preserve_markdown_newlines(self) -> None:
         markdown_reply = "\n### 节点\n\n1. prepare 阶段\n2. commit 阶段\n\n- 异常时按 binlog 是否完整判断\n"
@@ -67,6 +84,30 @@ class KnowledgeAnswerTests(unittest.TestCase):
         self.assertIn("Treat the current learner input as an explanation request, not as an answer to evaluate.", prompt)
         self.assertNotIn("Focus only on evaluating the learner's current answer", prompt)
 
+    def test_runtime_question_generation_prompt_requires_chinese(self) -> None:
+        intelligence = ProviderTutorIntelligence(provider="DEEPSEEK", model="test-model", api_key="test-key")
+        captured = {}
+
+        def fake_call(*, call_type, prompt, schema, validator):
+            captured["prompt"] = prompt
+            return type("Result", (), {"parsed": {"question": "请解释一下。", "intent": "ask"}})()
+
+        with patch.object(intelligence, "_call_json_traced", side_effect=fake_call):
+            intelligence.generate_probe_question(
+                concept={
+                    "id": "concept-1",
+                    "title": "泛型的作用",
+                    "summary": "summary",
+                    "evidenceSnippet": "snippet",
+                    "misconceptionAnchors": [],
+                    "discriminators": [],
+                    "importance": "core",
+                },
+                context_packet={},
+            )
+
+        self.assertIn("Write the learner-facing question in Chinese.", captured["prompt"])
+
     def test_turn_envelope_retries_when_follow_up_question_is_missing(self) -> None:
         intelligence = ProviderTutorIntelligence(provider="DEEPSEEK", model="test-model", api_key="test-key")
         concept = {
@@ -88,7 +129,7 @@ class KnowledgeAnswerTests(unittest.TestCase):
                     "turn_signal": "noise",
                     "anchor_assessment": {
                         "state": "partial",
-                        "confidence_level": "medium",
+                        "score": 72,
                         "reasons": ["need follow-up"],
                     },
                     "hypotheses": [],
@@ -110,7 +151,7 @@ class KnowledgeAnswerTests(unittest.TestCase):
                     "reason": "no_change",
                     "anchor_patch": {
                         "state": "partial",
-                        "confidence_level": "medium",
+                        "score": 72,
                         "derived_principle": "summary",
                     },
                 },
@@ -144,6 +185,22 @@ Tools 注册让模型可以安全调用外部能力来完成真实任务。
         self.assertIn("Context Engineering", content)
         self.assertNotIn("正在评估", content)
         self.assertNotIn("你是在提出请求", content)
+
+    def test_heuristic_reading_question_points_use_goal_and_task_type(self) -> None:
+        content = HeuristicTutorIntelligence().answer_knowledge_question(
+            question="生成自测问题",
+            task_type="question_points",
+            goal="interview",
+            context="""
+# 常见加密算法总结
+哈希算法适合完整性校验和密码存储，但不是可逆加密。
+对称加密适合大量数据加密，非对称加密适合密钥交换和签名验签。
+""",
+        )
+
+        self.assertIn("当前目标：面试准备", content)
+        self.assertIn("问题：", content)
+        self.assertIn("考察点：", content)
 
 
 if __name__ == "__main__":

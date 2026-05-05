@@ -5,10 +5,15 @@
     "partial": 2,
     "solid": 3
   },
-  "confidenceLevelScore": {
-    "high": 0.86,
-    "medium": 0.58,
-    "low": 0.26
+  "answerScore": {
+    "weakMaxExclusive": 60,
+    "solidMin": 85,
+    "defaultByState": {
+      "不可判": 0,
+      "weak": 40,
+      "partial": 72,
+      "solid": 92
+    }
   },
   "readingScore": {
     "opened": 8,

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useDeferredValue, useEffect, useState } from "react";
 import { apiFetch, postEventStream, postJson } from "../lib/api";
+import { buildChatTimeline } from "../../src/view/chat-transcript";
 import { buildVisibleSessionView } from "../../src/view/visible-session-view";
 
 const userIdStorageKey = "learning-loop-user-id";
@@ -45,6 +46,20 @@ function splitTextBlocks(value) {
     .filter(Boolean);
 }
 
+function patchLiveTurn(turns = [], patch = {}) {
+  if (!patch?.turnId) {
+    return turns;
+  }
+  return turns.map((turn) => (
+    turn?.turnId === patch.turnId
+      ? {
+          ...turn,
+          content: patch.content ?? turn.content ?? "",
+        }
+      : turn
+  ));
+}
+
 function renderQuestionPhase(meta) {
   switch (meta?.phase) {
     case "teach-back":
@@ -79,10 +94,13 @@ export function AppShell() {
   const [burdenSignal, setBurdenSignal] = useState("normal");
   const [error, setError] = useState("");
   const [isAnswering, setIsAnswering] = useState(false);
-  const [streamingTurn, setStreamingTurn] = useState(null);
+  const [liveTurns, setLiveTurns] = useState([]);
   const deferredSession = useDeferredValue(session);
   const visibleView = buildVisibleSessionView(deferredSession || {});
   const chatTimeline = visibleView.chatTimeline || [];
+  const liveTimeline = buildChatTimeline(liveTurns, {
+    limit: Math.max(liveTurns.length, 24),
+  });
   const latestMemorySummary = visibleView.latestMemorySummary || "";
   const sessionTakeaway = session?.latestFeedback?.takeaway || "";
   const sessionClosed = Boolean(session) && !session?.currentProbe;
@@ -143,20 +161,11 @@ export function AppShell() {
     if (!session?.sessionId) {
       return;
     }
-    const currentConcept = session.concepts?.find((concept) => concept.id === session.currentCheckpointId);
+    let finalSession = null;
     try {
       setError("");
       setIsAnswering(true);
-      setStreamingTurn({
-        id: `${session.sessionId}:${Date.now()}`,
-        answer: nextAnswer,
-        intent,
-        conceptTitle: currentConcept?.title || "",
-        assistantText: "",
-        replyComplete: false,
-        decisionPending: false
-      });
-      let finalSession = null;
+      setLiveTurns([]);
       await postEventStream("/api/interview/answer-stream", {
         sessionId: session.sessionId,
         answer: nextAnswer,
@@ -164,33 +173,17 @@ export function AppShell() {
         burdenSignal,
         interactionPreference
       }, async (event, data) => {
-        if (event === "reply_delta") {
-          setStreamingTurn((turn) =>
-            turn
-              ? {
-                  ...turn,
-                  assistantText: `${turn.assistantText || ""}${data.delta || ""}`,
-                  decisionPending: false
-                }
-              : turn
-          );
+        if (event === "turn_append" && data.turn) {
+          setLiveTurns((items) => items.concat([data.turn]));
         }
-        if (event === "reply_done") {
-          setStreamingTurn((turn) =>
-            turn
-              ? {
-                  ...turn,
-                  replyComplete: true,
-                  decisionPending: true
-                }
-              : turn
-          );
+        if (event === "turn_patch" && data.turnId) {
+          setLiveTurns((items) => patchLiveTurn(items, data));
         }
         if (event === "turn_result" || event === "session") {
           finalSession = data;
           setSession(data);
           setAnswer("");
-          setStreamingTurn(null);
+          setLiveTurns([]);
         }
         if (event === "error") {
           throw new Error(data.error || "流式回答失败。");
@@ -203,7 +196,9 @@ export function AppShell() {
       setError(nextError.message);
     } finally {
       setIsAnswering(false);
-      setStreamingTurn(null);
+      if (!finalSession) {
+        setLiveTurns([]);
+      }
     }
   }
 
@@ -319,7 +314,7 @@ export function AppShell() {
             </div>
 
             <div className="chat-thread">
-              {chatTimeline.map((entry) => {
+              {chatTimeline.concat(liveTimeline).map((entry) => {
                 if (entry.type === "event") {
                   return (
                     <div className="chat-event" key={entry.id}>
@@ -359,49 +354,6 @@ export function AppShell() {
                   </article>
                 );
               })}
-              {streamingTurn ? (
-                <>
-                  <article className="chat-message user" key={`${streamingTurn.id}:user`}>
-                    <div className="chat-meta">
-                      <strong>你</strong>
-                      {streamingTurn.conceptTitle ? <span>{streamingTurn.conceptTitle}</span> : null}
-                      {streamingTurn.intent === "teach" ? <span className="chip subtle-chip">请求讲解</span> : null}
-                      {streamingTurn.intent === "advance" ? <span className="chip subtle-chip">切到下一题</span> : null}
-                    </div>
-                    <div className="chat-bubble">
-                      <p>{streamingTurn.answer}</p>
-                    </div>
-                  </article>
-                  <article className="chat-message assistant streaming" key={`${streamingTurn.id}:assistant`}>
-                    <div className="chat-meta">
-                      <strong>Tutor</strong>
-                      {streamingTurn.conceptTitle ? <span>{streamingTurn.conceptTitle}</span> : null}
-                      <span className="chip subtle-chip">生成中</span>
-                    </div>
-                    <div className="chat-bubble">
-                      {splitTextBlocks(streamingTurn.assistantText).length ? (
-                        splitTextBlocks(streamingTurn.assistantText).map((block, blockIndex) => (
-                          <p key={`${streamingTurn.id}:stream:${blockIndex}`}>{block}</p>
-                        ))
-                      ) : (
-                        <p className="muted">正在生成 tutor 回复...</p>
-                      )}
-                    </div>
-                  </article>
-                  {streamingTurn.replyComplete && streamingTurn.decisionPending ? (
-                    <article className="chat-message assistant next-step-pending" key={`${streamingTurn.id}:decision`}>
-                      <div className="chat-meta">
-                        <strong>Tutor</strong>
-                        {streamingTurn.conceptTitle ? <span>{streamingTurn.conceptTitle}</span> : null}
-                      </div>
-                      <div className="chat-next-step">
-                        <small className="muted">下一步</small>
-                        <p className="muted decision-pending">下一步判断生成中</p>
-                      </div>
-                    </article>
-                  ) : null}
-                </>
-              ) : null}
             </div>
 
             <form

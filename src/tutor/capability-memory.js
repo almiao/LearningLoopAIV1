@@ -3,7 +3,8 @@ import {
   calculateTargetReadinessScore,
   rankState,
   buildTargetLabel,
-  confidenceLevelToScore,
+  defaultScoreForState,
+  scoreToState,
 } from "../mastery/mastery-scoring.js";
 
 function rank(state) {
@@ -17,8 +18,7 @@ function clonePlain(value) {
 function createDefaultJudge() {
   return {
     state: "不可判",
-    confidence: 0.16,
-    confidenceLevel: "low",
+    score: 0,
     reasons: ["当前还没有足够证据，先保持保守判断"]
   };
 }
@@ -50,10 +50,6 @@ function getPreviousMemory(memoryProfile, conceptId) {
   return memoryProfile?.abilityItems?.[conceptId] || null;
 }
 
-function levelToConfidence(level) {
-  return confidenceLevelToScore(level);
-}
-
 function getEvidenceCount(ledger, conceptId) {
   return Array.isArray(ledger?.[conceptId]?.entries) ? ledger[conceptId].entries.length : 0;
 }
@@ -76,10 +72,10 @@ export function prioritizeConcepts(concepts, memoryProfile = createMemoryProfile
       return leftRank - rightRank;
     }
 
-    const leftConfidence = leftMemory?.confidence ?? 0;
-    const rightConfidence = rightMemory?.confidence ?? 0;
-    if (leftConfidence !== rightConfidence) {
-      return leftConfidence - rightConfidence;
+    const leftScore = leftMemory?.score ?? 0;
+    const rightScore = rightMemory?.score ?? 0;
+    if (leftScore !== rightScore) {
+      return leftScore - rightScore;
     }
 
     return (left.order || 0) - (right.order || 0);
@@ -99,12 +95,8 @@ export function createConceptStatesFromMemory(concepts, memoryProfile = createMe
           teachCount: 0,
           judge: remembered
             ? {
-                state: remembered.state,
-                confidence:
-                  typeof remembered.confidence === "number"
-                    ? remembered.confidence
-                    : levelToConfidence(remembered.confidenceLevel),
-                confidenceLevel: remembered.confidenceLevel || "low",
+                state: remembered.state || scoreToState(remembered.score || 0),
+                score: typeof remembered.score === "number" ? remembered.score : defaultScoreForState(remembered.state),
                 reasons: remembered.reasons?.length ? remembered.reasons : [`沿用上次对“${concept.title}”的记忆`]
               }
             : createDefaultJudge()
@@ -167,10 +159,10 @@ export function buildVisibleMemoryEvents({
 
   const previousRank = rank(previousJudge?.state || "weak");
   const currentRank = rank(currentJudge?.state || "weak");
-  const previousConfidence = previousJudge?.confidence ?? 0;
-  const currentConfidence = currentJudge?.confidence ?? 0;
+  const previousScore = previousJudge?.score ?? 0;
+  const currentScore = currentJudge?.score ?? 0;
   const effectiveSignal =
-    signal === "noise" && (currentRank > previousRank || currentConfidence > previousConfidence)
+    signal === "noise" && (currentRank > previousRank || currentScore > previousScore)
       ? "positive"
       : signal;
 
@@ -178,7 +170,7 @@ export function buildVisibleMemoryEvents({
     effectiveSignal === "positive" &&
     previousJudge?.state !== "不可判" &&
     currentJudge?.state !== "不可判" &&
-    (currentRank > previousRank || currentConfidence >= previousConfidence)
+    (currentRank > previousRank || currentScore >= previousScore)
   ) {
     events.push(
       createEvent({
@@ -281,8 +273,7 @@ export function updateMemoryProfile(memoryProfile, {
     abilityDomainId: concept.abilityDomainId || concept.domainId || "general",
     abilityDomainTitle: concept.abilityDomainTitle || concept.domainTitle || "通用能力",
     state: judge.state,
-    confidence: judge.confidence,
-    confidenceLevel: judge.confidenceLevel || "low",
+    score: judge.score || defaultScoreForState(judge.state),
     reasons: judge.reasons,
     derivedPrinciple: derivedPrinciple || previous?.derivedPrinciple || concept.summary,
     evidenceCount: (previous?.evidenceCount || 0) + 1,
@@ -316,7 +307,7 @@ export function buildAbilityDomains(concepts, conceptStates, ledger = {}) {
       abilityItemId: concept.id,
       title: concept.title,
       state: conceptStates[concept.id]?.judge?.state || "weak",
-      confidence: conceptStates[concept.id]?.judge?.confidence || 0,
+      score: conceptStates[concept.id]?.judge?.score || 0,
       evidenceCount: getEvidenceCount(ledger, concept.id)
     });
   }
@@ -330,8 +321,7 @@ export function buildTargetMatch({ concepts, conceptStates, targetBaseline, ledg
     masteryScore: calculateMasteryScore({
       memoryItem: {
         state: conceptStates[concept.id]?.judge?.state || "不可判",
-        confidence: conceptStates[concept.id]?.judge?.confidence || 0,
-        confidenceLevel: conceptStates[concept.id]?.judge?.confidenceLevel || "low",
+        score: conceptStates[concept.id]?.judge?.score || 0,
         evidenceCount: getEvidenceCount(ledger, concept.id),
       },
     }),
@@ -358,7 +348,6 @@ export function buildTargetMatch({ concepts, conceptStates, targetBaseline, ledg
       coverageRatio < 0.35
         ? `当前证据还比较少，这个匹配度更像方向判断。最影响当前估计的是 ${weakest.join("、")}。`
         : `当前估计主要受 ${weakest.join("、")} 影响；更稳的部分是 ${strongest.join("、")}。`,
-    confidenceLabel: coverageRatio >= 0.75 ? "证据较充分" : coverageRatio >= 0.45 ? "证据逐步成形" : "证据较少",
     strongestItems: strongest,
     weakestItems: weakest
   };

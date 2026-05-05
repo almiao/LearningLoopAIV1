@@ -15,6 +15,7 @@ from app.engine.mastery_scoring import (
     build_target_label,
     calculate_mastery_score,
     calculate_target_readiness_score,
+    default_score_for_state,
     rank_state as score_rank_state,
 )
 from app.engine.tutor_intelligence import create_tutor_intelligence, describe_tutor_intelligence, normalize_decomposition_payload
@@ -27,7 +28,6 @@ from app.engine.turn_envelope import (
     build_control_verdict,
     create_empty_runtime_map,
     merge_runtime_maps,
-    score_to_confidence_level,
     turn_envelope_to_tutor_move,
 )
 
@@ -73,7 +73,7 @@ def emit_progress_step(
 def describe_next_step(ui_mode: str = "") -> str:
     mapping = {
         "probe": "继续围绕当前训练点追问",
-        "teach": "先讲解，再做一次确认",
+        "teach": "先补一段讲解，再按训练进度继续",
         "verify": "补一个确认问题收紧判断",
         "advance": "切到下一个训练点",
         "revisit": "先记入待回顾，再继续整体进度",
@@ -163,16 +163,16 @@ def compute_training_point_state(session: Dict[str, Any], point: Dict[str, Any])
 
 def classify_checkpoint_outcome(*, diagnosis: Dict[str, Any], tutor_move: Dict[str, Any], answer: str, burden_signal: str = "normal") -> str:
     normalized_answer = str(answer or "").strip()
-    evidence_quality = str((diagnosis or {}).get("evidence_quality") or "weak")
     has_misconception = bool((diagnosis or {}).get("has_misconception"))
     signal = str((tutor_move or {}).get("signal") or "noise")
     misunderstandings = ((tutor_move or {}).get("runtimeMap") or {}).get("misunderstandings") or []
+    score = int(((tutor_move or {}).get("judge") or {}).get("score") or 0)
 
     if has_misconception or signal == "negative" or misunderstandings:
         return "wrong"
-    if not normalized_answer or evidence_quality in {"none", "weak"} or burden_signal == "high":
+    if not normalized_answer or burden_signal == "high" or score < 60:
         return "empty"
-    if evidence_quality == "strong" or ((tutor_move.get("judge") or {}).get("state") == "solid"):
+    if score >= 85:
         return "full"
     return "partial"
 
@@ -188,7 +188,7 @@ def map_checkpoint_result(outcome: str = "") -> str:
 
 
 def next_checkpoint_after_completion(session: Dict[str, Any], concept: Dict[str, Any], point: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    next_unit = choose_next_unit(session)
+    next_unit = choose_next_unit(session, allow_revisit=False)
     next_concept = next_unit.get("concept")
     next_point = get_checkpoint_point(session, next_concept["id"]) if next_concept else None
     session["currentTrainingPointId"] = next_point["id"] if next_point else session.get("currentTrainingPointId", "")
@@ -314,33 +314,19 @@ def build_visible_score_summary(*, judge: Optional[Dict[str, Any]], diagnosis: O
     if not judge:
         return None
     state = str(judge.get("state") or "不可判")
-    evidence_quality = str((diagnosis or {}).get("evidence_quality") or "")
-    confidence = judge.get("confidence", 0)
-    try:
-        confidence_percent = round(float(confidence) * 100)
-    except (TypeError, ValueError):
-        confidence_percent = 0
     state_labels = {
         "solid": "掌握较稳",
         "partial": "部分掌握",
         "weak": "还不稳",
-        "不可判": "证据不足",
-    }
-    evidence_labels = {
-        "strong": "回答里已经给出关键依据",
-        "partial": "回答里提到了一部分关键依据",
-        "weak": "回答里只有少量关键依据",
-        "none": "这轮还没有形成可判断的回答依据",
+        "不可判": "未评分",
     }
     return {
         "state": state,
         "stateLabel": state_labels.get(state, state),
-        "confidence": confidence_percent,
-        "confidenceLevel": judge.get("confidenceLevel") or score_to_confidence_level(confidence),
-        "evidenceQuality": evidence_quality,
-        "evidenceLabel": evidence_labels.get(evidence_quality, ""),
+        "score": int(judge.get("score") or 0),
         "keyClaim": str((diagnosis or {}).get("key_claim") or "").strip(),
         "confirmedUnderstanding": str((diagnosis or {}).get("confirmed_understanding") or "").strip(),
+        "judgmentReason": str((diagnosis or {}).get("judgment_reason") or "").strip(),
         "hasMisconception": bool((diagnosis or {}).get("has_misconception")),
         "misconceptionDetail": str((diagnosis or {}).get("misconception_detail") or "").strip(),
         "reasons": [str(reason) for reason in (judge.get("reasons") or [])[:2] if str(reason).strip()],
@@ -469,7 +455,7 @@ def create_evidence_ledger(concepts: List[Dict[str, Any]]) -> Dict[str, Dict[str
             "conceptId": concept["id"],
             "entries": [],
             "state": "weak",
-            "confidence": 0,
+            "score": 0,
             "reasons": [],
         }
         for concept in concepts
@@ -517,7 +503,7 @@ def build_ability_domains(session: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "abilityItemId": concept["id"],
                 "title": concept["title"],
                 "state": item.get("state", "不可判"),
-                "confidence": item.get("confidence", 0),
+                "score": item.get("score", 0),
                 "evidenceCount": item.get("evidenceCount", 0),
             }
         )
@@ -555,7 +541,7 @@ def build_mastery_map(session: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "conceptId": concept["id"],
                 "title": concept["title"],
                 "state": memory.get("state", "不可判"),
-                "confidence": memory.get("confidence", 0),
+                "score": memory.get("score", 0),
                 "reasons": memory.get("reasons", ["当前还没有足够证据"]),
                 "domainId": concept.get("abilityDomainId") or concept.get("domainId") or "",
                 "provenanceLabel": concept.get("provenanceLabel", ""),
@@ -752,8 +738,20 @@ def append_interaction_event(session: Dict[str, Any], *, event_type: str, concep
     )
 
 
+def append_session_turn(
+    session: Dict[str, Any],
+    turn: Dict[str, Any],
+    turn_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> Dict[str, Any]:
+    session["turns"].append(turn)
+    if turn_callback:
+        turn_callback(turn)
+    return turn
+
+
 def create_workspace_turn(*, action: str, concept: Dict[str, Any]) -> Dict[str, Any]:
     return {
+        "turnId": f"turn_{uuid4().hex}",
         "role": "system",
         "kind": "workspace",
         "action": action,
@@ -762,6 +760,283 @@ def create_workspace_turn(*, action: str, concept: Dict[str, Any]) -> Dict[str, 
         "content": f"{action}:{concept['title']}",
         "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
     }
+
+
+def create_tutor_message_turn(
+    *,
+    kind: str,
+    action: str,
+    concept_id: str,
+    concept_title: str,
+    checkpoint_id: str,
+    checkpoint_statement: str,
+    content: str,
+    timestamp_ms: Optional[int] = None,
+    question_meta: Optional[Dict[str, Any]] = None,
+    revisit_reason: str = "",
+    takeaway: str = "",
+    candidate_coaching_step: str = "",
+    coaching_step: str = "",
+    score_summary: Optional[Dict[str, Any]] = None,
+    turn_resolution: Optional[Dict[str, Any]] = None,
+    turn_id: str = "",
+) -> Dict[str, Any]:
+    turn = {
+        "turnId": turn_id or f"turn_{uuid4().hex}",
+        "role": "tutor",
+        "kind": kind,
+        "action": action,
+        "conceptId": concept_id,
+        "conceptTitle": concept_title,
+        "checkpointId": checkpoint_id,
+        "checkpointStatement": checkpoint_statement,
+        "content": content,
+        "timestamp": timestamp_ms if timestamp_ms is not None else int(datetime.now(timezone.utc).timestamp() * 1000),
+    }
+    if question_meta is not None:
+        turn["questionMeta"] = question_meta
+    if revisit_reason:
+        turn["revisitReason"] = revisit_reason
+    if takeaway:
+        turn["takeaway"] = takeaway
+    if candidate_coaching_step:
+        turn["candidateCoachingStep"] = candidate_coaching_step
+    if coaching_step:
+        turn["coachingStep"] = coaching_step
+    if score_summary is not None:
+        turn["scoreSummary"] = score_summary
+    if turn_resolution is not None:
+        turn["turnResolution"] = turn_resolution
+    return turn
+
+
+def build_progress_message(*, training_progress: Optional[Dict[str, Any]], checkpoint_statement: str = "") -> str:
+    checkpoint = (training_progress or {}).get("checkpoint") or {}
+    training_point = (training_progress or {}).get("trainingPoint") or {}
+    statement = checkpoint.get("statement") or checkpoint_statement or checkpoint.get("id") or "下一个子项"
+    parts = []
+    if training_point.get("currentIndex") and training_point.get("total"):
+        parts.append(f"训练点 {training_point['currentIndex']}/{training_point['total']}")
+    if checkpoint.get("currentIndex") and checkpoint.get("total"):
+        parts.append(f"子项 {checkpoint['currentIndex']}/{checkpoint['total']}")
+    prefix = " · ".join(parts) if parts else "进入下一个子项"
+    return f"进展：{prefix}。现在进入：{statement}"
+
+
+def build_training_prepare_message(training_points: List[Dict[str, Any]]) -> str:
+    point_count = len(training_points or [])
+    if point_count > 0:
+        return f"训练准备：已拆解这篇文档的训练点，共 {point_count} 个主线。"
+    return "训练准备：已完成这篇文档的训练点拆解。"
+
+
+def append_progress_and_question_turn(
+    session: Dict[str, Any],
+    *,
+    point: Dict[str, Any],
+    concept: Dict[str, Any],
+    progress_phase: str = "diagnostic",
+    append_progress: bool = True,
+    turn_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> None:
+    timestamp_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    question_meta = create_question_meta(concept, session=session, phase=progress_phase)
+    session["currentQuestionMeta"] = question_meta
+    if append_progress:
+        append_session_turn(
+            session,
+            create_tutor_message_turn(
+                kind="progress",
+                action="progress",
+                concept_id=point["id"],
+                concept_title=point["title"],
+                checkpoint_id=concept["id"],
+                checkpoint_statement=concept.get("checkpointStatement", concept["title"]),
+                content=build_progress_message(
+                    training_progress=question_meta.get("trainingProgress"),
+                    checkpoint_statement=concept.get("checkpointStatement", concept["title"]),
+                ),
+                timestamp_ms=timestamp_ms,
+            ),
+            turn_callback,
+        )
+    append_session_turn(
+        session,
+        create_tutor_message_turn(
+            kind="question",
+            action="probe",
+            concept_id=point["id"],
+            concept_title=point["title"],
+            checkpoint_id=concept["id"],
+            checkpoint_statement=concept.get("checkpointStatement", concept["title"]),
+            content=session["currentProbe"],
+            question_meta=question_meta,
+            revisit_reason="",
+            timestamp_ms=timestamp_ms,
+        ),
+        turn_callback,
+    )
+
+
+def build_evaluation_message(score_summary: Dict[str, Any]) -> str:
+    state_label = score_summary.get("stateLabel") or score_summary.get("state") or "已评分"
+    score = int(score_summary.get("score") or 0)
+    headline = f"回答评分：{score} 分（{state_label}）。" if score_summary.get("state") != "不可判" else f"回答评分：{state_label}。"
+    body_parts = [headline]
+    judgment_reason = str(score_summary.get("judgmentReason") or "").strip()
+    if judgment_reason:
+        body_parts.append(f"评分理由：{judgment_reason}")
+    key_claim = str(score_summary.get("keyClaim") or "").strip()
+    if key_claim:
+        body_parts.append(f"已确认：{key_claim}")
+    if score_summary.get("hasMisconception") and score_summary.get("misconceptionDetail"):
+        misconception = str(score_summary["misconceptionDetail"]).strip()
+        if misconception:
+            body_parts.append(f"需要校准：{misconception}")
+    return "\n\n".join(part for part in body_parts if str(part).strip())
+
+
+def trim_sentence_ending(text: str = "") -> str:
+    return str(text or "").strip().rstrip("。；;，,")
+
+
+def build_memory_summary_message(
+    *,
+    concept_title: str,
+    score_summary: Optional[Dict[str, Any]],
+    memory_events: List[Dict[str, Any]],
+) -> str:
+    if not memory_events:
+        return ""
+
+    event_types = {str(event.get("type") or "") for event in memory_events}
+    user_key_claim = str((score_summary or {}).get("keyClaim") or "").strip()
+
+    if "contradiction_detected" in event_types:
+        return f"已记住：你在“{concept_title}”这个点前后回答不一致；后续会先复核这个知识点。"
+    if "weakness_confirmed" in event_types or "revisit_queued" in event_types:
+        return f"已记住：你在“{concept_title}”这个点还不稳；后续会优先回顾。"
+    if "improvement_detected" in event_types and user_key_claim:
+        return f"已记住：{trim_sentence_ending(user_key_claim)}；后续会在这个基础上继续追问。"
+    if "improvement_detected" in event_types:
+        return f"已记住：你在“{concept_title}”这个点更稳了；后续会在这个基础上继续追问。"
+    if "memory_writeback_applied" in event_types:
+        return f"已记住：这轮关于“{concept_title}”的回答已写入学习记录；后续会据此调整追问。"
+    return ""
+
+
+def build_scope_completion_message(session: Dict[str, Any], latest_feedback: Dict[str, Any]) -> str:
+    scoped_concepts = [
+        concept for concept in session.get("concepts") or []
+        if is_concept_in_scope(session, concept)
+    ]
+    total_count = len(scoped_concepts)
+    states = [session.get("conceptStates", {}).get(concept["id"], {}) for concept in scoped_concepts]
+    completed_count = sum(1 for state in states if state.get("completed"))
+    skipped_count = sum(1 for state in states if state.get("result") == "skipped")
+    review_count = sum(
+        1 for state in states
+        if state.get("completed") and state.get("result") not in {"passed", "skipped", "unseen", ""}
+    )
+    memory_items = [
+        (
+            concept,
+            (session.get("memoryProfile") or {}).get("abilityItems", {}).get(concept.get("id", ""), {}),
+        )
+        for concept in scoped_concepts
+    ]
+    remembered_items = [(concept, item) for concept, item in memory_items if item.get("evidenceCount", 0) > 0]
+    review_items = [
+        (concept, item)
+        for concept, item in remembered_items
+        if str(item.get("state") or "不可判") in {"weak", "partial", "不可判"}
+    ]
+    solid_count = sum(1 for _concept, item in remembered_items if str(item.get("state") or "") == "solid")
+    review_titles = [str(item.get("title") or concept.get("title") or "").strip() for concept, item in review_items]
+    review_titles = [title for title in review_titles if title][:3]
+    outcome_buckets = {
+        "accurate": [],
+        "reinforce": [],
+        "calibrate": [],
+        "skipped": [],
+    }
+    for concept, item in memory_items:
+        state = session.get("conceptStates", {}).get(concept["id"], {})
+        result = str(state.get("result") or "unseen")
+        memory_state = str(item.get("state") or (state.get("judge") or {}).get("state") or "不可判")
+        title = str(concept.get("checkpointStatement") or concept.get("title") or "").strip()
+        if not title:
+            continue
+        if result == "skipped":
+            outcome_buckets["skipped"].append(title)
+        elif result in {"incomplete", "wrong"}:
+            outcome_buckets["calibrate"].append(title)
+        elif result == "passed" or memory_state == "solid":
+            outcome_buckets["accurate"].append(title)
+        elif result == "partial" or memory_state in {"partial", "weak", "不可判"}:
+            outcome_buckets["reinforce"].append(title)
+
+    # Final-stage contract: this backend completion turn is the single source of
+    # learner-visible summary, memory writeback, and next-round memory usage.
+    # Frontend completion UI may offer controls, but must not restate counts or
+    # takeaways as chat content, otherwise append-only history appears duplicated.
+    parts = [
+        "本轮训练结束：当前训练范围已经收口。",
+    ]
+    if total_count:
+        parts.append(
+            f"本轮总结：已完成 {completed_count} / {total_count} 个子项"
+            + (f"，其中 {review_count} 个建议复习" if review_count > 0 else "")
+            + (f"，跳过 {skipped_count} 个" if skipped_count > 0 else "")
+            + "。"
+        )
+        parts.append(
+            "结果分布："
+            f"理解较准 {len(outcome_buckets['accurate'])} 个，"
+            f"待巩固 {len(outcome_buckets['reinforce'])} 个，"
+            f"需校准 {len(outcome_buckets['calibrate'])} 个，"
+            f"跳过/未评分 {len(outcome_buckets['skipped'])} 个。"
+        )
+    accurate_titles = outcome_buckets["accurate"][:3]
+    review_summary_items = [
+        *[f"{title}（待巩固）" for title in outcome_buckets["reinforce"][:3]],
+        *[f"{title}（需校准）" for title in outcome_buckets["calibrate"][:3]],
+        *[f"{title}（跳过/未评分）" for title in outcome_buckets["skipped"][:3]],
+    ][:5]
+    if accurate_titles:
+        parts.append(f"理解较准：{'、'.join(accurate_titles)}。")
+    if review_summary_items:
+        parts.append(f"需要复习：{'、'.join(review_summary_items)}。")
+    if remembered_items:
+        memory_line = (
+            f"长期记忆：这轮已更新 {len(remembered_items)} 个知识点的掌握记录"
+            + (f"，其中 {solid_count} 个相对稳定" if solid_count > 0 else "")
+            + (f"，{len(review_items)} 个会进入后续复习优先级" if review_items else "")
+            + "。"
+        )
+        if review_titles:
+            memory_line += f" 优先回看：{'、'.join(review_titles)}。"
+        parts.append(memory_line)
+    else:
+        parts.append("长期记忆：这轮没有形成新的可写入回答记录，后续会继续用已有记录安排训练。")
+    if review_items:
+        parts.append("后续复习会怎么用：系统会把这些还不稳或没覆盖到的点标为优先复习；如果再次答对，会把记忆从“不稳”逐步更新为更稳定的掌握。")
+    elif remembered_items:
+        parts.append("后续复习会怎么用：系统会沿用这些掌握记录，减少重复追问，把更多时间留给未覆盖或还不稳的点。")
+    else:
+        parts.append("后续复习会怎么用：系统会先继续提问，再根据新回答更新长期记忆和复习顺序。")
+    parts.append("当前二轮出题依据：点“再练薄弱点”会进入本轮第一个需复习训练点；点“重新训练一轮”会带着长期记忆重新开始，每道题生成时会参考对应知识点的历史状态、评分理由和历史回答，但整篇文档的启动顺序仍沿用原拆解顺序。")
+    takeaway = str(latest_feedback.get("takeaway") or "").strip()
+    if takeaway:
+        parts.append(f"最后带走：{takeaway}")
+    return "\n\n".join(parts)
+
+
+def build_teach_process_messages(*, next_step_detail: str = "") -> List[str]:
+    messages = ["已切换为讲解模式，本轮不评分。"]
+    if next_step_detail:
+        messages.append(next_step_detail)
+    return messages
 
 
 def build_visible_memory_events(*, concept: Dict[str, Any], previous_judge: Dict[str, Any], current_judge: Dict[str, Any], signal: str, revisit_reason: str = "", assessment_handle: str = "", evidence_reference: str = "") -> List[Dict[str, Any]]:
@@ -779,9 +1054,9 @@ def build_visible_memory_events(*, concept: Dict[str, Any], previous_judge: Dict
 
     previous_rank = rank_state(previous_judge.get("state", "weak"))
     current_rank = rank_state(current_judge.get("state", "weak"))
-    previous_confidence = previous_judge.get("confidence", 0)
-    current_confidence = current_judge.get("confidence", 0)
-    effective_signal = "positive" if signal == "noise" and (current_rank > previous_rank or current_confidence > previous_confidence) else signal
+    previous_score = previous_judge.get("score", 0)
+    current_score = current_judge.get("score", 0)
+    effective_signal = "positive" if signal == "noise" and (current_rank > previous_rank or current_score > previous_score) else signal
 
     if effective_signal == "positive" and current_rank >= previous_rank:
         events.append(create_memory_event("improvement_detected", concept, f"“{concept['title']}”这轮更稳了，系统会把这次提升记进长期记忆。", timestamp=timestamp, assessment_handle=assessment_handle, evidence_reference=evidence_reference))
@@ -820,7 +1095,7 @@ def apply_writeback_suggestion(*, session: Dict[str, Any], concept: Dict[str, An
     }
     anchor_patch = suggestion.get("anchor_patch") or {}
     next_state = anchor_patch.get("state") or ((tutor_move.get("runtimeMap") or {}).get("anchor_assessment") or {}).get("state") or previous.get("state") or "不可判"
-    next_confidence_level = anchor_patch.get("confidence_level") or ((tutor_move.get("runtimeMap") or {}).get("anchor_assessment") or {}).get("confidence_level") or previous.get("confidenceLevel") or "low"
+    next_score = int(anchor_patch.get("score") or (tutor_move.get("judge") or {}).get("score") or previous.get("score") or 0)
 
     session["memoryProfile"]["abilityItems"][concept["id"]] = {
         "abilityItemId": concept["id"],
@@ -828,8 +1103,7 @@ def apply_writeback_suggestion(*, session: Dict[str, Any], concept: Dict[str, An
         "abilityDomainId": concept.get("abilityDomainId") or concept.get("domainId") or "general",
         "abilityDomainTitle": concept.get("abilityDomainTitle") or concept.get("domainTitle") or "通用能力",
         "state": next_state,
-        "confidence": (tutor_move.get("judge") or {}).get("confidence", 0.26),
-        "confidenceLevel": next_confidence_level,
+        "score": next_score,
         "reasons": ((tutor_move.get("runtimeMap") or {}).get("anchor_assessment") or {}).get("reasons") or previous.get("reasons") or [],
         "derivedPrinciple": anchor_patch.get("derived_principle") or previous.get("derivedPrinciple") or concept.get("summary", ""),
         "evidenceCount": previous.get("evidenceCount", 0) + 1,
@@ -915,8 +1189,7 @@ def create_session(payload: Any) -> Dict[str, Any]:
             "anchorState": create_empty_anchor_state(),
             "judge": {
                 "state": remembered.get("state", "不可判"),
-                "confidence": remembered.get("confidence", 0.16),
-                "confidenceLevel": remembered.get("confidenceLevel", "low"),
+                "score": remembered.get("score", default_score_for_state(remembered.get("state", "不可判"))),
                 "reasons": remembered.get("reasons", ["当前还没有足够证据，先保持保守判断"]),
             },
         }
@@ -961,37 +1234,27 @@ def create_session(payload: Any) -> Dict[str, Any]:
         "interactionLog": [],
     }
     session["currentProbe"] = initial_probe(first_concept, session)
-    session["currentQuestionMeta"] = create_question_meta(first_concept, session=session, phase="diagnostic")
     session["turns"] = [
-        {
-            "role": "tutor",
-            "kind": "feedback",
-            "action": "intro",
-            "conceptId": first_point["id"],
-            "conceptTitle": first_point["title"],
-            "checkpointId": first_concept["id"],
-            "checkpointStatement": first_concept.get("checkpointStatement", first_concept["title"]),
-            "content": build_training_decomposition_intro(training_points, first_point, session["summary"]),
-            "takeaway": "",
-            "candidateCoachingStep": "",
-            "coachingStep": "",
-            "scoreSummary": None,
-            "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-        },
-        {
-            "role": "tutor",
-            "kind": "question",
-            "action": "probe",
-            "conceptId": first_point["id"],
-            "conceptTitle": first_point["title"],
-            "checkpointId": first_concept["id"],
-            "checkpointStatement": first_concept.get("checkpointStatement", first_concept["title"]),
-            "content": session["currentProbe"],
-            "questionMeta": session["currentQuestionMeta"],
-            "revisitReason": "",
-            "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-        }
+        create_tutor_message_turn(
+            kind="process",
+            action="prepare",
+            concept_id=first_point["id"],
+            concept_title=first_point["title"],
+            checkpoint_id=first_concept["id"],
+            checkpoint_statement=first_concept.get("checkpointStatement", first_concept["title"]),
+            content=build_training_prepare_message(training_points),
+        ),
+        create_tutor_message_turn(
+            kind="feedback",
+            action="intro",
+            concept_id=first_point["id"],
+            concept_title=first_point["title"],
+            checkpoint_id=first_concept["id"],
+            checkpoint_statement=first_concept.get("checkpointStatement", first_concept["title"]),
+            content=build_training_decomposition_intro(training_points, first_point, session["summary"]),
+        )
     ]
+    append_progress_and_question_turn(session, point=first_point, concept=first_concept, progress_phase="diagnostic", append_progress=True)
     append_interaction_event(
         session,
         event_type="session_started",
@@ -1018,23 +1281,8 @@ def apply_focus_domain(session: Dict[str, Any], domain_id: str) -> Dict[str, Any
     session["currentCheckpointId"] = concept["id"]
     session["currentConceptId"] = concept["id"]
     session["currentProbe"] = resolve_fresh_prompt_for_concept(session=session, concept=concept)
-    session["currentQuestionMeta"] = create_question_meta(concept, session=session, phase="diagnostic")
     session["turns"].append(create_workspace_turn(action="focus-domain", concept=point or concept))
-    session["turns"].append(
-        {
-            "role": "tutor",
-            "kind": "question",
-            "action": "probe",
-            "conceptId": point["id"] if point else concept["id"],
-            "conceptTitle": point["title"] if point else concept["title"],
-            "checkpointId": concept["id"],
-            "checkpointStatement": concept.get("checkpointStatement", concept["title"]),
-            "content": session["currentProbe"],
-            "questionMeta": session["currentQuestionMeta"],
-            "revisitReason": "",
-            "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-        }
-    )
+    append_progress_and_question_turn(session, point=point or concept, concept=concept, progress_phase="diagnostic", append_progress=True)
     append_interaction_event(
         session,
         event_type="focus_domain",
@@ -1060,23 +1308,8 @@ def apply_focus_concept(session: Dict[str, Any], concept_id: str) -> Dict[str, A
     session["currentCheckpointId"] = concept["id"]
     session["currentConceptId"] = concept["id"]
     session["currentProbe"] = resolve_fresh_prompt_for_concept(session=session, concept=concept)
-    session["currentQuestionMeta"] = create_question_meta(concept, session=session, phase="diagnostic")
     session["turns"].append(create_workspace_turn(action="focus-concept", concept=point))
-    session["turns"].append(
-        {
-            "role": "tutor",
-            "kind": "question",
-            "action": "probe",
-            "conceptId": point["id"],
-            "conceptTitle": point["title"],
-            "checkpointId": concept["id"],
-            "checkpointStatement": concept.get("checkpointStatement", concept["title"]),
-            "content": session["currentProbe"],
-            "questionMeta": session["currentQuestionMeta"],
-            "revisitReason": "",
-            "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-        }
-    )
+    append_progress_and_question_turn(session, point=point, concept=concept, progress_phase="diagnostic", append_progress=True)
     append_interaction_event(
         session,
         event_type="focus_concept",
@@ -1138,10 +1371,7 @@ def handle_teach_control(
         phase="next_step",
         status="running",
         label="安排下一步",
-        # Teach-mode progress messages are intentionally append-only status hints.
-        # They explain what the system is doing right now, but they never replace
-        # the learner-facing explanation that has already been streamed.
-        detail="系统正在为当前题生成讲解后的回问，用来判断是继续当前点还是切到下一题。",
+        detail="系统正在判断讲解后是进入下一题，还是收口本轮训练。",
     )
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -1169,7 +1399,7 @@ def handle_teach_control(
         phase="reply",
         status="completed",
         label="生成解析",
-        detail="解析内容已经生成。",
+        detail="解析内容已经生成，正在同步到对话并准备下一步。",
     )
     next_move = (decision_envelope or {}).get("next_move") or {}
     assert_valid_turn_envelope(decision_envelope, concept["id"])
@@ -1189,30 +1419,25 @@ def handle_teach_control(
     )
     teaching_chunk = ""
     teaching_paragraphs: List[str] = []
-    coaching_step = (tutor_move or {}).get("followUpQuestion") or ""
     wrap_up = build_interview_wrap_up(
         concept=concept,
         judge=tutor_move.get("judge") or session["conceptStates"][concept["id"]]["judge"],
         gap=(tutor_move.get("nextMove") or {}).get("reason", ""),
     )
 
-    session["conceptStates"][concept["id"]]["completed"] = False
-    session["conceptStates"][concept["id"]]["result"] = "in_progress"
-    session["currentTrainingPointId"] = point["id"] if point else session.get("currentTrainingPointId", "")
-    session["currentCheckpointId"] = concept["id"]
-    session["currentConceptId"] = concept["id"]
-    session["currentProbe"] = (
-        (tutor_move.get("nextMove") or {}).get("follow_up_question")
-        or (tutor_move or {}).get("followUpQuestion")
-        or concept.get("checkQuestion")
-        or concept.get("retryQuestion")
-        or concept.get("diagnosticQuestion")
-        or ""
-    )
-    session["currentQuestionMeta"] = (
-        create_question_meta(concept, session=session, phase="teach-back")
-        if session["currentProbe"]
-        else None
+    session["conceptStates"][concept["id"]]["completed"] = True
+    session["conceptStates"][concept["id"]]["result"] = "partial"
+    transition = next_checkpoint_after_completion(session, concept, point)
+    next_concept = transition["next_concept"]
+    next_point = transition["next_point"]
+    switched = bool(next_concept and next_concept["id"] != concept["id"])
+    turn_resolution = build_turn_resolution(
+        concept=concept,
+        next_concept=next_concept,
+        switched_concept=switched,
+        final_prompt=session["currentProbe"],
+        final_question_meta=session["currentQuestionMeta"],
+        control_verdict=None,
     )
 
     latest_feedback = {
@@ -1239,16 +1464,7 @@ def handle_teach_control(
         "modelNextMove": tutor_move.get("nextMove"),
         "writebackSuggestion": tutor_move.get("writebackSuggestion"),
         "controlVerdict": None,
-        "turnResolution": {
-            "mode": "stay" if session["currentProbe"] else "stop",
-            "reason": "teach_then_verify",
-            "finalPrompt": session["currentProbe"],
-            "finalConceptId": point["id"] if point else concept["id"],
-            "finalConceptTitle": point["title"] if point else concept["title"],
-            "finalCheckpointId": concept["id"],
-            "finalCheckpointStatement": concept.get("checkpointStatement", concept["title"]),
-            "finalQuestionMeta": session["currentQuestionMeta"],
-        },
+        "turnResolution": turn_resolution,
         "memoryAnchor": session["memoryProfile"]["abilityItems"].get(concept["id"]),
         "remediationMaterial": (concept.get("remediationMaterials") or [None])[0],
         "learningSources": concept.get("javaGuideSources") or [],
@@ -1258,7 +1474,11 @@ def handle_teach_control(
         phase="next_step",
         status="completed",
         label="安排下一步",
-        detail=describe_next_step((tutor_move.get("nextMove") or {}).get("ui_mode", "")),
+        detail=(
+            f"讲解已追加，接下来进入下一题：{session['currentProbe']}"
+            if session.get("currentProbe")
+            else "讲解已追加，当前训练范围正在收口并生成总结。"
+        ),
     )
     return latest_feedback
 
@@ -1343,6 +1563,7 @@ def answer_session(
     payload: Any,
     intelligence_override: Any = None,
     progress_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+    turn_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     concept = get_current_checkpoint_concept(session)
     point = get_current_checkpoint_point(session) or get_checkpoint_point(session, concept["id"])
@@ -1352,8 +1573,10 @@ def answer_session(
     answer = payload.answer.strip()
     control_intent = detect_control_intent(answer, payload.intent or "")
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    session["turns"].append(
+    append_session_turn(
+        session,
         {
+            "turnId": f"turn_{uuid4().hex}",
             "role": "learner",
             "kind": "control" if control_intent else "answer",
             "action": control_intent or "",
@@ -1363,7 +1586,8 @@ def answer_session(
             "checkpointStatement": concept.get("checkpointStatement", concept["title"]),
             "content": answer,
             "timestamp": now_ms,
-        }
+        },
+        turn_callback,
     )
     append_interaction_event(
         session,
@@ -1482,7 +1706,7 @@ def answer_session(
                         status="completed",
                         label="判断掌握度",
                         detail=(
-                            f"当前判断：{score_summary['stateLabel']}，系统把握 {score_summary['confidence']}%。"
+                            f"回答评分：{score_summary['score']} 分（{score_summary['stateLabel']}）。"
                             if score_summary
                             else "本轮判断已经生成。"
                         ),
@@ -1546,7 +1770,7 @@ def answer_session(
                 "explanation": tutor_move["replyText"],
                 "whyJudgedThisWay": "；".join((tutor_move["judge"] or {}).get("reasons", [])),
                 "sourceRefs": context_packet["draft_evidence"]["sourceRefs"],
-                "confidenceLevel": tutor_move["judge"].get("confidenceLevel") or score_to_confidence_level(tutor_move["judge"].get("confidence", 0)),
+                "score": tutor_move["judge"].get("score", 0),
                 "evidenceReference": concept["evidenceSnippet"],
                 "sourceAligned": True,
             },
@@ -1712,49 +1936,103 @@ def answer_session(
         learner_intent=control_intent or "answer",
     )
 
-    session["turns"].append(
-        {
-            "role": "tutor",
-            "kind": "feedback",
-            "action": latest_feedback["action"],
-            "conceptId": point["id"] if point else concept["id"],
-            "conceptTitle": point["title"] if point else concept["title"],
-            "checkpointId": concept["id"],
-            "checkpointStatement": concept.get("checkpointStatement", concept["title"]),
-            "content": latest_feedback["explanation"],
-            "contentFormat": "markdown",
-            "coachingStep": latest_feedback["coachingStep"],
-            "candidateCoachingStep": latest_feedback["candidateCoachingStep"],
-            "takeaway": latest_feedback["takeaway"],
-            "teachingChunk": latest_feedback["teachingChunk"],
-            "teachingParagraphs": latest_feedback["teachingParagraphs"],
-            "judge": latest_feedback.get("judge"),
-            "turnDiagnosis": latest_feedback.get("turnDiagnosis"),
-            "scoreSummary": latest_feedback.get("scoreSummary"),
-            "runtimeMap": latest_feedback["runtimeMap"],
-            "nextMove": latest_feedback["nextMove"],
-            "modelNextMove": latest_feedback["modelNextMove"],
-            "turnResolution": latest_feedback["turnResolution"],
-            "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-        }
+    turn_timestamp_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    if latest_feedback.get("scoreSummary"):
+        append_session_turn(
+            session,
+            create_tutor_message_turn(
+                kind="evaluation",
+                action="evaluate",
+                concept_id=point["id"] if point else concept["id"],
+                concept_title=point["title"] if point else concept["title"],
+                checkpoint_id=concept["id"],
+                checkpoint_statement=concept.get("checkpointStatement", concept["title"]),
+                content=build_evaluation_message(latest_feedback["scoreSummary"]),
+                score_summary=latest_feedback["scoreSummary"],
+                timestamp_ms=turn_timestamp_ms,
+            ),
+            turn_callback,
+        )
+
+    feedback_turn = create_tutor_message_turn(
+        kind="feedback",
+        action=latest_feedback["action"],
+        concept_id=point["id"] if point else concept["id"],
+        concept_title=point["title"] if point else concept["title"],
+        checkpoint_id=concept["id"],
+        checkpoint_statement=concept.get("checkpointStatement", concept["title"]),
+        content=latest_feedback["explanation"],
+        timestamp_ms=turn_timestamp_ms,
+        takeaway=latest_feedback["takeaway"],
+        candidate_coaching_step=latest_feedback["candidateCoachingStep"],
+        coaching_step=latest_feedback["coachingStep"],
+        turn_resolution=latest_feedback["turnResolution"],
+        turn_id=str(session.pop("_streamFeedbackTurnId", "") or ""),
     )
+    existing_feedback_turn = next(
+        (
+            turn for turn in session["turns"]
+            if feedback_turn.get("turnId") and turn.get("turnId") == feedback_turn.get("turnId")
+        ),
+        None,
+    )
+    if existing_feedback_turn:
+        original_timestamp = existing_feedback_turn.get("timestamp")
+        existing_feedback_turn.update(feedback_turn)
+        if original_timestamp is not None:
+            existing_feedback_turn["timestamp"] = original_timestamp
+    else:
+        append_session_turn(session, feedback_turn, turn_callback)
+
+    memory_summary = build_memory_summary_message(
+        concept_title=point["title"] if point else concept["title"],
+        score_summary=latest_feedback.get("scoreSummary"),
+        memory_events=latest_memory_events,
+    )
+    if memory_summary:
+        append_session_turn(
+            session,
+            create_tutor_message_turn(
+                kind="memory",
+                action="memory",
+                concept_id=point["id"] if point else concept["id"],
+                concept_title=point["title"] if point else concept["title"],
+                checkpoint_id=concept["id"],
+                checkpoint_statement=concept.get("checkpointStatement", concept["title"]),
+                content=memory_summary,
+                timestamp_ms=turn_timestamp_ms,
+            ),
+            turn_callback,
+        )
+
     if session["currentProbe"]:
         current_concept = get_current_checkpoint_concept(session)
         current_point = get_current_checkpoint_point(session) or get_checkpoint_point(session, current_concept["id"])
-        session["turns"].append(
-            {
-                "role": "tutor",
-                "kind": "question",
-                "action": "probe",
-                "conceptId": current_point["id"] if current_point else current_concept["id"],
-                "conceptTitle": current_point["title"] if current_point else current_concept["title"],
-                "checkpointId": current_concept["id"],
-                "checkpointStatement": current_concept.get("checkpointStatement", current_concept["title"]),
-                "content": session["currentProbe"],
-                "questionMeta": session["currentQuestionMeta"],
-                "revisitReason": "",
-                "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-            }
+        # Append-only chat contract: every learner-facing question is preceded by
+        # an explicit progress turn from the backend, even when we stay on the
+        # same checkpoint. The frontend should not infer or re-create progress.
+        append_progress_and_question_turn(
+            session,
+            point=current_point or current_concept,
+            concept=current_concept,
+            progress_phase=(session.get("currentQuestionMeta") or {}).get("phase") or "diagnostic",
+            append_progress=True,
+            turn_callback=turn_callback,
+        )
+    else:
+        append_session_turn(
+            session,
+            create_tutor_message_turn(
+                kind="feedback",
+                action="complete",
+                concept_id=point["id"] if point else concept["id"],
+                concept_title=point["title"] if point else concept["title"],
+                checkpoint_id=concept["id"],
+                checkpoint_statement=concept.get("checkpointStatement", concept["title"]),
+                content=build_scope_completion_message(session, latest_feedback),
+                timestamp_ms=turn_timestamp_ms + 1,
+            ),
+            turn_callback,
         )
     logger.event(
         events.BUSINESS_RESULT_GENERATED,
@@ -1764,7 +2042,7 @@ def answer_session(
         followup_reason=latest_feedback.get("coachingStep") or latest_feedback.get("candidateCoachingStep") or "",
         scores={
             "state": latest_feedback.get("judge", {}).get("state", "不可判"),
-            "confidence": latest_feedback.get("judge", {}).get("confidence", 0),
+            "score": latest_feedback.get("judge", {}).get("score", 0),
         },
         parse_failed_count=0,
         fallback_used=False,

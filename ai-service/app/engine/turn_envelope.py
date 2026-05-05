@@ -2,22 +2,38 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from app.engine.mastery_scoring import confidence_level_to_score, score_to_confidence_level
+from app.engine.mastery_scoring import default_score_for_state, score_to_state
 
 
 ALLOWED_INFO_GAIN_LEVELS = {"high", "medium", "low", "negligible"}
-ALLOWED_CONFIDENCE_LEVELS = {"high", "medium", "low"}
 ALLOWED_STATES = {"solid", "partial", "weak", "不可判"}
 ALLOWED_SIGNALS = {"positive", "negative", "noise"}
 ALLOWED_UI_MODES = {"probe", "teach", "verify", "advance", "revisit", "stop"}
 
 
-def normalize_confidence_level(level: str | None, fallback: str = "low") -> str:
-    return level if level in ALLOWED_CONFIDENCE_LEVELS else fallback
-
-
 def normalize_info_gain_level(level: str | None, fallback: str = "medium") -> str:
     return level if level in ALLOWED_INFO_GAIN_LEVELS else fallback
+
+
+def normalize_answer_score(value: Any, fallback: int = 0) -> int:
+    try:
+        numeric_score = round(float(value))
+    except (TypeError, ValueError):
+        numeric_score = fallback
+    return min(100, max(0, int(numeric_score)))
+
+
+def normalize_anchor_assessment(assessment: Dict[str, Any] | None) -> Dict[str, Any]:
+    assessment = assessment or {}
+    provided_state = assessment.get("state") if assessment.get("state") in ALLOWED_STATES else ""
+    fallback_score = default_score_for_state(provided_state or "weak")
+    score = normalize_answer_score(assessment.get("score"), fallback_score)
+    state = "不可判" if provided_state == "不可判" and score == 0 else score_to_state(score)
+    return {
+        "state": state,
+        "score": score,
+        "reasons": assessment.get("reasons") or [],
+    }
 
 
 def create_empty_runtime_map(anchor_id: str) -> Dict[str, Any]:
@@ -26,7 +42,7 @@ def create_empty_runtime_map(anchor_id: str) -> Dict[str, Any]:
         "turn_signal": "noise",
         "anchor_assessment": {
             "state": "不可判",
-            "confidence_level": "low",
+            "score": 0,
             "reasons": ["当前还没有足够证据，先保持保守判断"],
         },
         "hypotheses": [],
@@ -45,7 +61,6 @@ def _normalize_hypothesis(entry: Dict[str, Any] | None, index: int) -> Dict[str,
     return {
         "id": entry.get("id") if str(entry.get("id", "")).strip() else f"hypothesis-{index + 1}",
         "status": entry.get("status") if entry.get("status") in {"supported", "unsupported", "contradicted", "unknown"} else "unknown",
-        "confidence_level": normalize_confidence_level(entry.get("confidence_level") or entry.get("confidenceLevel"), "low"),
         "evidence_refs": [value for value in evidence_refs if value][:4],
         "note": str(entry.get("note", "") or ""),
     }
@@ -59,7 +74,6 @@ def _normalize_misunderstanding(entry: Dict[str, Any] | None, index: int) -> Dic
     label = str(entry.get("label", "") or "").strip()
     return {
         "label": label or f"misunderstanding-{index + 1}",
-        "confidence_level": normalize_confidence_level(entry.get("confidence_level") or entry.get("confidenceLevel"), "low"),
         "evidence_refs": [value for value in evidence_refs if value][:4],
     }
 
@@ -131,7 +145,6 @@ def build_control_verdict(*, envelope: Dict[str, Any], context_packet: Dict[str,
     return {
         "should_stop": should_stop,
         "reason": reason,
-        "confidence_level": ((runtime_map.get("anchor_assessment") or {}).get("confidence_level")) or "low",
         "scope_type": scope_type,
         "budget_snapshot": {
             "remaining_probe_turns": budget.get("remaining_probe_turns"),
@@ -154,8 +167,8 @@ def assert_valid_turn_envelope(envelope: Dict[str, Any], expected_anchor_id: str
     assessment = runtime_map.get("anchor_assessment") or {}
     if assessment.get("state") not in ALLOWED_STATES:
         raise ValueError("Turn envelope runtime_map anchor_assessment state is invalid.")
-    if assessment.get("confidence_level") not in ALLOWED_CONFIDENCE_LEVELS:
-        raise ValueError("Turn envelope runtime_map anchor_assessment confidence_level is invalid.")
+    if not isinstance(assessment.get("score"), int) or assessment.get("score") < 0 or assessment.get("score") > 100:
+        raise ValueError("Turn envelope runtime_map anchor_assessment score is invalid.")
     if runtime_map.get("info_gain_level") not in ALLOWED_INFO_GAIN_LEVELS:
         raise ValueError("Turn envelope runtime_map info_gain_level is invalid.")
 
@@ -167,7 +180,7 @@ def assert_valid_turn_envelope(envelope: Dict[str, Any], expected_anchor_id: str
         raise ValueError("Turn envelope next_move ui_mode is invalid.")
     if next_move.get("expected_gain") not in ALLOWED_INFO_GAIN_LEVELS:
         raise ValueError("Turn envelope next_move expected_gain is invalid.")
-    if next_move.get("ui_mode") in {"probe", "teach", "verify"} and not str(next_move.get("follow_up_question", "")).strip():
+    if next_move.get("ui_mode") in {"probe", "verify"} and not str(next_move.get("follow_up_question", "")).strip():
         raise ValueError("Turn envelope next_move.follow_up_question is required.")
     if next_move.get("ui_mode") in {"advance", "stop", "revisit"} and str(next_move.get("follow_up_question", "")).strip():
         raise ValueError("Turn envelope next_move.follow_up_question must be empty for terminal moves.")
@@ -177,10 +190,8 @@ def assert_valid_turn_envelope(envelope: Dict[str, Any], expected_anchor_id: str
     if suggestion.get("mode") not in {"update", "append_conflict", "noop"}:
         raise ValueError("Turn envelope writeback_suggestion.mode is invalid.")
     anchor_patch = suggestion.get("anchor_patch") or {}
-    if anchor_patch.get("state") not in ALLOWED_STATES:
-        raise ValueError("Turn envelope writeback_suggestion.anchor_patch.state is invalid.")
-    if anchor_patch.get("confidence_level") not in ALLOWED_CONFIDENCE_LEVELS:
-        raise ValueError("Turn envelope writeback_suggestion.anchor_patch.confidence_level is invalid.")
+    if not isinstance(anchor_patch.get("score"), int) or anchor_patch.get("score") < 0 or anchor_patch.get("score") > 100:
+        raise ValueError("Turn envelope writeback_suggestion.anchor_patch score is invalid.")
 
 
 def assert_consistent_turn_envelope(envelope: Dict[str, Any], context_packet: Dict[str, Any]) -> None:
@@ -191,7 +202,7 @@ def assert_consistent_turn_envelope(envelope: Dict[str, Any], context_packet: Di
         raise ValueError("Turn envelope is inconsistent: negligible info gain cannot continue probing.")
     if (context_packet.get("stop_conditions") or {}).get("should_discourage_more_probe") and next_move.get("ui_mode") == "probe":
         raise ValueError("Turn envelope is inconsistent: stop conditions discourage more probing.")
-    if next_move.get("ui_mode") in {"probe", "teach", "verify"} and not str(next_move.get("follow_up_question", "")).strip():
+    if next_move.get("ui_mode") in {"probe", "verify"} and not str(next_move.get("follow_up_question", "")).strip():
         raise ValueError("Turn envelope is inconsistent: interactive moves must include follow_up_question.")
 
 
@@ -217,8 +228,7 @@ def turn_envelope_to_tutor_move(envelope: Dict[str, Any], concept: Dict[str, Any
         "signal": runtime_map.get("turn_signal", "noise"),
         "judge": {
             "state": ((runtime_map.get("anchor_assessment") or {}).get("state")) or "不可判",
-            "confidence": confidence_level_to_score(((runtime_map.get("anchor_assessment") or {}).get("confidence_level")) or "low"),
-            "confidenceLevel": ((runtime_map.get("anchor_assessment") or {}).get("confidence_level")) or "low",
+            "score": normalize_answer_score((runtime_map.get("anchor_assessment") or {}).get("score"), 0),
             "reasons": ((runtime_map.get("anchor_assessment") or {}).get("reasons")) or [],
         },
         "replyText": str(reply_text or "").strip(),

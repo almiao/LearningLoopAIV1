@@ -46,7 +46,7 @@ test("reading assistant answers document questions without entering training flo
 
   await page.getByRole("button", { name: "总结全文" }).click();
 
-  await expect(page.locator(".message-card.learner")).toContainText("请参考");
+  await expect(page.locator(".message-card.learner")).toContainText("请基于面试准备目标");
   await expect(page.locator(".message-card.assistant").filter({ hasText: /Agent|智能体|Context Engineering/ })).toBeVisible({
     timeout: 20_000,
   });
@@ -68,6 +68,20 @@ test("learn workspace submits composer with Enter", async ({ page, request }) =>
   await expect(page.locator(".message-card.assistant").filter({ hasText: /Context|上下文|工程|Agent|智能体/ })).toBeVisible({
     timeout: 20_000,
   });
+});
+
+test("learn workspace shows training preparation feedback immediately", async ({ page, request }) => {
+  await loginForLearnPage(page, request);
+  await page.route(`${bffBaseUrl}/api/interview/start-target`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.continue();
+  });
+  await page.goto(`/learn?doc=${encodeURIComponent(agentDocPath)}`, { waitUntil: "networkidle" });
+
+  await page.getByRole("button", { name: "开始训练" }).click();
+
+  await expect(page.getByTestId("qa-panel")).toContainText("训练");
+  await expect(page.getByTestId("training-prep-card")).toContainText("正在准备训练");
 });
 
 test("learn workspace auto-expands the right panel after interaction and still supports manual resize", async ({ page, request }, testInfo) => {

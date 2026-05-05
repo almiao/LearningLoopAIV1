@@ -8,7 +8,7 @@ test("visible session view compresses improvement memory events into one user-fa
     latestFeedback: {
       conceptTitle: "AI Agent 定义与核心公式",
       scoreSummary: {
-        keyClaim: "用户知道 Agent 包括环境执行与结果反馈链路。"
+        keyClaim: "你已经知道 Agent 包括环境执行与结果反馈链路。"
       }
     },
     latestMemoryEvents: [

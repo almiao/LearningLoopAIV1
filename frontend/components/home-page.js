@@ -181,6 +181,8 @@ export function HomePage() {
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [catalogManageMode, setCatalogManageMode] = useState(false);
+  const [ignoringDocPath, setIgnoringDocPath] = useState("");
   const lastProfileSyncRef = useRef(0);
 
   async function refreshProfile() {
@@ -257,13 +259,21 @@ export function HomePage() {
     };
   }, []);
 
-  const knowledgeTree = useMemo(() => buildKnowledgeTree(knowledgeDocuments), [knowledgeDocuments]);
+  const currentDocumentProgress = profile?.documentProgress || null;
+  const ignoredDocumentPaths = useMemo(
+    () => new Set(currentDocumentProgress?.ignoredDocPaths || []),
+    [currentDocumentProgress?.ignoredDocPaths]
+  );
+  const visibleKnowledgeDocuments = useMemo(
+    () => knowledgeDocuments.filter((document) => !ignoredDocumentPaths.has(document.path)),
+    [ignoredDocumentPaths, knowledgeDocuments]
+  );
+  const knowledgeTree = useMemo(() => buildKnowledgeTree(visibleKnowledgeDocuments), [visibleKnowledgeDocuments]);
   const sections = useMemo(
     () => knowledgeTree.filter((section) => section.type === "folder"),
     [knowledgeTree]
   );
   const allCatalogDocuments = useMemo(() => flattenDocuments(knowledgeTree), [knowledgeTree]);
-  const currentDocumentProgress = profile?.documentProgress || null;
   const recentReadingDocuments = useMemo(
     () => buildRecentReadingDocuments(currentDocumentProgress, allCatalogDocuments),
     [allCatalogDocuments, currentDocumentProgress]
@@ -295,7 +305,7 @@ export function HomePage() {
       `${document.title} ${document.path}`.toLowerCase().includes(normalizedQuery)
     ));
   }, [recentReadingDocuments, search]);
-  const totalDocumentCount = knowledgeDocuments.length;
+  const totalDocumentCount = visibleKnowledgeDocuments.length;
   const displayDocuments = selectedHistory ? visibleHistoryDocuments : visibleDocuments;
   const matchingDocumentCount = displayDocuments.length;
   const currentReading = currentDocumentProgress?.currentDocPath ? {
@@ -359,6 +369,28 @@ export function HomePage() {
     }
   }
 
+  async function onIgnoreDocument(document) {
+    const userId = getStoredUserId();
+    if (!userId || !document?.path) {
+      setError("登录后才能忽略文档。");
+      return;
+    }
+    try {
+      setIgnoringDocPath(document.path);
+      setError("");
+      const data = await postJson("/api/profile/ignored-document", {
+        userId,
+        docPath: document.path,
+        docTitle: document.label || document.title || "",
+      });
+      setProfile(data);
+    } catch (nextError) {
+      setError(nextError.message);
+    } finally {
+      setIgnoringDocPath("");
+    }
+  }
+
   return (
     <main className="app-shell home-shell">
       <section className="home-topbar">
@@ -383,6 +415,7 @@ export function HomePage() {
               onClick={() => {
                 setProfile(null);
                 setStoredUserId("");
+                setCatalogManageMode(false);
               }}
             >
               退出
@@ -494,17 +527,30 @@ export function HomePage() {
           <div className="catalog-main-panel">
             <div className="catalog-list-head">
               <div>
+                <strong>JavaGuide 全量目录</strong>
                 <p aria-live="polite">
                   {search.trim()
                     ? `找到 ${matchingDocumentCount} 篇匹配`
                     : selectedHistory ? "历史文档" : selectedSection ? "当前分类" : "全部文档"}
                 </p>
               </div>
-              {search.trim() ? (
-                <button type="button" className="catalog-clear-button" onClick={() => setSearch("")}>
-                  清除
-                </button>
-              ) : null}
+              <div className="catalog-head-actions">
+                {search.trim() ? (
+                  <button type="button" className="catalog-clear-button" onClick={() => setSearch("")}>
+                    清除
+                  </button>
+                ) : null}
+                {profile ? (
+                  <button
+                    type="button"
+                    className={catalogManageMode ? "catalog-manage-button active" : "catalog-manage-button"}
+                    aria-pressed={catalogManageMode}
+                    onClick={() => setCatalogManageMode((current) => !current)}
+                  >
+                    {catalogManageMode ? "完成" : "管理"}
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             {recommendedDocuments.length ? (
@@ -519,21 +565,39 @@ export function HomePage() {
                     : isCurrent ? "当前阅读" : simplifyPath(document.path);
 
                   return (
-                    <Link
+                    <div
                       key={document.key || document.path}
-                      className={isCurrent ? "catalog-doc-row current" : "catalog-doc-row"}
-                      href={documentHref(document.path)}
+                      className={[
+                        "catalog-doc-row",
+                        isCurrent ? "current" : "",
+                        catalogManageMode ? "manage-mode" : "",
+                      ].filter(Boolean).join(" ")}
                     >
-                      <span className="catalog-doc-dot" />
-                      <span className="catalog-doc-title">{documentTitle}</span>
-                      <span className="catalog-doc-badges">
-                        <span className="catalog-doc-progress">{formatProgressBadge(progressPercentage, isCurrent)}</span>
-                        <span className="catalog-doc-mastery">{formatLearningBadge(mastery)}</span>
-                      </span>
-                      <span className="catalog-doc-path">
-                        {secondaryLabel}
-                      </span>
-                    </Link>
+                      <Link className="catalog-doc-link" href={documentHref(document.path)}>
+                        <span className="catalog-doc-dot" />
+                        <span className="catalog-doc-title">{documentTitle}</span>
+                        <span className="catalog-doc-badges">
+                          <span className="catalog-doc-progress">{formatProgressBadge(progressPercentage, isCurrent)}</span>
+                          <span className="catalog-doc-mastery">{formatLearningBadge(mastery)}</span>
+                        </span>
+                        <span className="catalog-doc-path">
+                          {secondaryLabel}
+                        </span>
+                      </Link>
+                      {profile && catalogManageMode ? (
+                        <div className="catalog-doc-actions" aria-label={`${documentTitle} 管理操作`}>
+                          <button
+                            type="button"
+                            className="catalog-doc-ignore"
+                            disabled={ignoringDocPath === document.path}
+                            aria-label={`忽略 ${documentTitle}`}
+                            onClick={() => void onIgnoreDocument(document)}
+                          >
+                            {ignoringDocPath === document.path ? "忽略中" : "忽略"}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                   );
                 })}
               </div>

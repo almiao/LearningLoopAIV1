@@ -86,3 +86,26 @@ test("home page exposes reading history as a catalog section", async ({ page, re
   await expect(page.getByText("当前章节")).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("你上次读到");
 });
+
+test("home page lets a signed-in user hide a document permanently from catalog views", async ({ page, request }) => {
+  const userId = await loginAndSeed(page, request);
+  await seedReadingProgress(
+    request,
+    userId,
+    "docs/system-design/framework/spring/spring-transaction.md",
+    "Spring 事务详解"
+  );
+
+  await page.goto("/", { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /历史文档/ }).click();
+  await expect(page.locator(".catalog-doc-grid")).toContainText("Spring 事务详解");
+  await expect(page.getByRole("button", { name: "忽略 Spring 事务详解" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "管理" }).click();
+  await page.getByRole("button", { name: "忽略 Spring 事务详解" }).click();
+  await expect(page.locator("body")).not.toContainText("Spring 事务详解");
+
+  await page.getByPlaceholder("筛选当前目录").or(page.getByPlaceholder("筛选历史文档")).fill("Spring 事务详解");
+  await expect(page.locator(".catalog-list-head")).toContainText("找到 0 篇匹配");
+  await expect(page.locator(".chapter-empty")).toContainText("当前搜索没有匹配到文档");
+});

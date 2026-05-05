@@ -52,8 +52,8 @@ function validateProfileShape(profile, expectedId = "") {
     if (item.state && !["不可判", "weak", "partial", "solid"].includes(item.state)) {
       throw new Error("Memory profile state is invalid.");
     }
-    if (item.confidenceLevel && !["high", "medium", "low"].includes(item.confidenceLevel)) {
-      throw new Error("Memory profile confidenceLevel is invalid.");
+    if (item.score !== undefined && (typeof item.score !== "number" || item.score < 0 || item.score > 100)) {
+      throw new Error("Memory profile score is invalid.");
     }
     if (item.derivedPrinciple && typeof item.derivedPrinciple !== "string") {
       throw new Error("Memory profile derivedPrinciple is invalid.");

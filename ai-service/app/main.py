@@ -18,13 +18,18 @@ from app.core.tracing import (
     set_session_context,
     trace_id_var,
 )
+from app.engine.control_intents import detect_control_intent
 from app.engine.session_engine import (
     answer_session,
     apply_focus_concept,
     apply_focus_domain,
     create_session,
+    create_tutor_message_turn,
     get_tutor_intelligence,
     get_session,
+    get_current_checkpoint_concept,
+    get_current_checkpoint_point,
+    get_checkpoint_point,
     project_session,
     restore_session,
     SESSIONS,
@@ -46,6 +51,80 @@ from app.engine.tutor_intelligence import answer_knowledge_question_heuristic, d
 
 def sse_event(event: str, data: Dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def enqueue_stream_turn(
+    event_queue: "queue.Queue[tuple[str, Dict[str, Any]]]",
+    turn: Dict[str, Any],
+) -> None:
+    event_queue.put(("turn_append", {"turn": turn}))
+
+
+def patch_stream_turn(
+    event_queue: "queue.Queue[tuple[str, Dict[str, Any]]]",
+    *,
+    turn_id: str,
+    delta: str,
+    content: str,
+) -> None:
+    event_queue.put(("turn_patch", {
+        "turnId": turn_id,
+        "delta": delta,
+        "content": content,
+    }))
+
+
+def append_progress_turn_from_stream(
+    *,
+    session: Dict[str, Any],
+    event_queue: "queue.Queue[tuple[str, Dict[str, Any]]]",
+    data: Dict[str, Any],
+) -> None:
+    content = str(data.get("detail") or data.get("label") or "").strip()
+    if not content:
+        return
+    concept = get_current_checkpoint_concept(session)
+    point = get_current_checkpoint_point(session) or get_checkpoint_point(session, concept["id"]) or concept
+    turn = create_tutor_message_turn(
+        kind="process",
+        action="process",
+        concept_id=point["id"],
+        concept_title=point["title"],
+        checkpoint_id=concept["id"],
+        checkpoint_statement=concept.get("checkpointStatement", concept["title"]),
+        content=content,
+    )
+    session["turns"].append(turn)
+    enqueue_stream_turn(event_queue, turn)
+
+
+def ensure_stream_feedback_turn(
+    *,
+    session: Dict[str, Any],
+    event_queue: "queue.Queue[tuple[str, Dict[str, Any]]]",
+    stream_state: Dict[str, Any],
+    action: str,
+) -> Dict[str, Any]:
+    existing = stream_state.get("feedback_turn")
+    if existing:
+        return existing
+    concept = get_current_checkpoint_concept(session)
+    point = get_current_checkpoint_point(session) or get_checkpoint_point(session, concept["id"]) or concept
+    turn = create_tutor_message_turn(
+        kind="feedback",
+        action=action,
+        concept_id=point["id"],
+        concept_title=point["title"],
+        checkpoint_id=concept["id"],
+        checkpoint_statement=concept.get("checkpointStatement", concept["title"]),
+        content="",
+    )
+    stream_state["feedback_turn"] = turn
+    stream_state["feedback_content"] = ""
+    session["_streamFeedbackTurnId"] = turn["turnId"]
+    session["turns"].append(turn)
+    enqueue_stream_turn(event_queue, turn)
+    return turn
 
 
 async def poll_realtime_asr_event(recognizer: AliyunRealtimeRecognizer, timeout: float = 0.1):
@@ -184,6 +263,8 @@ class SuperappContinueRequest(BaseModel):
 class SuperappKnowledgeQuestionRequest(BaseModel):
     userId: str = ""
     question: str
+    goal: str = "interview"
+    taskType: str = "freeform"
     title: str = ""
     context: str = ""
 
@@ -310,6 +391,8 @@ def continue_superapp_private_chat(payload: SuperappContinueRequest) -> Dict[str
 def answer_superapp_knowledge_question(payload: SuperappKnowledgeQuestionRequest) -> Dict[str, Any]:
     question = str(payload.question or "").strip()
     context = str(payload.context or "").strip()
+    goal = str(payload.goal or "interview").strip() or "interview"
+    task_type = str(payload.taskType or "freeform").strip() or "freeform"
     if not question:
         raise HTTPException(status_code=400, detail="question is required.")
 
@@ -317,9 +400,9 @@ def answer_superapp_knowledge_question(payload: SuperappKnowledgeQuestionRequest
     full_context = f"{title_line}{context}".strip()
     intelligence = get_tutor_intelligence()
     if intelligence and hasattr(intelligence, "answer_knowledge_question"):
-        content = intelligence.answer_knowledge_question(question=question, context=full_context)
+        content = intelligence.answer_knowledge_question(question=question, context=full_context, goal=goal, task_type=task_type)
     else:
-        content = answer_knowledge_question_heuristic(question=question, context=full_context)
+        content = answer_knowledge_question_heuristic(question=question, context=full_context, goal=goal, task_type=task_type)
     return {
         "mode": "knowledge_qa",
         "content": content,
@@ -572,18 +655,49 @@ def answer_stream(payload: AnswerRequest) -> StreamingResponse:
     if not session:
         raise HTTPException(status_code=404, detail="Unknown session.")
     set_session_context(session_id=payload.sessionId, turn=len(session.get("turns", [])))
+    control_intent = detect_control_intent(str(payload.answer or "").strip(), payload.intent or "")
+    stream_feedback_action = "teach" if control_intent == "teach" else "reply"
 
     def generate():
         event_queue: queue.Queue[tuple[str, Dict[str, Any]]] = queue.Queue()
+        stream_state: Dict[str, Any] = {
+            "feedback_turn": None,
+            "feedback_content": "",
+        }
 
         def emit_delta(delta: str) -> None:
+            if delta:
+                feedback_turn = ensure_stream_feedback_turn(
+                    session=session,
+                    event_queue=event_queue,
+                    stream_state=stream_state,
+                    action=stream_feedback_action,
+                )
+                next_content = f"{stream_state.get('feedback_content', '')}{delta}"
+                stream_state["feedback_content"] = next_content
+                feedback_turn["content"] = next_content
+                patch_stream_turn(
+                    event_queue,
+                    turn_id=feedback_turn["turnId"],
+                    delta=delta,
+                    content=next_content,
+                )
             event_queue.put(("reply_delta", {"delta": delta}))
 
         def emit_reply_done() -> None:
             event_queue.put(("reply_done", {}))
 
         def emit_progress(event: str, data: Dict[str, Any]) -> None:
+            if event == "progress":
+                append_progress_turn_from_stream(
+                    session=session,
+                    event_queue=event_queue,
+                    data=data,
+                )
             event_queue.put((event, data))
+
+        def emit_turn(turn: Dict[str, Any]) -> None:
+            enqueue_stream_turn(event_queue, turn)
 
         base_intelligence = get_tutor_intelligence()
         intelligence = StreamingTutorIntelligence(base_intelligence, emit_delta, emit_reply_done) if base_intelligence else None
@@ -595,6 +709,7 @@ def answer_stream(payload: AnswerRequest) -> StreamingResponse:
                     payload,
                     intelligence_override=intelligence,
                     progress_callback=emit_progress,
+                    turn_callback=emit_turn,
                 )
                 SESSIONS[payload.sessionId] = session
                 event_queue.put(("turn_result", result))

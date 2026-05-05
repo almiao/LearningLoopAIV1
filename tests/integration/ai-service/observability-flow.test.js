@@ -98,9 +98,9 @@ function writeDeepSeekChatResponse(response, content) {
 function createTurnDiagnosisPayload() {
   return {
     input_type: "answer",
-    evidence_quality: "partial",
     key_claim: "用户知道 AQS 负责 acquire/release 的排队、阻塞和唤醒。",
     confirmed_understanding: "已经抓到 acquire/release 主链。",
+    judgment_reason: "你已经抓到 acquire/release 主链，但还没有展开阻塞和唤醒之间的完整协作。",
     has_misconception: false,
     misconception_detail: ""
   };
@@ -142,14 +142,13 @@ test("ai-service observability flow emits traceable logs and snapshot bundles", 
         turn_signal: "positive",
         anchor_assessment: {
           state: "partial",
-          confidence_level: "medium",
+          score: 72,
           reasons: ["用户已经抓到 acquire/release 主链。"]
         },
         hypotheses: [
           {
             id: "aqs-mainline",
             status: "supported",
-            confidence_level: "medium",
             evidence_refs: ["ev-aqs-1"],
             note: "已经提到排队、阻塞与唤醒。"
           }
@@ -178,7 +177,7 @@ test("ai-service observability flow emits traceable logs and snapshot bundles", 
         reason: "new_high_value_partial_signal",
         anchor_patch: {
           state: "partial",
-          confidence_level: "medium",
+          score: 72,
           derived_principle: "AQS 负责同步器通用获取/释放框架。"
         }
       }
@@ -309,7 +308,7 @@ test("ai-service normalizes provider aliases for state and signal before orchest
         turn_signal: "正向",
         anchor_assessment: {
           state: "部分掌握",
-          confidence_level: "medium",
+          score: 72,
           reasons: ["用户已经碰到 acquire/release 主链，但解释还不够完整。"]
         },
         hypotheses: [],
@@ -331,7 +330,7 @@ test("ai-service normalizes provider aliases for state and signal before orchest
         reason: "new_high_value_partial_signal",
         anchor_patch: {
           state: "部分掌握",
-          confidence_level: "medium",
+          score: 72,
           derived_principle: "用户已经知道 AQS 负责通用同步器协调框架。"
         }
       }

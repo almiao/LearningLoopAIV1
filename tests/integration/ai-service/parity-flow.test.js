@@ -60,6 +60,60 @@ async function postJson(url, payload) {
   return data;
 }
 
+function parseSseEvent(rawEvent) {
+  const lines = String(rawEvent || "").split(/\r?\n/);
+  let event = "message";
+  const dataLines = [];
+  for (const line of lines) {
+    if (line.startsWith("event:")) {
+      event = line.slice("event:".length).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trimStart());
+    }
+  }
+  return {
+    event,
+    data: dataLines.length ? JSON.parse(dataLines.join("\n")) : {},
+  };
+}
+
+async function postEventStream(url, payload) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  assert.equal(response.ok, true);
+  assert.ok(response.body);
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const events = [];
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary >= 0) {
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      events.push(parseSseEvent(rawEvent));
+      boundary = buffer.indexOf("\n\n");
+    }
+  }
+
+  if (buffer.trim()) {
+    events.push(parseSseEvent(buffer));
+  }
+  return events;
+}
+
 async function withAiService(t, port, run) {
   const localEnv = loadLocalEnv(root);
   const aiBaseUrl = `http://127.0.0.1:${port}`;
@@ -159,6 +213,49 @@ test("python ai-service honors explicit structured intent for control actions", 
     assert.equal(taught.latestFeedback.action, "teach");
     assert.equal(taught.engagement.controlCount, 1);
     assert.equal(taught.engagement.teachRequestCount, 1);
+  });
+});
+
+test("python ai-service answer stream emits backend-owned append-only turns before final snapshot", async (t) => {
+  await withAiService(t, 18103, async (aiBaseUrl) => {
+    const session = await postJson(`${aiBaseUrl}/api/interview/start-target`, baselinePayload({
+      memoryProfileId: `ai_profile_${Date.now()}_stream_turns`
+    }));
+
+    const events = await postEventStream(`${aiBaseUrl}/api/interview/answer-stream`, {
+      sessionId: session.sessionId,
+      answer: "查看解析",
+      intent: "teach",
+      burdenSignal: "normal",
+      interactionPreference: "balanced"
+    });
+
+    const turnAppends = events.filter((event) => event.event === "turn_append");
+    const turnPatches = events.filter((event) => event.event === "turn_patch");
+    assert.ok(turnAppends.length >= 4);
+    assert.ok(turnPatches.length >= 1);
+    assert.equal(turnAppends[0].data.turn.role, "learner");
+    assert.equal(turnAppends[0].data.turn.kind, "control");
+    assert.equal(turnAppends.at(-1).data.turn.kind, "question");
+    const streamedFeedbackTurnId = turnAppends.find((event) => event.data.turn.kind === "feedback")?.data.turn.turnId;
+    assert.equal(turnPatches[0].data.turnId, streamedFeedbackTurnId);
+
+    const turnResultIndex = events.findIndex((event) => event.event === "turn_result");
+    const lastMessageEventIndex = events.reduce((last, event, index) => (
+      event.event === "turn_append" || event.event === "turn_patch" ? index : last
+    ), -1);
+    assert.ok(turnResultIndex > lastMessageEventIndex);
+    const finalFeedback = events[turnResultIndex].data.turns.find((turn) => turn.kind === "feedback" && turn.action === "teach");
+    assert.equal(finalFeedback?.turnId, streamedFeedbackTurnId);
+    const streamedTurnIds = turnAppends.map((event) => event.data.turn.turnId).filter(Boolean);
+    const finalTurnIds = events[turnResultIndex].data.turns.map((turn) => turn.turnId).filter(Boolean);
+    const streamedIdsInFinalOrder = finalTurnIds.filter((turnId) => streamedTurnIds.includes(turnId));
+    assert.deepEqual(streamedIdsInFinalOrder, streamedTurnIds);
+    const processDetails = turnAppends
+      .filter((event) => event.data.turn.kind === "process")
+      .map((event) => event.data.turn.content);
+    assert.ok(processDetails.some((content) => String(content).includes("正在同步到对话并准备下一步")));
+    assert.ok(processDetails.some((content) => String(content).includes("讲解已追加")));
   });
 });
 

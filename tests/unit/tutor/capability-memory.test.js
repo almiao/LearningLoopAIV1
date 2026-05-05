@@ -11,8 +11,8 @@ test("target match estimate stays bounded and explanation-backed", () => {
     { id: "b", title: "B", importance: "secondary" }
   ];
   const conceptStates = {
-    a: { judge: { state: "solid", confidence: 0.85 } },
-    b: { judge: { state: "partial", confidence: 0.6 } }
+    a: { judge: { state: "solid", score: 92 } },
+    b: { judge: { state: "partial", score: 72 } }
   };
 
   const result = buildTargetMatch({
@@ -36,8 +36,8 @@ test("visible memory events emit improvement and weakness states from judge tran
 
   const improving = buildVisibleMemoryEvents({
     concept,
-    previousJudge: { state: "weak", confidence: 0.25, reasons: [] },
-    currentJudge: { state: "partial", confidence: 0.6, reasons: [] },
+    previousJudge: { state: "weak", score: 40, reasons: [] },
+    currentJudge: { state: "partial", score: 72, reasons: [] },
     revisitReason: ""
   });
   assert.ok(improving.some((event) => event.type === "attempt_recorded"));
@@ -45,8 +45,8 @@ test("visible memory events emit improvement and weakness states from judge tran
 
   const weakening = buildVisibleMemoryEvents({
     concept,
-    previousJudge: { state: "partial", confidence: 0.6, reasons: [] },
-    currentJudge: { state: "weak", confidence: 0.25, reasons: [] },
+    previousJudge: { state: "partial", score: 72, reasons: [] },
+    currentJudge: { state: "weak", score: 40, reasons: [] },
     revisitReason: "需要后续回访"
   });
   assert.ok(weakening.some((event) => event.type === "contradiction_detected"));

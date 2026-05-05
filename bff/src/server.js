@@ -14,6 +14,7 @@ import { buildReminderCandidate } from "../../src/superapp/reminder-candidate.js
 import { createMemoryProfileStore } from "../../src/tutor/memory-profile-store.js";
 import {
   applyDocumentReadingEvent,
+  applyDocumentIgnored,
   applyDocumentTrainingAnswered,
   applyDocumentTrainingSession,
   applyDocumentTrainingStarted,
@@ -496,15 +497,48 @@ async function handleReadingProgress(body) {
   return buildProfilePayload(user);
 }
 
-function buildFallbackKnowledgeAnswer(question = "", document = {}) {
+async function handleIgnoredDocument(body) {
+  if (!body.userId) {
+    throw new Error("userId is required.");
+  }
+  if (!body.docPath) {
+    throw new Error("docPath is required.");
+  }
+  const user = await getUserProfile(body.userId);
+  const timestamp = new Date().toISOString();
+  user.documents = applyDocumentIgnored(user.documents || {}, {
+    docPath: body.docPath,
+    docTitle: body.docTitle || "",
+    timestamp,
+  });
+  user.lastActiveAt = timestamp;
+  await userProfileStore.save(user);
+  return buildProfilePayload(user);
+}
+
+function normalizeKnowledgeGoal(goal = "") {
+  return String(goal || "").trim() || "interview";
+}
+
+function normalizeKnowledgeTaskType(taskType = "") {
+  const normalized = String(taskType || "").trim();
+  return ["summary", "memory_points", "question_points"].includes(normalized)
+    ? normalized
+    : "freeform";
+}
+
+function buildFallbackKnowledgeAnswer(question = "", document = {}, { taskType = "freeform" } = {}) {
   const lines = extractReadableKnowledgeLines(document.markdown || "");
   const headings = lines.filter((line) => line.length <= 48).slice(0, 8);
   const paragraphs = lines.filter((line) => line.length > 18).slice(0, 6);
-  if (/总结|概括|3\s*句|三句/.test(question)) {
+  if (taskType === "summary" || /总结|概括|3\s*句|三句/.test(question)) {
     return (paragraphs.length ? paragraphs : headings).slice(0, 3).map((line, index) => `${index + 1}. ${line}`).join("\n");
   }
-  if (/面试|追问|问题/.test(question)) {
-    return (headings.length ? headings : paragraphs).slice(0, 5).map((line, index) => `${index + 1}. 面试官可能会追问：${line} 的核心机制和边界是什么？`).join("\n");
+  if (taskType === "memory_points") {
+    return (headings.length ? headings : paragraphs).map((line, index) => `${index + 1}. ${line}：这是当前目标下值得优先记住的内容。`).join("\n");
+  }
+  if (taskType === "question_points" || /面试|追问|问题/.test(question)) {
+    return (headings.length ? headings : paragraphs).map((line, index) => `${index + 1}. 问题：${line} 的核心机制、适用场景和边界是什么？\n考察点：是否真正理解这个关键点，而不是只记住标题。`).join("\n");
   }
   const seeds = (paragraphs.length ? paragraphs : headings).slice(0, 2);
   return seeds.length ? `基于《${document.title || "当前文档"}》，${seeds.join("；")}` : "这篇材料里没有足够内容回答这个问题。";
@@ -513,6 +547,8 @@ function buildFallbackKnowledgeAnswer(question = "", document = {}) {
 async function handleKnowledgeAnswer(body) {
   const question = String(body.question || "").trim();
   const docPath = String(body.docPath || "").trim();
+  const goal = normalizeKnowledgeGoal(body.goal);
+  const taskType = normalizeKnowledgeTaskType(body.taskType);
   if (!question) {
     throw new Error("question is required.");
   }
@@ -537,6 +573,8 @@ async function handleKnowledgeAnswer(body) {
     const { data, traceId } = await proxyJson("POST", "/api/superapp/answer-knowledge-question", {
       userId: body.userId || "",
       question,
+      goal,
+      taskType,
       title: document.title,
       context: document.markdown,
     });
@@ -551,7 +589,7 @@ async function handleKnowledgeAnswer(body) {
   } catch (error) {
     return {
       mode: "knowledge_qa",
-      content: buildFallbackKnowledgeAnswer(question, document),
+      content: buildFallbackKnowledgeAnswer(question, document, { taskType }),
       suggestedFollowUp: "把这个点出成一道快答题",
       source: {
         title: document.title,
@@ -753,6 +791,11 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/profile/reading-progress") {
       sendJson(response, 200, await handleReadingProgress(await readJsonBody(request)));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/profile/ignored-document") {
+      sendJson(response, 200, await handleIgnoredDocument(await readJsonBody(request)));
       return;
     }
 

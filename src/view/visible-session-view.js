@@ -1,16 +1,5 @@
 import { buildChatTimeline } from "./chat-transcript.js";
 
-function rewriteKeyClaimForUser(keyClaim = "") {
-  const normalized = String(keyClaim || "").trim();
-  if (!normalized) {
-    return "";
-  }
-  return normalized
-    .replace(/^用户/u, "你")
-    .replace(/^你认为/u, "你认为")
-    .replace(/^你知道/u, "你已经知道");
-}
-
 function trimSentenceEnding(value = "") {
   return String(value || "").trim().replace(/[。；;，,]+$/u, "");
 }
@@ -28,7 +17,7 @@ function buildVisibleMemorySummary(session = {}) {
     || events.find((event) => event?.title)?.title
     || "这个知识点"
   ).trim();
-  const userKeyClaim = rewriteKeyClaimForUser(scoreSummary?.keyClaim || "");
+  const userKeyClaim = String(scoreSummary?.keyClaim || "").trim();
 
   const hasImprovement = events.some((event) => event?.type === "improvement_detected");
   const hasContradiction = events.some((event) => event?.type === "contradiction_detected");

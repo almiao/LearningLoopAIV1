@@ -12,7 +12,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.engine.context_packet import build_context_packet
-from app.engine.session_engine import answer_session, create_session
+from app.engine.session_engine import (
+    answer_session,
+    build_evaluation_message,
+    build_memory_summary_message,
+    create_session,
+    describe_next_step,
+)
 from app.engine.tutor_intelligence import build_turn_diagnosis_prompt, build_turn_envelope_prompt, normalize_decomposition_payload
 
 
@@ -74,6 +80,58 @@ def make_multi_concept_session_payload() -> SimpleNamespace:
     return payload
 
 
+class TrainingMessageCopyTest(unittest.TestCase):
+    def test_evaluation_message_uses_answer_score_copy_and_chinese_claim(self):
+        message = build_evaluation_message(
+            {
+                "state": "partial",
+                "stateLabel": "部分掌握",
+                "score": 72,
+                "keyClaim": "你知道 LRU 会在容量达到上限后的写入路径上触发淘汰。",
+                "judgmentReason": "你说中了容量触发这个关键点，但还没有讲清是在写入路径上同步淘汰，所以先判断为部分掌握。",
+            }
+        )
+
+        self.assertIn("回答评分：72 分（部分掌握）。", message)
+        self.assertIn("评分理由：你说中了容量触发这个关键点，但还没有讲清是在写入路径上同步淘汰，所以先判断为部分掌握。", message)
+        self.assertIn("已确认：你知道 LRU 会在容量达到上限后的写入路径上触发淘汰。", message)
+        self.assertNotIn("系统把握", message)
+        self.assertNotIn("证据：", message)
+
+    def test_evaluation_message_does_not_surface_internal_evidence_insufficient_state(self):
+        message = build_evaluation_message(
+            {
+                "state": "不可判",
+                "stateLabel": "未评分",
+                "score": 0,
+                "judgmentReason": "你这轮选择查看解析，不按答题证据打分，所以当前不形成新的掌握判定。",
+            }
+        )
+
+        self.assertIn("回答评分：未评分。", message)
+        self.assertIn("评分理由：你这轮选择查看解析，不按答题证据打分，所以当前不形成新的掌握判定。", message)
+        self.assertNotIn("证据不足", message)
+        self.assertNotIn("系统把握 86%", message)
+        self.assertNotIn("证据：", message)
+
+    def test_memory_summary_uses_chinese_key_claim_from_diagnosis(self):
+        message = build_memory_summary_message(
+            concept_title="LRU 淘汰触发条件",
+            score_summary={
+                "keyClaim": "你知道 LRU 会在容量达到上限后的写入路径上触发淘汰。",
+            },
+            memory_events=[{"type": "improvement_detected"}],
+        )
+
+        self.assertEqual(
+            message,
+            "已记住：你知道 LRU 会在容量达到上限后的写入路径上触发淘汰；后续会在这个基础上继续追问。",
+        )
+
+    def test_teach_next_step_label_no_longer_promises_immediate_confirmation(self):
+        self.assertEqual(describe_next_step("teach"), "先补一段讲解，再按训练进度继续")
+
+
 class FakeTeachIntelligence:
     configured = True
 
@@ -95,7 +153,7 @@ class FakeTeachIntelligence:
                 "turn_signal": "noise",
                 "anchor_assessment": {
                     "state": "partial",
-                    "confidence_level": "medium",
+                    "score": 72,
                     "reasons": ["用户请求讲解，当前还缺少边界链路。"],
                 },
                 "hypotheses": [],
@@ -117,7 +175,7 @@ class FakeTeachIntelligence:
                 "reason": "teach_control_no_new_evidence",
                 "anchor_patch": {
                     "state": "partial",
-                    "confidence_level": "medium",
+                    "score": 72,
                     "derived_principle": concept["summary"],
                 },
             },
@@ -164,7 +222,7 @@ class FakeVerifyForeverIntelligence:
                 "turn_signal": "positive",
                 "anchor_assessment": {
                     "state": "partial",
-                    "confidence_level": "medium",
+                    "score": 72,
                     "reasons": ["用户答对了主线，但模型仍想继续确认。"],
                 },
                 "hypotheses": [],
@@ -186,7 +244,7 @@ class FakeVerifyForeverIntelligence:
                 "reason": "partial_signal",
                 "anchor_patch": {
                     "state": "partial",
-                    "confidence_level": "medium",
+                    "score": 72,
                     "derived_principle": concept["summary"],
                 },
             },
@@ -224,7 +282,7 @@ class FakeWrongIntelligence:
                 "turn_signal": "negative",
                 "anchor_assessment": {
                     "state": "weak",
-                    "confidence_level": "medium",
+                    "score": 40,
                     "reasons": ["用户回答存在明确误解。"],
                 },
                 "hypotheses": [],
@@ -246,15 +304,15 @@ class FakeWrongIntelligence:
                 "reason": "wrong_signal",
                 "anchor_patch": {
                     "state": "weak",
-                    "confidence_level": "medium",
+                    "score": 40,
                     "derived_principle": concept["summary"],
                 },
             },
             "turn_diagnosis": {
                 "input_type": "answer",
-                "evidence_quality": "partial",
                 "key_claim": "",
                 "confirmed_understanding": "",
+                "judgment_reason": "你这轮把关键结论说反了，所以需要先按错误回答处理。",
                 "has_misconception": True,
                 "misconception_detail": "把结论说反了",
             },
@@ -306,9 +364,9 @@ class TutorFlowTests(unittest.TestCase):
             answer="是不是主要解决快照读？",
             diagnosis={
                 "input_type": "answer",
-                "evidence_quality": "partial",
                 "key_claim": "用户知道 MVCC 和快照读有关。",
                 "confirmed_understanding": "知道 MVCC 和快照读有关。",
+                "judgment_reason": "你提到了快照读这条线索，但还没有说清边界。",
                 "has_misconception": False,
                 "misconception_detail": "",
             },
@@ -316,6 +374,12 @@ class TutorFlowTests(unittest.TestCase):
         )
 
         self.assertIn("TOP-LEVEL TUTOR CONTRACT", diagnosis_prompt)
+        self.assertIn("judgment_reason is learner-facing", diagnosis_prompt)
+        self.assertIn("this diagnosis call only produces assessment facts", diagnosis_prompt)
+        self.assertIn("A separate parallel reply/teach call writes the learner-facing explanation", diagnosis_prompt)
+        self.assertIn("judgment_reason must not introduce new concepts", diagnosis_prompt)
+        self.assertIn("teach the correct answer", diagnosis_prompt)
+        self.assertIn("give next-step instructions", diagnosis_prompt)
         self.assertIn("CONFLICT RESOLUTION ORDER", envelope_prompt)
         self.assertIn("GOOD / BAD BEHAVIOR EXAMPLES", envelope_prompt)
         self.assertIn("Follow the learner's explicit intent before inferred intent.", envelope_prompt)
@@ -402,14 +466,18 @@ class TutorFlowTests(unittest.TestCase):
         session = create_session(make_multi_concept_session_payload())
 
         self.assertEqual(session["turns"][0]["role"], "tutor")
-        self.assertEqual(session["turns"][0]["kind"], "feedback")
-        self.assertEqual(session["turns"][0]["action"], "intro")
-        self.assertIn("先看主线", session["turns"][0]["content"])
-        self.assertIn("下一训练点", session["turns"][0]["content"])
-        self.assertEqual(session["turns"][1]["kind"], "question")
+        self.assertEqual(session["turns"][0]["kind"], "process")
+        self.assertEqual(session["turns"][0]["action"], "prepare")
+        self.assertIn("训练准备：已拆解这篇文档的训练点", session["turns"][0]["content"])
+        self.assertEqual(session["turns"][1]["kind"], "feedback")
+        self.assertEqual(session["turns"][1]["action"], "intro")
+        self.assertIn("先看主线", session["turns"][1]["content"])
+        self.assertIn("下一训练点", session["turns"][1]["content"])
+        self.assertEqual(session["turns"][2]["kind"], "progress")
+        self.assertEqual(session["turns"][3]["kind"], "question")
 
     def test_teach_control_uses_unified_turn_generation_and_updates_anchor_state(self):
-        session = create_session(make_session_payload())
+        session = create_session(make_multi_concept_session_payload())
         fake_intelligence = FakeTeachIntelligence()
         payload = SimpleNamespace(
             answer="",
@@ -425,16 +493,66 @@ class TutorFlowTests(unittest.TestCase):
         self.assertEqual(projected["latestFeedback"]["action"], "teach")
         self.assertEqual(
             projected["currentProbe"],
-            "那你现在用自己的话说一句：为什么当前读不能只靠 MVCC？"
+            "进入下一题：请说明第二个训练点是什么？"
         )
-        self.assertEqual(projected["currentCheckpointId"], "mvcc-boundary-cp-1")
-        self.assertEqual(projected["currentQuestionMeta"]["phase"], "teach-back")
-        self.assertEqual(projected["latestFeedback"]["turnResolution"]["mode"], "stay")
-        self.assertEqual(projected["currentAnchorState"]["lastLearnerIntent"], "teach")
-        self.assertEqual(projected["currentAnchorState"]["lastTutorAction"], "teach")
-        self.assertNotIn("lastTeachingPoint", projected["currentAnchorState"])
-        self.assertEqual(projected["currentAnchorState"]["lastFollowupGoal"], "")
+        self.assertEqual(projected["currentTrainingPointId"], "next-anchor")
+        self.assertEqual(projected["currentCheckpointId"], "next-anchor-cp-1")
+        self.assertEqual(projected["currentQuestionMeta"]["phase"], "diagnostic")
+        self.assertEqual(projected["latestFeedback"]["turnResolution"]["mode"], "switch")
+        taught_anchor_state = session["conceptStates"]["mvcc-boundary-cp-1"]["anchorState"]
+        self.assertEqual(taught_anchor_state["lastLearnerIntent"], "teach")
+        self.assertEqual(taught_anchor_state["lastTutorAction"], "teach")
+        self.assertNotIn("lastTeachingPoint", taught_anchor_state)
+        self.assertEqual(taught_anchor_state["lastFollowupGoal"], "")
         self.assertIsNone(projected["latestFeedback"]["scoreSummary"])
+
+    def test_teach_control_closes_single_checkpoint_without_same_question_followup(self):
+        session = create_session(make_session_payload())
+        payload = SimpleNamespace(
+            answer="查看解析",
+            interactionPreference=None,
+            burdenSignal="normal",
+            intent="teach",
+        )
+
+        with patch("app.engine.session_engine.get_tutor_intelligence", return_value=FakeTeachIntelligence()):
+            answer_session(session, payload)
+
+        tail = session["turns"][-3:]
+        self.assertEqual(
+            [(turn["role"], turn["kind"], turn["action"]) for turn in tail],
+            [
+                ("learner", "control", "teach"),
+                ("tutor", "feedback", "teach"),
+                ("tutor", "feedback", "complete"),
+            ],
+        )
+        self.assertTrue(str(tail[1]["content"]).strip())
+        self.assertEqual(session["currentProbe"], "")
+
+    def test_completion_summary_is_backend_owned_and_explains_memory_reuse(self):
+        session = create_session(make_session_payload())
+        payload = SimpleNamespace(
+            answer="MVCC 主要解决快照读一致视图，当前读还要看锁。",
+            interactionPreference=None,
+            burdenSignal="normal",
+            intent="",
+        )
+
+        with patch("app.engine.session_engine.get_tutor_intelligence", return_value=FakeVerifyForeverIntelligence()):
+            answer_session(session, payload)
+
+        complete_turn = session["turns"][-1]
+        self.assertEqual((complete_turn["role"], complete_turn["kind"], complete_turn["action"]), ("tutor", "feedback", "complete"))
+        self.assertIn("本轮总结：已完成 1 / 1 个子项", complete_turn["content"])
+        self.assertIn("结果分布：", complete_turn["content"])
+        self.assertIn("理解较准", complete_turn["content"])
+        self.assertIn("需要复习：", complete_turn["content"])
+        self.assertIn("长期记忆：这轮已更新 1 个知识点的掌握记录", complete_turn["content"])
+        self.assertIn("后续复习会怎么用", complete_turn["content"])
+        self.assertIn("当前二轮出题依据", complete_turn["content"])
+        self.assertIn("最后带走：", complete_turn["content"])
+        self.assertNotIn("takeaway", complete_turn)
 
     def test_partial_answer_advances_without_waiting_for_budget(self):
         session = create_session(make_multi_concept_session_payload())
@@ -453,8 +571,7 @@ class TutorFlowTests(unittest.TestCase):
         self.assertEqual(first["currentProbe"], "进入下一题：请说明第二个训练点是什么？")
         self.assertEqual(first["latestFeedback"]["turnResolution"]["mode"], "switch")
         self.assertEqual(first["latestFeedback"]["scoreSummary"]["stateLabel"], "部分掌握")
-        self.assertEqual(first["latestFeedback"]["scoreSummary"]["confidence"], 58)
-        self.assertEqual(first["latestFeedback"]["scoreSummary"]["evidenceQuality"], "")
+        self.assertEqual(first["latestFeedback"]["scoreSummary"]["score"], 72)
         self.assertEqual(first["currentQuestionMeta"]["phase"], "diagnostic")
         self.assertEqual(first["currentQuestionMeta"]["trainingProgress"]["trainingPoint"]["currentIndex"], 2)
         self.assertEqual(first["currentQuestionMeta"]["trainingProgress"]["trainingPoint"]["total"], 2)
@@ -491,7 +608,7 @@ class TutorFlowTests(unittest.TestCase):
         self.assertEqual(fake_intelligence.question_calls[0]["current_question"], "")
         self.assertNotEqual(first_probe, "")
 
-    def test_teach_turn_counts_toward_round_budget(self):
+    def test_teach_control_advances_without_same_question_followup(self):
         session = create_session(make_multi_concept_session_payload())
         teach_payload = SimpleNamespace(
             answer="查看解析",
@@ -509,16 +626,32 @@ class TutorFlowTests(unittest.TestCase):
         with patch("app.engine.session_engine.get_tutor_intelligence", return_value=FakeTeachIntelligence()):
             taught = answer_session(session, teach_payload)
 
-        self.assertEqual(taught["currentTrainingPointId"], "mvcc-boundary")
-        self.assertEqual(taught["currentCheckpointId"], "mvcc-boundary-cp-1")
-        self.assertEqual(taught["currentQuestionMeta"]["phase"], "teach-back")
-        self.assertEqual(taught["currentQuestionMeta"]["progress"]["currentRound"], 2)
+        self.assertEqual(taught["currentTrainingPointId"], "next-anchor")
+        self.assertEqual(taught["currentCheckpointId"], "next-anchor-cp-1")
+        self.assertEqual(taught["currentQuestionMeta"]["phase"], "diagnostic")
+        self.assertEqual(taught["currentQuestionMeta"]["progress"]["currentRound"], 1)
 
         with patch("app.engine.session_engine.get_tutor_intelligence", return_value=FakeVerifyForeverIntelligence()):
             first = answer_session(session, answer_payload)
 
-        self.assertEqual(first["currentTrainingPointId"], "next-anchor")
-        self.assertEqual(first["latestFeedback"]["turnResolution"]["mode"], "switch")
+        self.assertEqual(first["currentProbe"], "")
+        self.assertEqual(first["latestFeedback"]["turnResolution"]["mode"], "stop")
+
+    def test_advance_control_emits_completion_summary_when_scope_ends(self):
+        session = create_session(make_session_payload())
+        payload = SimpleNamespace(
+            answer="下一题",
+            interactionPreference=None,
+            burdenSignal="normal",
+            intent="advance",
+        )
+
+        projected = answer_session(session, payload)
+
+        self.assertEqual(projected["currentProbe"], "")
+        self.assertEqual(projected["turns"][-1]["kind"], "feedback")
+        self.assertEqual(projected["turns"][-1]["action"], "complete")
+        self.assertIn("本轮训练结束", projected["turns"][-1]["content"])
 
     def test_answer_session_emits_progress_preview_for_streaming_ui(self):
         session = create_session(make_multi_concept_session_payload())
@@ -542,7 +675,7 @@ class TutorFlowTests(unittest.TestCase):
         self.assertIn("assessment_preview", event_names)
         assessment_preview = next(data for event, data in progress_events if event == "assessment_preview")
         self.assertEqual(assessment_preview["scoreSummary"]["stateLabel"], "部分掌握")
-        self.assertEqual(assessment_preview["scoreSummary"]["confidence"], 58)
+        self.assertEqual(assessment_preview["scoreSummary"]["score"], 72)
 
     def test_wrong_answer_only_gets_one_followup_before_advancing(self):
         session = create_session(make_multi_concept_session_payload())

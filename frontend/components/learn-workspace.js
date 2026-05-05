@@ -9,6 +9,7 @@ import {
   getStoredUserId,
   setStoredUserId,
 } from "../lib/user-session";
+import { buildChatTimeline } from "../../src/view/chat-transcript";
 import { buildVisibleSessionView } from "../../src/view/visible-session-view";
 
 const profileDirtyStorageKey = "learning-loop-profile-dirty-at";
@@ -63,31 +64,18 @@ function splitTextBlocks(value) {
     .filter(Boolean);
 }
 
-const trainingProgressPhaseOrder = {
-  intent: 0,
-  reply: 1,
-  assessment: 2,
-  next_step: 3,
-};
-
-function upsertTrainingProgressStep(steps = [], nextStep = null) {
-  if (!nextStep?.phase) {
-    return steps;
+function patchLiveTurn(turns = [], patch = {}) {
+  if (!patch?.turnId) {
+    return turns;
   }
-  const remainingSteps = steps.filter((step) => step.phase !== nextStep.phase);
-  return remainingSteps
-    .concat({
-      ...nextStep,
-    })
-    .sort((left, right) => {
-      const leftOrder = trainingProgressPhaseOrder[left.phase] ?? 99;
-      const rightOrder = trainingProgressPhaseOrder[right.phase] ?? 99;
-      return leftOrder - rightOrder;
-    });
-}
-
-function pickLatestProgressStep(steps = [], phase = "") {
-  return [...steps].reverse().find((step) => step.phase === phase) || null;
+  return turns.map((turn) => (
+    turn?.turnId === patch.turnId
+      ? {
+          ...turn,
+          content: patch.content ?? turn.content ?? "",
+        }
+      : turn
+  ));
 }
 
 function buildDomainMap(session) {
@@ -205,17 +193,33 @@ function buildTrainingCompletion(session = null, points = []) {
   if (!checkpointIds.length) {
     return null;
   }
-  const states = checkpointIds.map((id) => session.conceptStates?.[id] || {});
-  const completedCount = states.filter((state) => state.completed).length;
-  const passedCount = states.filter((state) => state.completed && state.result === "passed").length;
-  const skippedCount = states.filter((state) => state.result === "skipped").length;
-  const reviewCount = states.filter((state) => state.completed && state.result !== "passed").length;
-  const reviewPoint = points.find((point) =>
-    (point.checkpoints || []).some((checkpoint) => {
-      const state = session.conceptStates?.[checkpoint.id] || {};
-      return state.completed && state.result !== "passed";
-    })
-  );
+  const conceptStates = session.conceptStates || {};
+  const pointStates = session.trainingPointStates || [];
+  const hasCheckpointStates = checkpointIds.some((id) => conceptStates[id]);
+  const states = checkpointIds.map((id) => conceptStates[id] || {});
+  const completedCount = hasCheckpointStates
+    ? states.filter((state) => state.completed).length
+    : pointStates.reduce((sum, state) => sum + (state.completedCheckpoints || 0), 0);
+  const passedCount = hasCheckpointStates
+    ? states.filter((state) => state.completed && state.result === "passed").length
+    : pointStates.reduce((sum, state) => sum + (state.result === "passed" ? (state.completedCheckpoints || 0) : 0), 0);
+  const skippedCount = hasCheckpointStates
+    ? states.filter((state) => state.result === "skipped").length
+    : 0;
+  const reviewCount = hasCheckpointStates
+    ? states.filter((state) => state.completed && state.result !== "passed").length
+    : Math.max(0, completedCount - passedCount - skippedCount);
+  const reviewPoint = hasCheckpointStates
+    ? points.find((point) =>
+        (point.checkpoints || []).some((checkpoint) => {
+          const state = conceptStates[checkpoint.id] || {};
+          return state.completed && state.result !== "passed";
+        })
+      )
+    : points.find((point) => {
+        const state = pointStates.find((item) => item.pointId === point.id) || {};
+        return state.completed && state.result !== "passed";
+      });
   return {
     completedCount,
     passedCount,
@@ -223,8 +227,6 @@ function buildTrainingCompletion(session = null, points = []) {
     skippedCount,
     totalCount: checkpointIds.length,
     reviewPointId: reviewPoint?.id || "",
-    assessment: session.latestFeedback?.scoreSummary || null,
-    takeaway: session.latestFeedback?.takeaway || "",
   };
 }
 
@@ -248,7 +250,8 @@ export function LearnWorkspace() {
   const [isStarting, setIsStarting] = useState(false);
   const [sessionStartMode, setSessionStartMode] = useState("reading");
   const [isAnswering, setIsAnswering] = useState(false);
-  const [streamingTurn, setStreamingTurn] = useState(null);
+  const [readingStreamingTurn, setReadingStreamingTurn] = useState(null);
+  const [liveTrainingTurns, setLiveTrainingTurns] = useState([]);
   const [readingChatTimeline, setReadingChatTimeline] = useState([]);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [knowledgeDoc, setKnowledgeDoc] = useState(null);
@@ -345,11 +348,26 @@ export function LearnWorkspace() {
       return docConceptIds.has(entry.conceptId);
     });
   }, [docConceptIds, docTrainingReady, visibleChatTimeline]);
+  const liveTrainingTimeline = useMemo(() => {
+    if (!liveTrainingTurns.length) {
+      return [];
+    }
+    return buildChatTimeline(liveTrainingTurns, {
+      limit: Math.max(liveTrainingTurns.length, 24),
+    }).filter((entry) => {
+      if (entry.type === "event") {
+        return true;
+      }
+      if (!entry.conceptId) {
+        return true;
+      }
+      return !docTrainingReady || docConceptIds.has(entry.conceptId);
+    });
+  }, [docConceptIds, docTrainingReady, liveTrainingTurns]);
   const trainingCompletion = useMemo(
     () => buildTrainingCompletion(sessionBelongsToDocument(session, activeDocPath) ? session : null, docConcepts),
     [activeDocPath, docConcepts, session]
   );
-  const latestMemorySummary = visibleView.latestMemorySummary || "";
   const knowledgeTree = useMemo(() => buildKnowledgeTree(knowledgeDocuments), [knowledgeDocuments]);
   const documentHeadings = useMemo(
     () => buildDocumentHeadings(knowledgeDoc?.markdown || ""),
@@ -361,19 +379,16 @@ export function LearnWorkspace() {
   const outlineAvailable = documentHeadings.length > 0 || knowledgeTree.length > 0;
   const isPreparingTraining = isStarting && sessionStartMode === "training";
   const activeWorkspaceMode = isPreparingTraining ? "training" : workspaceMode;
-  const readingCompanionHasHistory = readingChatTimeline.length > 0 || streamingTurn?.mode === "reading";
-  const trainingHasHistory = trainingChatTimeline.length > 0 || streamingTurn?.mode === "training";
-  const latestTrainingAssistantEntryId = useMemo(
-    () => [...trainingChatTimeline].reverse().find((entry) => entry.type === "message" && entry.role === "assistant" && !entry.isProgressUpdate)?.id || "",
-    [trainingChatTimeline]
-  );
+  const readingCompanionHasHistory = readingChatTimeline.length > 0 || Boolean(readingStreamingTurn);
+  const trainingHasHistory = trainingChatTimeline.length > 0 || liveTrainingTimeline.length > 0;
   const qaNeedsAttention = Boolean(
     trainingUnlocked ||
     sessionBelongsToDocument(session, activeDocPath) ||
     readingCompanionHasHistory ||
     trainingHasHistory ||
     pendingSubmittedAnswer ||
-    streamingTurn ||
+    readingStreamingTurn ||
+    liveTrainingTurns.length > 0 ||
     isStarting ||
     isAnswering ||
     answer.trim() ||
@@ -413,14 +428,14 @@ export function LearnWorkspace() {
   }, [desiredConceptId, session]);
 
   useEffect(() => {
-    if (!streamingTurn) {
+    if (!readingStreamingTurn && !liveTrainingTurns.length) {
       return;
     }
     const frame = window.requestAnimationFrame(() => {
       scrollQaToBottom();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [streamingTurn?.id, streamingTurn?.assistantText, streamingTurn?.replyComplete]);
+  }, [liveTrainingTurns.length, readingStreamingTurn?.id, readingStreamingTurn?.assistantText, readingStreamingTurn?.replyComplete]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -446,7 +461,8 @@ export function LearnWorkspace() {
     setWorkspaceMode("reading");
     setTrainingUnlocked(false);
     setAnswer("");
-    setStreamingTurn(null);
+    setReadingStreamingTurn(null);
+    setLiveTrainingTurns([]);
     setReadingChatTimeline([]);
   }, [activeDocPath]);
 
@@ -762,26 +778,15 @@ export function LearnWorkspace() {
     if (!activeSession?.sessionId || !submittedAnswer) {
       return;
     }
+    let finalSession = null;
     try {
       setError("");
       setIsAnswering(true);
-      setStreamingTurn({
-        id: `${activeSession.sessionId}:${Date.now()}`,
-        mode: "training",
-        answer: submittedAnswer,
-        intent,
-        assistantText: "",
-        replyComplete: false,
-        decisionPending: false,
-        progressSteps: [],
-        assessmentPreview: null,
-        nextMovePreview: null,
-      });
+      setLiveTrainingTurns([]);
       if (shouldClearComposer) {
         setAnswer("");
       }
 
-      let finalSession = null;
       await postEventStream(
         "/api/interview/answer-stream",
         {
@@ -792,42 +797,17 @@ export function LearnWorkspace() {
           interactionPreference,
         },
         async (event, data) => {
-          if (event === "reply_delta") {
-            setStreamingTurn((turn) => (
-              turn
-                ? { ...turn, assistantText: `${turn.assistantText}${data.delta || ""}`, decisionPending: false }
-                : turn
-            ));
+          if (event === "turn_append" && data.turn) {
+            setLiveTrainingTurns((items) => items.concat([data.turn]));
           }
-          if (event === "progress") {
-            setStreamingTurn((turn) => (
-              turn
-                ? {
-                    ...turn,
-                    progressSteps: upsertTrainingProgressStep(turn.progressSteps || [], data),
-                  }
-                : turn
-            ));
-          }
-          if (event === "assessment_preview") {
-            setStreamingTurn((turn) => (
-              turn
-                ? {
-                    ...turn,
-                    assessmentPreview: data.scoreSummary || null,
-                    nextMovePreview: data.nextMove || null,
-                  }
-                : turn
-            ));
-          }
-          if (event === "reply_done") {
-            setStreamingTurn((turn) => (turn ? { ...turn, replyComplete: true, decisionPending: true } : turn));
+          if (event === "turn_patch" && data.turnId) {
+            setLiveTrainingTurns((items) => patchLiveTurn(items, data));
           }
           if (event === "turn_result" || event === "session") {
             finalSession = data;
             setSession(data);
             setAnswer("");
-            setStreamingTurn(null);
+            setLiveTrainingTurns([]);
           }
           if (event === "error") {
             throw new Error(data.error || "流式回答失败。");
@@ -845,11 +825,13 @@ export function LearnWorkspace() {
       }
     } finally {
       setIsAnswering(false);
-      setStreamingTurn(null);
+      if (!finalSession) {
+        setLiveTrainingTurns([]);
+      }
     }
   }
 
-  async function submitReadingQuestion({ nextAnswer = answer } = {}) {
+  async function submitReadingQuestion({ nextAnswer = answer, goal = "interview", taskType = "freeform" } = {}) {
     const submittedAnswer = nextAnswer.trim();
     const shouldClearComposer = nextAnswer === answer;
     if (!submittedAnswer || !activeDocPath) {
@@ -859,7 +841,7 @@ export function LearnWorkspace() {
     try {
       setError("");
       setIsAnswering(true);
-      setStreamingTurn({
+      setReadingStreamingTurn({
         id: turnId,
         mode: "reading",
         answer: submittedAnswer,
@@ -878,6 +860,8 @@ export function LearnWorkspace() {
         userId: profile?.user?.id || "",
         docPath: activeDocPath,
         question: submittedAnswer,
+        goal,
+        taskType,
       });
       setReadingChatTimeline((items) => items.concat([
         {
@@ -899,7 +883,7 @@ export function LearnWorkspace() {
       }
     } finally {
       setIsAnswering(false);
-      setStreamingTurn(null);
+      setReadingStreamingTurn(null);
     }
   }
 
@@ -1108,11 +1092,18 @@ export function LearnWorkspace() {
   const readingStarterPrompts = [
     {
       label: "总结全文",
-      value: `请参考《${documentTitle}》这篇文档，用 3 句话总结核心内容。`,
+      taskType: "summary",
+      value: `请基于面试准备目标，总结《${documentTitle}》这篇文档。`,
     },
     {
-      label: "列面试追问",
-      value: `请参考《${documentTitle}》这篇文档，列出 5 个高频面试追问，并说明每题想考什么。`,
+      label: "提炼记忆点",
+      taskType: "memory_points",
+      value: `请基于面试准备目标，提炼《${documentTitle}》这篇文档最值得记住的关键点。`,
+    },
+    {
+      label: "生成自测问题",
+      taskType: "question_points",
+      value: `请基于面试准备目标，把《${documentTitle}》这篇文档的关键点转化为自测问题。`,
     },
   ];
   const studyMainClassName = focusMode
@@ -1337,7 +1328,7 @@ export function LearnWorkspace() {
                 <article className={readingCompanionHasHistory ? "reading-companion-card compact" : "reading-companion-card"}>
                   <div className="reading-companion-source">参考本文 · {documentTitle}</div>
                   <h3>问这篇文档</h3>
-                  <p>总结、解释原文，或生成面试追问。</p>
+                  <p>默认面向面试准备，实时生成总结、记忆点或自测问题。</p>
                   <div className="reading-companion-actions">
                     {readingStarterPrompts.map((prompt) => (
                       <button
@@ -1345,7 +1336,11 @@ export function LearnWorkspace() {
                         type="button"
                         className="secondary-pill"
                         disabled={isStarting || isAnswering}
-                        onClick={() => submitAnswer({ nextAnswer: prompt.value })}
+                        onClick={() => submitAnswer({
+                          nextAnswer: prompt.value,
+                          goal: "interview",
+                          taskType: prompt.taskType,
+                        })}
                       >
                         {prompt.label}
                       </button>
@@ -1360,19 +1355,18 @@ export function LearnWorkspace() {
                   </div>
                 </article>
               ) : null}
-              {isStarting && !trainingUnlocked ? (
+              {activeWorkspaceMode === "training" && isPreparingTraining ? (
                 <article className="message-card assistant" aria-live="polite" data-testid="training-prep-card">
                   <div className="message-body">
-                    <p>
-                      {sessionStartMode === "training"
-                        ? "正在准备训练，会先拆解这篇文档的训练点。"
-                        : "正在准备阅读助理，会先绑定这篇文档的上下文。"}
-                    </p>
+                    <p>正在准备训练，会先拆解这篇文档的训练点。</p>
                   </div>
                 </article>
               ) : null}
-
-              {(activeWorkspaceMode === "training" ? trainingChatTimeline : readingChatTimeline).map((entry) => (
+              {(
+                activeWorkspaceMode === "training"
+                  ? trainingChatTimeline.concat(liveTrainingTimeline)
+                  : readingChatTimeline
+              ).map((entry) => (
                 entry.type === "event" ? (
                   <div className="chat-event-row" key={entry.id}>{entry.label}</div>
                 ) : (
@@ -1393,36 +1387,23 @@ export function LearnWorkspace() {
                         {entry.takeaway ? <p><strong>带走一句：</strong>{entry.takeaway}</p> : null}
                       </div>
                     </article>
-                    {entry.role === "assistant" && !entry.isProgressUpdate && !entry.isEvaluationMessage && entry.id === latestTrainingAssistantEntryId && latestMemorySummary ? (
-                      <article className="message-card assistant progress-update" key={`${entry.id}:memory`}>
-                        <div className="message-body">
-                          <p className="assistant-weak-line">{latestMemorySummary}</p>
-                        </div>
-                      </article>
-                    ) : null}
                   </div>
                 )
               ))}
 
-              {activeWorkspaceMode === "training" && trainingCompletion && !streamingTurn ? (
-                <article className="message-card assistant training-complete-card" data-testid="training-complete-card">
-                  <div className="training-complete-kicker">本轮训练结束</div>
-                  <div className="training-complete-title">这篇文档已经收口，可以选择下一步。</div>
-                  <p>
-                    已完成 {trainingCompletion.completedCount} / {trainingCompletion.totalCount} 个子项，
-                    {trainingCompletion.reviewCount > 0
-                      ? `其中 ${trainingCompletion.reviewCount} 个建议复习`
-                      : "当前没有明显薄弱子项"}
-                    {trainingCompletion.skippedCount > 0 ? `，跳过 ${trainingCompletion.skippedCount} 个` : ""}。
-                  </p>
-                  {trainingCompletion.assessment ? (
-                    <p className="assistant-weak-line assistant-score-line">
-                      <strong>本次评分：</strong>{trainingCompletion.assessment.stateLabel || trainingCompletion.assessment.state || "已评分"}
-                    </p>
-                  ) : null}
-                  {trainingCompletion.takeaway ? (
-                    <p className="training-complete-takeaway">最后带走：{trainingCompletion.takeaway}</p>
-                  ) : null}
+              {/* Timeline contract:
+                  - backend emits append-only turns (intro/evaluation/feedback/question/process/memory)
+                  - frontend renders them in order and does not split, reorder, or backfill them */}
+
+              {activeWorkspaceMode === "training" && trainingCompletion && !liveTrainingTimeline.length ? (
+                <section className="training-complete-actions-card" data-testid="training-complete-actions" aria-label="训练完成后的下一步操作">
+                  {/* The backend feedback:complete turn owns the final summary.
+                      This block is intentionally controls-only so replayed chat
+                      history stays append-only and never duplicates completion copy. */}
+                  <div className="training-complete-actions-copy">
+                    <span>下一步</span>
+                    <p>总结和长期记忆说明在上方对话。</p>
+                  </div>
                   <div className="training-complete-actions">
                     <button type="button" className="secondary-pill" disabled={isStarting || isAnswering || !trainingCompletion.reviewPointId} onClick={reviewWeakPoint}>
                       再练薄弱点
@@ -1437,42 +1418,24 @@ export function LearnWorkspace() {
                       回到阅读
                     </button>
                   </div>
-                </article>
+                </section>
               ) : null}
 
-              {streamingTurn ? (
+              {readingStreamingTurn ? (
                 <>
                   <article className="message-card learner">
-                    <div className="message-body"><p>{streamingTurn.answer}</p></div>
+                    <div className="message-body"><p>{readingStreamingTurn.answer}</p></div>
                   </article>
                   <article className="message-card assistant">
                     <div className="message-body markdown-content">
                       {renderMarkdownContent(
-                        splitTextBlocks(streamingTurn.assistantText).length
-                          ? splitTextBlocks(streamingTurn.assistantText).join("\n\n")
+                        splitTextBlocks(readingStreamingTurn.assistantText).length
+                          ? splitTextBlocks(readingStreamingTurn.assistantText).join("\n\n")
                           : "正在生成回复...",
-                        `${streamingTurn.id}-stream`
+                        `${readingStreamingTurn.id}-stream`
                       )}
                     </div>
                   </article>
-                  {/* Process hints are rendered as separate weak rows so the final
-                      explanation and the follow-up question stay in chat history
-                      as stable primary messages instead of being overwritten. */}
-                  {streamingTurn.mode === "training" && streamingTurn.intent === "teach" && !streamingTurn.assistantText ? (
-                    <div className="chat-event-row weak-chat-event" aria-live="polite">
-                      已切换为讲解模式，本轮不评分。
-                    </div>
-                  ) : null}
-                  {streamingTurn.mode === "training" && !streamingTurn.assistantText && !streamingTurn.replyComplete ? (
-                    <div className="chat-event-row weak-chat-event" aria-live="polite">
-                      {(pickLatestProgressStep(streamingTurn.progressSteps || [], "reply") || {}).detail || "正在生成解析..."}
-                    </div>
-                  ) : null}
-                  {streamingTurn.mode === "training" && streamingTurn.replyComplete && streamingTurn.decisionPending ? (
-                    <div className="chat-event-row weak-chat-event" aria-live="polite">
-                      {(pickLatestProgressStep(streamingTurn.progressSteps || [], "next_step") || {}).detail || "正在安排下一步..."}
-                    </div>
-                  ) : null}
                 </>
               ) : null}
             </section>

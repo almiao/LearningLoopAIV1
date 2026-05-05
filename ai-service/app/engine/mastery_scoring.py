@@ -9,7 +9,7 @@ CONFIG_PATH = Path(__file__).resolve().parents[3] / "contracts" / "mastery-scori
 CONFIG = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 
 STATE_RANK = CONFIG["stateRank"]
-CONFIDENCE_LEVEL_SCORE = CONFIG["confidenceLevelScore"]
+ANSWER_SCORE = CONFIG["answerScore"]
 READING_SCORE = CONFIG["readingScore"]
 TRAINING_SCORE = CONFIG["trainingScore"]
 STABILITY_SCORE = CONFIG["stabilityScore"]
@@ -32,16 +32,20 @@ def rank_state(state: str = "不可判") -> int:
     return STATE_RANK.get(state, STATE_RANK["weak"])
 
 
-def confidence_level_to_score(level: str = "low") -> float:
-    return CONFIDENCE_LEVEL_SCORE.get(level, CONFIDENCE_LEVEL_SCORE["low"])
+def score_to_state(score: float | int | None = 0) -> str:
+    try:
+        numeric_score = float(score or 0)
+    except (TypeError, ValueError):
+        numeric_score = 0
+    if numeric_score >= float(ANSWER_SCORE["solidMin"]):
+        return "solid"
+    if numeric_score < float(ANSWER_SCORE["weakMaxExclusive"]):
+        return "weak"
+    return "partial"
 
 
-def score_to_confidence_level(score: float = 0.0) -> str:
-    if score >= 0.75:
-        return "high"
-    if score >= 0.45:
-        return "medium"
-    return "low"
+def default_score_for_state(state: str = "不可判") -> int:
+    return int(ANSWER_SCORE["defaultByState"].get(state, ANSWER_SCORE["defaultByState"]["weak"]))
 
 
 def build_mastery_label(score: float = 0.0, *, has_evidence: bool = False, has_reading: bool = False) -> str:

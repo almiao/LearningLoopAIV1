@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildUserProfileView } from "../../../src/user/profile-aggregator.js";
+import { applyDocumentIgnored } from "../../../src/user/document-progress-state.js";
 import { applyReadingProgress } from "../../../src/user/reading-progress.js";
 
 function makeUserTarget() {
@@ -87,8 +88,7 @@ test("training evidence raises mastery above reading-only progress", () => {
           abilityItemId: "spring-transaction-boundary-cp-1",
           title: "Spring 事务边界与失效场景",
           state: "solid",
-          confidence: 0.86,
-          confidenceLevel: "high",
+          score: 92,
           evidenceCount: 2,
           reasons: ["用户已经稳定讲清代理边界。"],
           recentStrongEvidence: [{ at: "2026-05-01T10:05:00.000Z" }, { at: "2026-05-01T10:08:00.000Z" }],
@@ -303,4 +303,55 @@ test("document progress exposes recent document history with current marker", ()
   assert.equal(profile.documentProgress.recentDocs[0].isCurrent, true);
   assert.equal(profile.documentProgress.recentDocs[1].isCurrent, false);
   assert.equal(profile.documentProgress.recentDocs[0].lastActivityAt, "2026-05-01T10:03:00.000Z");
+});
+
+test("document progress hides ignored documents from current and recent views", () => {
+  const user = makeUser(makeUserTarget());
+  user.documents = applyDocumentIgnored({
+    currentDocPath: "docs/ai/agent/mcp.md",
+    currentDocTitle: "万字拆解 MCP，附带工程实践",
+    docs: {
+      "docs/ai/agent/mcp.md": {
+        docPath: "docs/ai/agent/mcp.md",
+        docTitle: "万字拆解 MCP，附带工程实践",
+        progressPercentage: 42,
+        lastActivityAt: "2026-05-01T10:03:00.000Z",
+      },
+      "docs/system-design/framework/spring/spring-transaction.md": {
+        docPath: "docs/system-design/framework/spring/spring-transaction.md",
+        docTitle: "Spring 事务详解",
+        progressPercentage: 76,
+        lastActivityAt: "2026-05-01T10:08:00.000Z",
+      },
+    },
+  }, {
+    docPath: "docs/ai/agent/mcp.md",
+    docTitle: "万字拆解 MCP，附带工程实践",
+    timestamp: "2026-05-01T10:10:00.000Z",
+  });
+
+  const profile = buildUserProfileView({
+    user,
+    memoryProfile: {
+      id: "mem-1",
+      sessionsStarted: 0,
+      abilityItems: {
+        "ignored-memory": {
+          abilityItemId: "ignored-memory",
+          title: "被忽略文档的记忆证据",
+          evidenceCount: 1,
+          lastUpdatedAt: "2026-05-01T10:12:00.000Z",
+          sourceDocPath: "docs/ai/agent/mcp.md",
+        },
+      },
+    },
+  });
+
+  assert.equal(profile.documentProgress.docs["docs/ai/agent/mcp.md"], undefined);
+  assert.deepEqual(profile.documentProgress.ignoredDocPaths, ["docs/ai/agent/mcp.md"]);
+  assert.deepEqual(
+    profile.documentProgress.recentDocs.map((document) => document.docPath),
+    ["docs/system-design/framework/spring/spring-transaction.md"]
+  );
+  assert.equal(profile.documentProgress.currentDocPath, "docs/system-design/framework/spring/spring-transaction.md");
 });

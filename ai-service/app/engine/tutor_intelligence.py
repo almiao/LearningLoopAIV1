@@ -15,6 +15,7 @@ from app.domain.interview.validators import (
     validate_turn_envelope_payload,
 )
 from app.engine.context_packet import normalize_whitespace, trim_text
+from app.engine.mastery_scoring import default_score_for_state, score_to_state
 from app.infra.llm.client import TracedLLMClient
 from app.core.config import versions
 
@@ -43,16 +44,107 @@ def ensure_reply_text(value: Any, fallback: str = "") -> str:
     return normalized if normalized.strip() else fallback
 
 
-def build_knowledge_answer_prompt(*, question: str, context: str) -> str:
+KNOWLEDGE_GOAL_LABELS = {
+    "interview": "面试准备",
+    "quick_understanding": "快速理解",
+    "work": "工作落地",
+    "exam": "考试复习",
+    "content_output": "内容输出",
+}
+
+KNOWLEDGE_TASK_LABELS = {
+    "summary": "总结全文",
+    "memory_points": "提炼记忆点",
+    "question_points": "生成自测问题",
+    "freeform": "自由问答",
+}
+
+
+def normalize_knowledge_goal(goal: Any) -> str:
+    normalized = ensure_string(goal)
+    return normalized if normalized else "interview"
+
+
+def normalize_knowledge_task_type(task_type: Any) -> str:
+    normalized = ensure_string(task_type)
+    return normalized if normalized in KNOWLEDGE_TASK_LABELS else "freeform"
+
+
+def describe_knowledge_goal(goal: Any) -> str:
+    normalized = normalize_knowledge_goal(goal)
+    return KNOWLEDGE_GOAL_LABELS.get(normalized, normalized)
+
+
+def _knowledge_task_instruction(task_type: str) -> str:
+    normalized = normalize_knowledge_task_type(task_type)
+    if normalized == "summary":
+        return "\n".join(
+            [
+                "当前任务：总结全文。",
+                "好答案标准：",
+                "- 让用户快速知道这篇文档主要讲什么。",
+                "- 说明它对当前目标有什么价值。",
+                "- 提炼文章最重要的主线、结论和取舍。",
+                "- 帮用户判断读完后最应该带走什么。",
+                "- 根据文章内容自行决定详略，不要为了固定条数而凑内容。",
+            ]
+        )
+    if normalized == "memory_points":
+        return "\n".join(
+            [
+                "当前任务：提炼记忆点。",
+                "好答案标准：",
+                "- 只提炼真正值得记住的内容，不为凑数量输出低价值点。",
+                "- 每个记忆点要说明为什么重要。",
+                "- 优先覆盖容易混淆、容易忘、容易被追问、容易在实践中用错的内容。",
+                "- 尽量把抽象概念转成用户能复述的表达。",
+                "- 如有必要，可以标出“必记”“建议掌握”“了解即可”等层级。",
+            ]
+        )
+    if normalized == "question_points":
+        return "\n".join(
+            [
+                "当前任务：生成自测问题。",
+                "好答案标准：",
+                "- 问题应覆盖文章中最值得掌握的关键点。",
+                "- 问题不要停留在标题复述，要能检验理解、区分、应用或取舍。",
+                "- 每个问题说明它在考察什么。",
+                "- 可以给出简短回答要点，帮助用户知道回答时至少要覆盖哪些内容。",
+                "- 根据文章内容自行决定问题数量，不需要凑数。",
+            ]
+        )
+    return "\n".join(
+        [
+            "当前任务：回答用户关于这篇文档的问题。",
+            "好答案标准：",
+            "- 优先贴合原文里的概念和表述。",
+            "- 当用户提出材料之外的延伸、反事实或原理追问时，可以用可靠通用知识补足，并说明这是基于通用知识的推理。",
+            "- 不要因为材料没有直接展开就拒答；只有问题明显需要材料中不存在的具体事实时，才说明材料未覆盖该细节。",
+        ]
+    )
+
+
+def build_knowledge_answer_prompt(*, question: str, context: str, goal: str = "interview", task_type: str = "freeform") -> str:
     clipped_context = ensure_string(context)[:12_000]
+    goal_label = describe_knowledge_goal(goal)
+    task_label = KNOWLEDGE_TASK_LABELS.get(normalize_knowledge_task_type(task_type), "自由问答")
+    task_instruction = _knowledge_task_instruction(task_type)
     return f"""
 你是 LearningLoopAI 的阅读助理。你把用户正在阅读的材料当作主要参考，同时可以结合可靠的通用技术知识回答。
 
+当前用户目标：{goal_label}
+当前能力：{task_label}
+
 回答规则：
+- 始终围绕当前用户目标处理文档：帮助用户把原文转化成更容易理解、记忆和自测的学习材料。
+- 优先保留对目标有价值的信息，弱化无关背景、重复表达和低价值细节。
 - 优先贴合【材料】里的概念和表述；当用户提出材料之外的延伸、反事实或原理追问时，可以用通用技术知识补足，并说明这是基于通用知识的推理。
 - 不要因为材料没有直接展开就拒答；只有问题明显需要材料中不存在的具体事实时，才说明材料未覆盖该细节。
 - 如果用户要求总结，直接给出总结，不要说“你是在提出请求”。
+- 不要固定输出数量；根据文章长度、信息密度和当前目标自行决定详略。
 - 用中文回答。
+
+{task_instruction}
 
 【材料】
 {clipped_context}
@@ -62,9 +154,11 @@ def build_knowledge_answer_prompt(*, question: str, context: str) -> str:
 """.strip()
 
 
-def answer_knowledge_question_heuristic(*, question: str, context: str) -> str:
+def answer_knowledge_question_heuristic(*, question: str, context: str, goal: str = "interview", task_type: str = "freeform") -> str:
     normalized_question = ensure_string(question)
     normalized_context = ensure_string(context)
+    normalized_task_type = normalize_knowledge_task_type(task_type)
+    goal_label = describe_knowledge_goal(goal)
     lines = [
         line.strip(" #`*-")
         for line in normalized_context.replace("\r", "").split("\n")
@@ -73,15 +167,22 @@ def answer_knowledge_question_heuristic(*, question: str, context: str) -> str:
     headings = [line for line in lines if len(line) <= 48][:8]
     paragraphs = [line for line in lines if len(line) > 18][:6]
 
-    if any(token in normalized_question for token in ("总结", "概括", "3 句", "三句")):
+    if normalized_task_type == "summary" or any(token in normalized_question for token in ("总结", "概括", "3 句", "三句")):
         seeds = paragraphs[:3] or headings[:3] or [normalized_context[:120] or "这篇材料目前没有足够内容可总结。"]
-        return "\n".join(f"{index + 1}. {seed}" for index, seed in enumerate(seeds[:3]))
+        return f"当前目标：{goal_label}\n\n" + "\n".join(f"{index + 1}. {seed}" for index, seed in enumerate(seeds[:3]))
 
-    if any(token in normalized_question for token in ("面试", "追问", "问题")):
+    if normalized_task_type == "memory_points":
+        seeds = headings[:6] or paragraphs[:6] or ["材料核心概念"]
+        return f"当前目标：{goal_label}\n\n" + "\n".join(
+            f"{index + 1}. {seed}\n为什么值得记：这是当前目标下需要优先保留、复述或区分的内容。"
+            for index, seed in enumerate(seeds)
+        )
+
+    if normalized_task_type == "question_points" or any(token in normalized_question for token in ("面试", "追问", "问题")):
         seeds = headings[:5] or paragraphs[:5] or ["材料核心概念"]
-        return "\n".join(
-            f"{index + 1}. 面试官可能会追问：{seed} 的核心机制和边界是什么？"
-            for index, seed in enumerate(seeds[:5])
+        return f"当前目标：{goal_label}\n\n" + "\n".join(
+            f"{index + 1}. 问题：{seed} 的核心机制、适用场景和边界是什么？\n考察点：是否真正理解这个关键点，并能按当前目标复述或应用。"
+            for index, seed in enumerate(seeds)
         )
 
     seeds = paragraphs[:2] or headings[:2]
@@ -762,11 +863,25 @@ def normalize_signal_alias(value: Any, fallback: str = "noise") -> str:
     return SIGNAL_ALIASES.get(normalized, fallback)
 
 
+def normalize_answer_score(value: Any, fallback: int = 0) -> int:
+    try:
+        numeric_score = round(float(value))
+    except (TypeError, ValueError):
+        numeric_score = fallback
+    return min(100, max(0, int(numeric_score)))
+
+
 def normalize_turn_envelope_payload(payload: Dict[str, Any], concept: Dict[str, Any]) -> Dict[str, Any]:
     runtime_map = (payload or {}).get("runtime_map") or {}
     anchor_assessment = runtime_map.get("anchor_assessment") or {}
     next_move = (payload or {}).get("next_move") or {}
     suggestion = (payload or {}).get("writeback_suggestion") or {}
+    provided_state = normalize_state_alias(anchor_assessment.get("state"), "")
+    answer_score = normalize_answer_score(anchor_assessment.get("score"), default_score_for_state(provided_state or "weak"))
+    answer_state = "不可判" if provided_state == "不可判" and answer_score == 0 else score_to_state(answer_score)
+    anchor_patch = suggestion.get("anchor_patch") or {}
+    patch_state = normalize_state_alias(anchor_patch.get("state"), "")
+    patch_score = normalize_answer_score(anchor_patch.get("score"), answer_score if answer_state != "不可判" else default_score_for_state(patch_state or "weak"))
     follow_up_question = ensure_string(next_move.get("follow_up_question") or next_move.get("followUpQuestion"))
     ui_mode = next_move.get("ui_mode") if next_move.get("ui_mode") in {"probe", "teach", "verify", "advance", "revisit", "stop"} else "probe"
     return {
@@ -774,8 +889,8 @@ def normalize_turn_envelope_payload(payload: Dict[str, Any], concept: Dict[str, 
             "anchor_id": concept.get("id", "") or ensure_string(runtime_map.get("anchor_id"), concept.get("id", "")),
             "turn_signal": normalize_signal_alias(runtime_map.get("turn_signal"), "noise"),
             "anchor_assessment": {
-                "state": normalize_state_alias(anchor_assessment.get("state"), "不可判"),
-                "confidence_level": anchor_assessment.get("confidence_level") if anchor_assessment.get("confidence_level") in {"high", "medium", "low"} else "low",
+                "state": answer_state,
+                "score": answer_score,
                 "reasons": [ensure_string(item) for item in ensure_array(anchor_assessment.get("reasons")) if ensure_string(item)][:4],
             },
             "hypotheses": ensure_array(runtime_map.get("hypotheses"))[:5],
@@ -796,11 +911,11 @@ def normalize_turn_envelope_payload(payload: Dict[str, Any], concept: Dict[str, 
             "mode": suggestion.get("mode") if suggestion.get("mode") in {"update", "append_conflict", "noop"} else "update",
             "reason": ensure_string(suggestion.get("reason"), "new_turn_signal"),
             "anchor_patch": {
-                "state": normalize_state_alias(((suggestion.get("anchor_patch") or {}).get("state")), "partial"),
-                "confidence_level": ((suggestion.get("anchor_patch") or {}).get("confidence_level")) if ((suggestion.get("anchor_patch") or {}).get("confidence_level")) in {"high", "medium", "low"} else "medium",
+                "state": score_to_state(patch_score),
+                "score": patch_score,
                 "derived_principle": ensure_string(
-                    ((suggestion.get("anchor_patch") or {}).get("derived_principle"))
-                    or ((suggestion.get("anchor_patch") or {}).get("derivedPrinciple")),
+                    anchor_patch.get("derived_principle")
+                    or anchor_patch.get("derivedPrinciple"),
                     concept.get("summary", ""),
                 ),
             },
@@ -834,7 +949,6 @@ def format_source_for_prompt(source: Dict[str, Any]) -> str:
 
 
 TURN_INPUT_TYPES = {"answer", "request_explain", "request_advance", "mixed"}
-TURN_EVIDENCE_QUALITY = {"strong", "partial", "weak", "none"}
 
 TUTOR_TOP_LEVEL_CONTRACT = [
     "Follow the learner's explicit intent before inferred intent.",
@@ -867,12 +981,11 @@ TUTOR_BEHAVIOR_EXAMPLES = [
 def normalize_turn_diagnosis_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     diagnosis = payload or {}
     input_type = ensure_string(diagnosis.get("input_type"), "answer")
-    evidence_quality = ensure_string(diagnosis.get("evidence_quality"), "weak")
     return {
         "input_type": input_type if input_type in TURN_INPUT_TYPES else "answer",
-        "evidence_quality": evidence_quality if evidence_quality in TURN_EVIDENCE_QUALITY else "weak",
         "key_claim": ensure_string(diagnosis.get("key_claim")),
         "confirmed_understanding": ensure_string(diagnosis.get("confirmed_understanding")),
+        "judgment_reason": ensure_string(diagnosis.get("judgment_reason")),
         "has_misconception": bool(diagnosis.get("has_misconception")),
         "misconception_detail": ensure_string(diagnosis.get("misconception_detail")),
     }
@@ -889,7 +1002,13 @@ def build_turn_diagnosis_prompt(*, concept: Dict[str, Any], context_packet: Dict
         [
             "You are a learning diagnosis engine for one tutor turn. Return json only.",
             "Diagnose what the learner is doing and what single gap matters most right now.",
-            "Do not teach, persuade, or write learner-facing prose here.",
+            "Do not teach, persuade, or write a full learner-facing reply here.",
+            "Boundary: this diagnosis call only produces assessment facts. A separate parallel reply/teach call writes the learner-facing explanation.",
+            "All diagnosis string fields must be written in Simplified Chinese.",
+            "Do not copy English learner claims into key_claim; translate or summarize them in Chinese, while preserving technical identifiers such as LRU, put, Redis, Object[] when needed.",
+            "For fields that may be shown to the learner (key_claim, confirmed_understanding, judgment_reason, misconception_detail), write directly to the learner in second person. Do not use third-person labels such as 用户, 学习者, or Learner.",
+            "judgment_reason is learner-facing, but it is not a reply or explanation: only explain why the current score/state follows from the answer evidence.",
+            "judgment_reason must not introduce new concepts, teach the correct answer, give next-step instructions, ask a question, or repeat the full feedback body.",
             "",
             "TOP-LEVEL TUTOR CONTRACT:",
             *[f"- {item}" for item in TUTOR_TOP_LEVEL_CONTRACT[:4]],
@@ -990,12 +1109,16 @@ def build_turn_envelope_prompt(
         *[f"- {item}" for item in TUTOR_BEHAVIOR_EXAMPLES],
         "",
         "DECISION RULES:",
+        "- Use anchor_assessment.score as the only answer score, from 0 to 100.",
+        "- Map score < 60 to weak, 60-84 to partial, and >= 85 to solid.",
+        "- Do not output secondary reliability fields.",
         "- Treat budget, friction_signals, and stop_conditions as orchestration factors before proposing more probing.",
         "- If recent teaching already covered the core mechanism, prefer naming the one missing link over repeating the full explanation.",
-        "- If TURN_DIAGNOSIS.evidence_quality is full and has_misconception is false, do not open a new follow-up just to cover a different discriminator under the same broad anchor.",
+        "- If the answer is complete enough for the current learner-facing question and has_misconception is false, do not open a new follow-up just to cover a different discriminator under the same broad anchor.",
         "- When the learner has already fully answered the current learner-facing question, prefer marking the unit solid and stopping or advancing instead of escalating scope.",
-        "- When a response is still needed on the current concept, follow_up_question must be a concrete question the learner can answer immediately.",
-        "- Treat follow_up_question as a candidate follow-up only for staying on the current concept. If the turn should switch or stop, leave follow_up_question empty.",
+        "- Only a clearly wrong learner answer may ask an immediate same-concept follow_up_question.",
+        "- For full, partial, empty, or teach-control turns, leave follow_up_question empty and let orchestration advance or stop.",
+        "- Treat follow_up_question as a candidate follow-up only for allowed same-concept wrong-answer repair. If the turn should switch or stop, leave follow_up_question empty.",
         "- Keep writeback_suggestion conservative. Use noop when this turn does not materially change the anchor state.",
         "",
         "CONTEXT_PACKET_JSON:",
@@ -1016,7 +1139,7 @@ def build_turn_envelope_prompt(
                 "",
                 "RETRY REQUIREMENT:",
                 "Your previous output was rejected because next_move.follow_up_question was missing.",
-                "If next_move.ui_mode is probe, teach, or verify, you MUST provide one concrete learner-facing follow_up_question.",
+                "If next_move.ui_mode is probe or verify for wrong-answer repair, you MUST provide one concrete learner-facing follow_up_question.",
                 "If next_move.ui_mode is advance, stop, or revisit, follow_up_question MUST be empty.",
             ]
         )
@@ -1040,7 +1163,7 @@ def build_turn_envelope_prompt(
                 ),
                 "",
                 "When FORCED_ACTION is teach, do not probe before helping.",
-                "Keep the follow_up_question focused on one teach-back question after the explanation stage.",
+                "Leave follow_up_question empty; the session orchestrator will advance to the next checkpoint or stop after the explanation.",
             ]
         )
 
@@ -1134,9 +1257,9 @@ TURN_DIAGNOSIS_SCHEMA = {
     "name": "tutor_turn_diagnosis",
     "example": {
         "input_type": "answer",
-        "evidence_quality": "partial",
-        "key_claim": "用户知道 MVCC 和历史版本有关。",
-        "confirmed_understanding": "已经知道 MVCC 不是直接读最新值。",
+        "key_claim": "你已经说出 MVCC 和历史版本有关。",
+        "confirmed_understanding": "你已经知道 MVCC 不是直接读最新值。",
+        "judgment_reason": "这轮能看出你抓住了历史版本这个核心线索，但还没有说明快照读和当前读的边界，所以先判断为部分掌握。",
         "has_misconception": False,
         "misconception_detail": "",
     },
@@ -1145,17 +1268,17 @@ TURN_DIAGNOSIS_SCHEMA = {
         "additionalProperties": False,
         "required": [
             "input_type",
-            "evidence_quality",
             "key_claim",
             "confirmed_understanding",
+            "judgment_reason",
             "has_misconception",
             "misconception_detail",
         ],
         "properties": {
             "input_type": {"type": "string", "enum": sorted(TURN_INPUT_TYPES)},
-            "evidence_quality": {"type": "string", "enum": sorted(TURN_EVIDENCE_QUALITY)},
             "key_claim": {"type": "string"},
             "confirmed_understanding": {"type": "string"},
+            "judgment_reason": {"type": "string"},
             "has_misconception": {"type": "boolean"},
             "misconception_detail": {"type": "string"},
         },
@@ -1170,7 +1293,7 @@ TURN_ENVELOPE_SCHEMA = {
             "turn_signal": "negative",
             "anchor_assessment": {
                 "state": "partial",
-                "confidence_level": "medium",
+                "score": 72,
                 "reasons": ["用户已经知道 MVCC 提供历史快照，但还没把当前读和锁边界讲清楚。"],
             },
             "hypotheses": [],
@@ -1192,7 +1315,7 @@ TURN_ENVELOPE_SCHEMA = {
             "reason": "new_high_value_partial_signal",
             "anchor_patch": {
                 "state": "partial",
-                "confidence_level": "medium",
+                "score": 72,
                 "derived_principle": "用户已经知道 MVCC 负责快照读一致视图，但对锁边界仍不稳定。",
             },
         },
@@ -1347,6 +1470,7 @@ class ProviderTutorIntelligence:
         prompt = "\n".join(
             [
                 "Generate exactly one learner-facing question for the current tutor turn. Return json only.",
+                "Write the learner-facing question in Chinese.",
                 "The question must be created from the current session state, not copied from decomposition-time placeholders.",
                 "Use the concept anchors as constraints, but adapt to memory, recent turns, previous runtime map, phase, and revisit state.",
                 "Ask one concrete, answerable question. Avoid broad prompts like “what is the core mechanism and why is it important”.",
@@ -1405,9 +1529,9 @@ class ProviderTutorIntelligence:
         diagnosis = (
             {
                 "input_type": "request_explain",
-                "evidence_quality": "none",
                 "key_claim": "",
                 "confirmed_understanding": ensure_string((context_packet.get("anchor_state") or {}).get("confirmed_understanding")),
+                "judgment_reason": "你这轮选择查看解析，不按答题证据打分，所以当前不形成新的掌握判定。",
                 "has_misconception": False,
                 "misconception_detail": "",
             }
@@ -1506,8 +1630,8 @@ class ProviderTutorIntelligence:
             base_url=self.base_url,
         )
 
-    def answer_knowledge_question(self, *, question: str, context: str) -> str:
-        prompt = build_knowledge_answer_prompt(question=question, context=context)
+    def answer_knowledge_question(self, *, question: str, context: str, goal: str = "interview", task_type: str = "freeform") -> str:
+        prompt = build_knowledge_answer_prompt(question=question, context=context, goal=goal, task_type=task_type)
         return call_provider_text(
             provider=self.provider,
             api_key=self.api_key,
@@ -1639,35 +1763,31 @@ class HeuristicTutorIntelligence:
         if forced_action == "teach" or any(token in lowered for token in ("讲", "解释", "总结", "梳理")):
             ui_mode = "teach"
             state = "weak"
-            confidence_level = "medium"
-            follow_up_question = (
-                concept.get("retryQuestion")
-                or concept.get("diagnosticQuestion")
-                or f"围绕“{title}”回答一个具体点：材料里它的关键链路是怎么走的？"
-            )
+            score = 40
+            follow_up_question = ""
             reason = "用户显式要求讲解或当前更适合先补关键机制。"
         elif any(token in lowered for token in ("下一题", "下一个", "跳过")):
             ui_mode = "advance"
             state = "partial"
-            confidence_level = "medium"
+            score = 72
             follow_up_question = ""
             reason = "用户要求继续推进当前节奏。"
         elif signal == "positive" and len(text) >= 40:
             ui_mode = "verify"
             state = "solid"
-            confidence_level = "high"
+            score = 92
             follow_up_question = f"如果面试官继续追问边界，你会怎么解释“{title}”最容易答偏的地方？"
             reason = "用户已经碰到主链，适合再用一个问题确认边界。"
         elif signal == "positive":
             ui_mode = "verify"
             state = "partial"
-            confidence_level = "medium"
+            score = 72
             follow_up_question = f"结合你刚才的阅读和已有回答，再讲一次：“{title}”这条链路里最容易漏掉的关键一步是什么？"
             reason = "方向基本对，但还需要继续确认是否真正讲稳。"
         else:
             ui_mode = "probe"
             state = "weak"
-            confidence_level = "low"
+            score = 40
             follow_up_question = (
                 concept.get("retryQuestion")
                 or concept.get("diagnosticQuestion")
@@ -1675,7 +1795,7 @@ class HeuristicTutorIntelligence:
             )
             reason = "当前回答还没有形成稳定机制链路。"
 
-        if ui_mode in {"probe", "teach", "verify"} and not follow_up_question:
+        if ui_mode in {"probe", "verify"} and not follow_up_question:
             follow_up_question = f"你先用自己的话再讲一下：{title} 的关键机制是什么？"
 
         return normalize_turn_envelope_payload(
@@ -1685,7 +1805,7 @@ class HeuristicTutorIntelligence:
                     "turn_signal": signal,
                     "anchor_assessment": {
                         "state": state,
-                        "confidence_level": confidence_level,
+                        "score": score,
                         "reasons": [reason],
                     },
                     "hypotheses": [],
@@ -1707,7 +1827,7 @@ class HeuristicTutorIntelligence:
                     "reason": "heuristic_test_double_turn",
                     "anchor_patch": {
                         "state": state,
-                        "confidence_level": confidence_level,
+                        "score": score,
                         "derived_principle": concept.get("summary", ""),
                     },
                 },
@@ -1772,8 +1892,8 @@ class HeuristicTutorIntelligence:
         if text:
             yield text
 
-    def answer_knowledge_question(self, *, question: str, context: str) -> str:
-        return answer_knowledge_question_heuristic(question=question, context=context)
+    def answer_knowledge_question(self, *, question: str, context: str, goal: str = "interview", task_type: str = "freeform") -> str:
+        return answer_knowledge_question_heuristic(question=question, context=context, goal=goal, task_type=task_type)
 
     def explain_concept(self, *, session: Dict[str, Any], concept: Dict[str, Any], context_packet: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         payload = {

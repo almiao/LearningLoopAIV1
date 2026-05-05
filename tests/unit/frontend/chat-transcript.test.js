@@ -58,6 +58,17 @@ test("chat transcript keeps tutor feedback and the next tutor question as separa
     },
     {
       role: "tutor",
+      kind: "progress",
+      action: "progress",
+      conceptId: "mvcc",
+      conceptTitle: "MVCC 与 Repeatable Read 边界",
+      checkpointId: "mvcc-cp-1",
+      checkpointStatement: "为什么当前读还要 next-key lock",
+      content: "进展：训练点 1/1 · 子项 1/1。现在进入：为什么当前读还要 next-key lock",
+      timestamp: 11.5
+    },
+    {
+      role: "tutor",
       kind: "question",
       action: "probe",
       conceptId: "mvcc",
@@ -76,7 +87,7 @@ test("chat transcript keeps tutor feedback and the next tutor question as separa
   assert.equal(timeline[1].topicShiftLabel, "");
   assert.equal(timeline[2].role, "assistant");
   assert.equal(timeline[2].isProgressUpdate, true);
-  assert.match(timeline[2].body, /现在进入/);
+  assert.match(timeline[2].body, /训练点 1\/1/);
   assert.equal(timeline[3].role, "assistant");
   assert.match(timeline[3].body, /next-key lock/);
 });
@@ -100,6 +111,17 @@ test("chat transcript does not merge feedback with the next question when the co
       conceptTitle: "MVCC 与 Repeatable Read 边界",
       content: "好，这个点先不继续卡住你了，我们直接进下一题。",
       timestamp: 11
+    },
+    {
+      role: "tutor",
+      kind: "progress",
+      action: "progress",
+      conceptId: "mysql-index",
+      conceptTitle: "MySQL 索引设计与查询计划",
+      checkpointId: "mysql-index-cp-1",
+      checkpointStatement: "索引为什么没命中",
+      content: "进展：训练点 2/2 · 子项 1/1。现在进入：索引为什么没命中",
+      timestamp: 11.5
     },
     {
       role: "tutor",
@@ -128,6 +150,17 @@ test("chat transcript emits checkpoint transition only when checkpoint changes",
   const timeline = buildChatTimeline([
     {
       role: "tutor",
+      kind: "progress",
+      action: "progress",
+      conceptId: "cdn-role-1",
+      conceptTitle: "CDN核心价值与定位",
+      checkpointId: "cdn-role-1-cp-1",
+      checkpointStatement: "区分静态资源与动态请求",
+      content: "进展：训练点 1/1 · 子项 1/2。现在进入：区分静态资源与动态请求",
+      timestamp: 0.5
+    },
+    {
+      role: "tutor",
       kind: "question",
       action: "probe",
       conceptId: "cdn-role-1",
@@ -145,6 +178,17 @@ test("chat transcript emits checkpoint transition only when checkpoint changes",
       conceptTitle: "CDN核心价值与定位",
       content: "答得对。",
       timestamp: 2
+    },
+    {
+      role: "tutor",
+      kind: "progress",
+      action: "progress",
+      conceptId: "cdn-role-1",
+      conceptTitle: "CDN核心价值与定位",
+      checkpointId: "cdn-role-1-cp-2",
+      checkpointStatement: "区分CDN与全站加速",
+      content: "进展：训练点 1/1 · 子项 2/2。现在进入：区分CDN与全站加速",
+      timestamp: 3.5
     },
     {
       role: "tutor",
@@ -237,25 +281,40 @@ test("chat transcript exposes training progress and score metadata as assistant 
   const timeline = buildChatTimeline([
     {
       role: "tutor",
+      kind: "progress",
+      action: "progress",
+      conceptId: "mysql-logs",
+      conceptTitle: "三大日志对比与协作",
+      checkpointId: "compare-logs-1-cp-2",
+      checkpointStatement: "能解释为什么需要两阶段提交来协同 redo log 和 binlog",
+      content: "进展：训练点 5/5 · 子项 2/2。现在进入：能解释为什么需要两阶段提交来协同 redo log 和 binlog",
+      timestamp: 39
+    },
+    {
+      role: "tutor",
       kind: "question",
       action: "probe",
       conceptId: "mysql-logs",
       conceptTitle: "三大日志对比与协作",
       checkpointId: "compare-logs-1-cp-2",
       checkpointStatement: "能解释为什么需要两阶段提交来协同 redo log 和 binlog",
-      questionMeta: {
-        progress: { currentRound: 1, maxRounds: 2 },
-        trainingProgress: {
-          trainingPoint: { currentIndex: 5, total: 5, title: "三大日志对比与协作" },
-          checkpoint: {
-            currentIndex: 2,
-            total: 2,
-            statement: "能解释为什么需要两阶段提交来协同 redo log 和 binlog"
-          }
-        }
-      },
       content: "为什么需要两阶段提交？",
       timestamp: 40
+    },
+    {
+      role: "tutor",
+      kind: "evaluation",
+      action: "evaluate",
+      conceptId: "mysql-logs",
+      conceptTitle: "三大日志对比与协作",
+      content: "回答评分：72 分（部分掌握）。\n\n用户能说出两阶段提交用于协调 redo log 和 binlog。",
+      scoreSummary: {
+        state: "partial",
+        stateLabel: "部分掌握",
+        score: 72,
+        keyClaim: "用户能说出两阶段提交用于协调 redo log 和 binlog。"
+      },
+      timestamp: 41
     },
     {
       role: "tutor",
@@ -264,15 +323,7 @@ test("chat transcript exposes training progress and score metadata as assistant 
       conceptId: "mysql-logs",
       conceptTitle: "三大日志对比与协作",
       content: "你抓到了 binlog 和 redo log 要一致。",
-      scoreSummary: {
-        state: "partial",
-        stateLabel: "部分掌握",
-        confidence: 58,
-        evidenceQuality: "partial",
-        evidenceLabel: "回答证据部分充分",
-        keyClaim: "用户能说出两阶段提交用于协调 redo log 和 binlog。"
-      },
-      timestamp: 41
+      timestamp: 42
     }
   ]);
 
@@ -280,7 +331,6 @@ test("chat transcript exposes training progress and score metadata as assistant 
   assert.equal(timeline[0].isProgressUpdate, true);
   assert.match(timeline[0].body, /训练点 5\/5/);
   assert.match(timeline[0].body, /子项 2\/2/);
-  assert.match(timeline[2].body, /本轮评价：部分掌握/);
-  assert.equal(timeline[2].isEvaluationMessage, true);
+  assert.match(timeline[2].body, /回答评分：72 分（部分掌握）/);
   assert.match(timeline[3].body, /binlog 和 redo log 要一致/);
 });

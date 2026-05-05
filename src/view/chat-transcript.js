@@ -1,4 +1,7 @@
 function createEntryId(turn, index) {
+  if (turn?.turnId) {
+    return turn.turnId;
+  }
   return [
     turn.role || "unknown",
     turn.kind || "message",
@@ -66,37 +69,11 @@ function buildAssistantBodyParts(turn) {
   return [String(turn?.content || "").trim()].filter(Boolean);
 }
 
-function buildEvaluationEntry(turn, index) {
-  const assessment = turn.scoreSummary || null;
-  if (!assessment || turn.action === "teach") {
-    return null;
-  }
-
-  const bodyParts = [`本轮评价：${assessment.stateLabel || assessment.state || "已评分"}。`];
-  if (assessment.keyClaim) {
-    bodyParts.push(assessment.keyClaim);
-  }
-  if (assessment.hasMisconception && assessment.misconceptionDetail) {
-    bodyParts.push(`要纠正：${assessment.misconceptionDetail}`);
-  }
-
-  return {
-    id: `${createEntryId(turn, index)}:evaluation`,
-    type: "message",
-    role: "assistant",
-    conceptId: turn.conceptId || "",
-    conceptTitle: turn.conceptTitle || "",
-    body: bodyParts[0] || "",
-    bodyParts,
-    isEvaluationMessage: true,
-    timestamp: turn.timestamp || index
-  };
-}
-
 function buildAssistantEntry(turn, index) {
   const bodyParts = buildAssistantBodyParts(turn);
   const isInProgressVerifyTurn =
     turn.action === "check" && Boolean(turn.candidateCoachingStep || turn.coachingStep);
+  const isProgressLikeTurn = turn.kind === "progress" || turn.kind === "process";
   return {
     id: createEntryId(turn, index),
     type: "message",
@@ -112,6 +89,7 @@ function buildAssistantEntry(turn, index) {
     coachingStep: turn.coachingStep || "",
     topicShiftLabel: "",
     action: turn.action || "",
+    isProgressUpdate: isProgressLikeTurn,
     timestamp: turn.timestamp || index
   };
 }
@@ -156,46 +134,9 @@ export function buildChatTimeline(turns = [], { limit = 24 } = {}) {
       continue;
     }
 
-    if (turn.kind === "question" && turn.checkpointId && turn.checkpointId !== lastCheckpointId) {
-      const progressLabel = buildCheckpointTransitionLabel(turn);
-      timeline.push({
-        id: `${createEntryId(turn, index)}:checkpoint`,
-        type: "message",
-        role: "assistant",
-        conceptId: turn.conceptId || "",
-        body: progressLabel,
-        bodyParts: [progressLabel],
-        conceptTitle: turn.conceptTitle || "",
-        isProgressUpdate: true,
-        timestamp: turn.timestamp || index
-      });
+    if (turn.kind === "question" && turn.checkpointId) {
       lastCheckpointId = turn.checkpointId;
     }
-
-    if (turn.kind === "feedback") {
-      const evaluationEntry = buildEvaluationEntry(turn, index);
-      if (evaluationEntry) {
-        timeline.push(evaluationEntry);
-      }
-
-      const nextTurn = turns[index + 1];
-      const sameConceptFollowUp =
-        nextTurn?.role === "tutor" &&
-        nextTurn.kind === "question" &&
-        nextTurn.conceptId &&
-        nextTurn.conceptId === turn.conceptId;
-
-      if (sameConceptFollowUp) {
-        timeline.push({
-          ...buildAssistantEntry(turn, index),
-          takeaway: "",
-          candidateFollowUpQuestion: "",
-          coachingStep: ""
-        });
-        continue;
-      }
-    }
-
     timeline.push(buildAssistantEntry(turn, index));
   }
 

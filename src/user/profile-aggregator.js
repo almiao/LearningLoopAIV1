@@ -5,6 +5,7 @@ import {
   buildTargetLabel,
   calculateMasteryScore,
   calculateTargetReadinessScore,
+  defaultScoreForState,
   average,
 } from "../mastery/mastery-scoring.js";
 import { buildTrainingPointsFromDecomposition } from "../training/training-model.js";
@@ -129,8 +130,7 @@ function buildAbilityItemView(point, memoryItem = null, readingProgress = null) 
     abilityItemId: point.id,
     title: point.title,
     state,
-    confidenceLevel: memoryItem?.confidenceLevel || "low",
-    confidence: memoryItem?.confidence || 0,
+    score: memoryItem?.score || defaultScoreForState(state),
     evidenceCount,
     progressPercentage: masteryScore,
     masteryScore,
@@ -161,7 +161,7 @@ function aggregatePointMemory(point, memoryProfile) {
   const evidenceCount = checkpointMemory.reduce((sum, item) => sum + (item?.evidenceCount || 0), 0) || (legacyPointMemory?.evidenceCount || 0);
   const stateValues = checkpointMemory.map((item) => summarizeCheckpointState(item));
   const derivedPrinciples = checkpointMemory.map((item) => item?.derivedPrinciple || "").filter(Boolean);
-  const confidenceLevels = checkpointMemory.map((item) => item?.confidenceLevel || "").filter(Boolean);
+  const scores = checkpointMemory.map((item) => Number(item?.score || 0)).filter((score) => score > 0);
   const recentStrongEvidence = checkpointMemory.flatMap((item) => item?.recentStrongEvidence || []);
   const recentConflictingEvidence = checkpointMemory.flatMap((item) => item?.recentConflictingEvidence || []);
   const lastUpdatedAt = [legacyPointMemory?.lastUpdatedAt || "", ...checkpointMemory.map((item) => item?.lastUpdatedAt || "")]
@@ -182,8 +182,7 @@ function aggregatePointMemory(point, memoryProfile) {
 
   return {
     state,
-    confidenceLevel: legacyPointMemory?.confidenceLevel || confidenceLevels[0] || "low",
-    confidence: legacyPointMemory?.confidence || 0,
+    score: legacyPointMemory?.score || average(scores) || defaultScoreForState(state),
     evidenceCount,
     derivedPrinciple: legacyPointMemory?.derivedPrinciple || derivedPrinciples[0] || point.summary || "",
     recentStrongEvidence: legacyPointMemory?.recentStrongEvidence || recentStrongEvidence,
