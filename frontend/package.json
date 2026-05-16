@@ -11,6 +11,7 @@
     "livekit-client": "^2.18.2",
     "next": "15.4.5",
     "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "react-dom": "19.1.0",
+    "react-pdf": "^10.4.1"
   }
 }

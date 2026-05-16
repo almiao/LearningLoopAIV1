@@ -2,6 +2,19 @@ import { spawn } from "node:child_process";
 import { loadLocalEnv } from "./local-env.js";
 import { killExistingOnPort } from "./port-utils.js";
 
+const defaultPythonCliBinDir = "/Library/Frameworks/Python.framework/Versions/3.11/bin";
+
+function withLocalToolPath(env) {
+  const pythonCliBinDir = env.PYTHON_CLI_BIN_DIR || defaultPythonCliBinDir;
+  if (process.platform === "win32") {
+    return env;
+  }
+  return {
+    ...env,
+    PATH: `${pythonCliBinDir}:${env.PATH || ""}`
+  };
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -63,6 +76,10 @@ export async function postJson(url, payload) {
 
 export async function withSplitServices(t, fn, { aiPort, bffPort } = {}) {
   const localEnv = loadLocalEnv(process.cwd());
+  const serviceEnv = withLocalToolPath({
+    ...process.env,
+    ...localEnv
+  });
   const resolvedAiPort = aiPort || 18100;
   const resolvedBffPort = bffPort || 14100;
   killExistingOnPort(resolvedAiPort);
@@ -74,8 +91,7 @@ export async function withSplitServices(t, fn, { aiPort, bffPort } = {}) {
     {
       cwd: process.cwd(),
       env: {
-        ...process.env,
-        ...localEnv,
+        ...serviceEnv,
         APP_ENV: "test",
         LLAI_LLM_ENABLED: "false",
         LLAI_ENABLE_AI_SERVICE_HEURISTIC_TEST_DOUBLE: "1"
@@ -89,8 +105,7 @@ export async function withSplitServices(t, fn, { aiPort, bffPort } = {}) {
     {
       cwd: process.cwd(),
       env: {
-        ...process.env,
-        ...localEnv,
+        ...serviceEnv,
         PORT: String(resolvedBffPort),
         AI_SERVICE_URL: `http://127.0.0.1:${resolvedAiPort}`
       }

@@ -91,6 +91,19 @@ def build_source_references(concept: Dict[str, Any], max_sources: int = 4) -> Li
     references: List[Dict[str, Any]] = []
     interview_question = concept.get("interviewQuestion") or {}
 
+    checkpoint_statement = trim_text(concept.get("checkpointStatement") or concept.get("title", ""), 120)
+    checkpoint_success = trim_text(concept.get("summary", ""), 220)
+    checkpoint_evidence = trim_text(concept.get("evidenceSnippet", ""), 220)
+    if checkpoint_statement or checkpoint_success or checkpoint_evidence:
+        references.append(
+            {
+                "kind": "checkpoint",
+                "title": checkpoint_statement or concept.get("title", ""),
+                "snippet": checkpoint_evidence or checkpoint_success or checkpoint_statement,
+                "url": "",
+            }
+        )
+
     if concept.get("provenanceLabel") or interview_question.get("label"):
         references.append(
             {
@@ -107,7 +120,7 @@ def build_source_references(concept: Dict[str, Any], max_sources: int = 4) -> Li
             }
         )
 
-    for source in concept.get("javaGuideSources") or []:
+    for source in concept.get("sourceRefs") or []:
         references.append(
             {
                 "kind": "knowledge",
@@ -131,6 +144,41 @@ def build_source_references(concept: Dict[str, Any], max_sources: int = 4) -> Li
         )
 
     return references[:max_sources]
+
+
+def build_current_checkpoint_context(session: Dict[str, Any], concept: Dict[str, Any]) -> Dict[str, Any]:
+    source_refs = concept.get("sourceRefs") or []
+    return {
+        "question": trim_text(session.get("currentProbe", ""), 220),
+        "checkpointStatement": trim_text(concept.get("checkpointStatement") or concept.get("title", ""), 160),
+        "conceptTitle": trim_text(concept.get("title", ""), 120),
+        "conceptSummary": trim_text(concept.get("summary", ""), 220),
+        "successCriteria": trim_text(concept.get("summary", "") or concept.get("checkpointStatement", ""), 220),
+        "evidenceSnippet": trim_text(concept.get("evidenceSnippet", "") or concept.get("summary", ""), 220),
+        "misconception": trim_text(concept.get("misconception", ""), 180),
+        "sourceRefs": [
+            {
+                "title": trim_text(source.get("title", ""), 80),
+                "path": trim_text(source.get("path", ""), 180),
+            }
+            for source in source_refs[:3]
+            if source
+        ],
+        "outputBoundary": {
+            "mustAnswer": trim_text(session.get("currentProbe", "") or concept.get("checkpointStatement", ""), 220),
+            "stayWithin": trim_text(
+                concept.get("checkpointStatement")
+                or concept.get("summary")
+                or concept.get("title", ""),
+                220,
+            ),
+            "avoidDriftingTo": trim_text(
+                concept.get("misconception")
+                or f"不要扩展到“{concept.get('title', '')}”之外的相邻知识点。",
+                220,
+            ),
+        },
+    }
 
 
 def build_anchor_identity(concept: Dict[str, Any]) -> Dict[str, Any]:
@@ -165,15 +213,29 @@ def _describe_scope(session: Dict[str, Any], concept: Dict[str, Any]) -> Dict[st
     }
 
 
-def _create_raw_evidence_point(session: Dict[str, Any], concept: Dict[str, Any], answer: str, source_refs: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _create_raw_evidence_point(session: Dict[str, Any], concept: Dict[str, Any], answer: str) -> Dict[str, Any]:
     attempt = ((session.get("conceptStates") or {}).get(concept.get("id"), {}) or {}).get("attempts", 0) + 1
+    canonical_source_refs = concept.get("sourceRefs") or []
     return {
         "id": f"ev-{concept.get('id', '')}-{attempt}",
         "anchorId": concept.get("id", ""),
         "type": "learner_answer",
         "prompt": trim_text(session.get("currentProbe", ""), 220),
         "answer": trim_text(answer, 320),
-        "sourceRefs": [source.get("title") or source.get("id") or source.get("url") for source in source_refs if source],
+        "sourceRefs": [
+            {
+                "path": source.get("path", ""),
+                "title": source.get("title", ""),
+                "sourceType": source.get("sourceType", ""),
+                "provider": source.get("provider", ""),
+                **({"providerLabel": source.get("providerLabel", "")} if source.get("providerLabel") else {}),
+                **({"originalUrl": source.get("originalUrl", "")} if source.get("originalUrl") else {}),
+                **({"originalMimeType": source.get("originalMimeType", "")} if source.get("originalMimeType") else {}),
+                **({"originalFilename": source.get("originalFilename", "")} if source.get("originalFilename") else {}),
+            }
+            for source in canonical_source_refs
+            if source and source.get("path")
+        ],
         "timestamp": int(time.time() * 1000),
     }
 
@@ -193,7 +255,8 @@ def build_context_packet(
     raw_evidence_point: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     source_refs = build_source_references(concept)
-    effective_raw_evidence_point = raw_evidence_point or _create_raw_evidence_point(session, concept, answer, source_refs)
+    current_checkpoint = build_current_checkpoint_context(session, concept)
+    effective_raw_evidence_point = raw_evidence_point or _create_raw_evidence_point(session, concept, answer)
     anchor_identity = build_anchor_identity(concept)
     memory_anchor = ((session.get("memoryProfile") or {}).get("abilityItems") or {}).get(concept.get("id"))
     stable_scope = _describe_scope(session, concept)
@@ -238,8 +301,8 @@ def build_context_packet(
                     turn.get("role") == "tutor" and (turn.get("action") == "teach" or turn.get("kind") == "feedback")
                     for turn in anchor_turns
                 ),
-                "recentTakeaways": [turn.get("takeaway", "") for turn in anchor_turns if turn.get("takeaway")][-2:],
             },
+            "currentCheckpoint": current_checkpoint,
             "recentEvidence": pick_recent_evidence(prior_evidence or []),
             "rawEvidencePoint": effective_raw_evidence_point,
         },
@@ -284,8 +347,8 @@ def build_context_packet(
                 turn.get("role") == "tutor" and (turn.get("action") == "teach" or turn.get("kind") == "feedback")
                 for turn in anchor_turns
             ),
-            "recent_takeaways": [turn.get("takeaway", "") for turn in anchor_turns if turn.get("takeaway")][-2:],
         },
+        "current_checkpoint": current_checkpoint,
         "source_refs": source_refs[:2],
         "runtime_understanding_map": previous_runtime_map,
         "budget": {

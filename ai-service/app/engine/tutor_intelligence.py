@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import ssl
 from dataclasses import dataclass
@@ -56,6 +57,8 @@ KNOWLEDGE_TASK_LABELS = {
     "summary": "总结全文",
     "memory_points": "提炼记忆点",
     "question_points": "生成自测问题",
+    "inline_quiz": "划线段落单点自测",
+    "selection_explain": "划线段落解释",
     "freeform": "自由问答",
 }
 
@@ -111,6 +114,29 @@ def _knowledge_task_instruction(task_type: str) -> str:
                 "- 每个问题说明它在考察什么。",
                 "- 可以给出简短回答要点，帮助用户知道回答时至少要覆盖哪些内容。",
                 "- 根据文章内容自行决定问题数量，不需要凑数。",
+            ]
+        )
+    if normalized == "inline_quiz":
+        return "\n".join(
+            [
+                "当前任务：基于用户划线段落生成一道单点自测题。",
+                "好答案标准：",
+                "- 只输出一道题，题目只能考一个原子知识点。",
+                "- 从划线段落里选择最值得确认掌握的一个点，不要把多个事实合并成复合题。",
+                "- 避免“分别是什么 / 还有什么 / 以及 / 同时 / 并说明”等多问合一的表达。",
+                "- 如果原文同时包含组成、别名、作用、例子，只选择其中一个最关键点来问。",
+                "- 输出格式固定为两行：第一行“自测题：...”；第二行“参考答案：...”。",
+                "- 参考答案要短，优先贴近原文，不展开成讲解。",
+            ]
+        )
+    if normalized == "selection_explain":
+        return "\n".join(
+            [
+                "当前任务：解释用户划线段落。",
+                "好答案标准：",
+                "- 先用一句话解释这段话在说什么。",
+                "- 再说明它为什么对当前目标重要。",
+                "- 只补充必要上下文，不扩展成全文总结。",
             ]
         )
     return "\n".join(
@@ -177,6 +203,13 @@ def answer_knowledge_question_heuristic(*, question: str, context: str, goal: st
             f"{index + 1}. {seed}\n为什么值得记：这是当前目标下需要优先保留、复述或区分的内容。"
             for index, seed in enumerate(seeds)
         )
+
+    if normalized_task_type == "inline_quiz":
+        source_text = normalized_question.split("原文：", 1)[-1].strip() if "原文：" in normalized_question else normalized_question
+        first_sentence = re.split(r"[。！？；\n]", source_text, maxsplit=1)[0].strip()
+        if not first_sentence:
+            first_sentence = "这段原文的核心概念"
+        return f"自测题：这段话最核心的概念是什么？\n参考答案：{first_sentence[:80]}"
 
     if normalized_task_type == "question_points" or any(token in normalized_question for token in ("面试", "追问", "问题")):
         seeds = headings[:5] or paragraphs[:5] or ["材料核心概念"]
@@ -726,7 +759,7 @@ def _validate_training_point(point: Dict[str, Any], index: int) -> Dict[str, Any
         "questionFamily": ensure_string(point.get("questionFamily")),
         "provenance": point.get("provenance") or point.get("interviewQuestion") or {},
         "provenanceLabel": ensure_string(point.get("provenanceLabel") or ((point.get("interviewQuestion") or {}).get("label"))),
-        "javaGuideSources": ensure_array(point.get("javaGuideSources")),
+        "sourceRefs": ensure_array(point.get("sourceRefs")),
         "remediationMaterials": ensure_array(point.get("remediationMaterials")),
         "remediationHint": ensure_string(point.get("remediationHint")),
     }
@@ -765,7 +798,7 @@ def _checkpoint_concept_from_point(point: Dict[str, Any], checkpoint: Dict[str, 
         "provenance": point.get("provenance") or {},
         "provenanceLabel": point.get("provenanceLabel", ""),
         "interviewQuestion": point.get("provenance") or {},
-        "javaGuideSources": point.get("javaGuideSources") or [],
+        "sourceRefs": point.get("sourceRefs") or [],
         "remediationMaterials": point.get("remediationMaterials") or [],
         "remediationHint": point.get("remediationHint", ""),
     }
@@ -815,7 +848,7 @@ def normalize_decomposition_payload(payload: Dict[str, Any], source: Dict[str, A
                 f"我先从材料里提炼出 {'、'.join(point['title'] for point in training_points[:3])} 这些训练点。",
             ),
             "overviewDomains": ensure_array(source_summary.get("overviewDomains")),
-            "javaGuideSourceClusters": ensure_array(source_summary.get("javaGuideSourceClusters")),
+            "sourceClusters": ensure_array(source_summary.get("sourceClusters")),
         },
     }
 
@@ -1008,6 +1041,8 @@ def build_turn_diagnosis_prompt(*, concept: Dict[str, Any], context_packet: Dict
             "Do not copy English learner claims into key_claim; translate or summarize them in Chinese, while preserving technical identifiers such as LRU, put, Redis, Object[] when needed.",
             "For fields that may be shown to the learner (key_claim, confirmed_understanding, judgment_reason, misconception_detail), write directly to the learner in second person. Do not use third-person labels such as 用户, 学习者, or Learner.",
             "judgment_reason is learner-facing, but it is not a reply or explanation: only explain why the current score/state follows from the answer evidence.",
+            "judgment_reason must make clear why the current numeric score is justified by the answer.",
+            "When the answer is partial or weak, name one missing conceptual step in judgment_reason if it can be inferred from the current question and concept.",
             "judgment_reason must not introduce new concepts, teach the correct answer, give next-step instructions, ask a question, or repeat the full feedback body.",
             "",
             "TOP-LEVEL TUTOR CONTRACT:",
@@ -1027,6 +1062,7 @@ def build_turn_diagnosis_prompt(*, concept: Dict[str, Any], context_packet: Dict
 def build_reply_stream_prompt(*, context_packet: Dict[str, Any], answer: str) -> str:
     normalized_answer = ensure_string(answer)
     explanation_request = normalized_answer in {"查看解析", "看解析", "讲解一下", "解释一下"} or "解析" in normalized_answer
+    checkpoint = context_packet.get("current_checkpoint") or context_packet.get("dynamic", {}).get("currentCheckpoint") or {}
     extra_rules = []
     if explanation_request:
         extra_rules.extend([
@@ -1046,7 +1082,14 @@ def build_reply_stream_prompt(*, context_packet: Dict[str, Any], answer: str) ->
             "If useful, end with one stable takeaway sentence naturally inside the prose.",
             "If the learner is mainly asking for explanation, give a direct explanation instead of interrogating.",
             "Keep the reply self-contained and valuable even if the learner stops here.",
+            "Treat CURRENT_CHECKPOINT_JSON as the highest-priority grounding. Answer that exact question before anything else.",
+            "Use the checkpoint evidence and source context to stay on-topic; do not reuse earlier takeaways or adjacent-topic facts unless they are required to answer the exact checkpoint question.",
+            "Do not introduce unrelated topics, examples, or terminology that are not needed for the current checkpoint question.",
+            "Any takeaway sentence must stay grounded in the current checkpoint's concept and source context.",
             *extra_rules,
+            "",
+            "CURRENT_CHECKPOINT_JSON:",
+            json.dumps(checkpoint, ensure_ascii=False, indent=2),
             "",
             "CONTEXT_PACKET_JSON:",
             json.dumps(context_packet, ensure_ascii=False, indent=2),
@@ -1060,6 +1103,7 @@ def build_teach_reply_prompt(*, context_packet: Dict[str, Any], answer: str) -> 
     # Teach mode is a separate task from answer evaluation. The model should
     # explain the current learner-facing question directly, not infer whether
     # "查看解析" was correct or incorrect as an answer.
+    checkpoint = context_packet.get("current_checkpoint") or context_packet.get("dynamic", {}).get("currentCheckpoint") or {}
     return "\n".join(
         [
             "You are writing the learner-facing explanation for the current checkpoint question.",
@@ -1074,6 +1118,13 @@ def build_teach_reply_prompt(*, context_packet: Dict[str, Any], answer: str) -> 
             "Do not include labels such as '下一步' or 'gap' or 'runtime'.",
             "If useful, end with one stable takeaway sentence naturally inside the prose.",
             "Keep the reply self-contained and valuable even if the learner stops here.",
+            "Treat CURRENT_CHECKPOINT_JSON as the highest-priority grounding. Explain that exact question directly before anything else.",
+            "Use the checkpoint evidence and source context to stay on-topic; do not reuse earlier takeaways or adjacent-topic facts unless they are required to answer the exact checkpoint question.",
+            "Do not introduce unrelated topics, examples, or terminology that are not needed for the current checkpoint question.",
+            "Any takeaway sentence must stay grounded in the current checkpoint's concept and source context.",
+            "",
+            "CURRENT_CHECKPOINT_JSON:",
+            json.dumps(checkpoint, ensure_ascii=False, indent=2),
             "",
             "CONTEXT_PACKET_JSON:",
             json.dumps(context_packet, ensure_ascii=False, indent=2),
@@ -1156,7 +1207,7 @@ def build_turn_envelope_prompt(
                         "evidence_snippet": concept.get("evidenceSnippet", ""),
                         "misconception_anchors": concept.get("misconceptionAnchors", []) or ([concept.get("misconception")] if concept.get("misconception") else []),
                         "discriminators": concept.get("discriminators", []),
-                        "sources": concept.get("javaGuideSources", []),
+                        "sources": concept.get("sourceRefs") or [],
                     },
                     ensure_ascii=False,
                     indent=2,

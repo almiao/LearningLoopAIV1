@@ -1,217 +1,1097 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, postJson } from "../lib/api";
-import {
-  getStoredUserId,
-  setStoredUserId,
-} from "../lib/user-session";
+import { getStoredUserId, setStoredUserId } from "../lib/user-session";
 
 const profileDirtyStorageKey = "learning-loop-profile-dirty-at";
+const rootLibraryKey = "root";
 
-const entryOptions = [
-  { key: "javaguide", label: "Java面试（JavaGuide）" },
-  { key: "ielts", label: "雅思考试" },
-  { key: "frontend", label: "前端面试" },
+const groupMeta = {
+  reading: { label: "在读", defaultExpanded: true },
+  review: { label: "待复习", defaultExpanded: true },
+  mastered: { label: "已掌握", defaultExpanded: false },
+  unstarted: { label: "未学", defaultExpanded: false },
+};
+
+const addMaterialOptions = [
+  {
+    key: "upload",
+    title: "上传 PDF",
+    description: "把课件、论文或文档直接放进资料库。",
+    href: "/materials?source=upload",
+  },
+  {
+    key: "link",
+    title: "粘贴链接",
+    description: "保存网页、博客或官方文档，后续继续学。",
+    href: "/materials?source=link",
+  },
+  {
+    key: "note",
+    title: "写笔记",
+    description: "把自己的零散理解先沉淀成一份材料。",
+    href: "/materials?source=note",
+  },
 ];
 
-function buildKnowledgeTree(documents = []) {
-  const root = [];
+function getInitials(name) {
+  return String(name || "L").trim().slice(0, 1).toUpperCase() || "L";
+}
 
-  for (const document of documents) {
-    const relativePath = String(document.path || "").replace(/^docs\//, "");
-    const segments = relativePath.split("/");
-    const folderSegments = segments.slice(0, -1);
-    let level = root;
+function compareIsoTimestamp(left = "", right = "") {
+  return String(left || "").localeCompare(String(right || ""));
+}
 
-    folderSegments.forEach((segment, index) => {
-      const key = folderSegments.slice(0, index + 1).join("/");
-      let node = level.find((item) => item.type === "folder" && item.key === key);
-      if (!node) {
-        node = {
-          type: "folder",
-          key,
-          label: document.folderLabels?.[index] || segment,
-          children: [],
-        };
-        level.push(node);
-      }
-      level = node.children;
-    });
-
-    level.push({
-      type: "document",
-      key: document.path,
-      path: document.path,
-      label: document.title,
-    });
+function normalizePercentage(value) {
+  const numericValue = Number(value || 0);
+  if (!Number.isFinite(numericValue)) {
+    return 0;
   }
-
-  return root;
+  return Math.max(0, Math.min(100, Math.round(numericValue)));
 }
 
-function countDocuments(nodes = []) {
-  return nodes.reduce((count, node) => {
-    if (node.type === "document") {
-      return count + 1;
-    }
-    return count + countDocuments(node.children || []);
-  }, 0);
-}
-
-function documentHref(docPath = "") {
-  const params = new URLSearchParams();
-  params.set("doc", docPath);
-  return `/learn?${params.toString()}`;
-}
-
-function flattenDocuments(nodes = [], sectionLabel = "") {
-  return nodes.flatMap((node) => {
-    if (node.type === "document") {
-      return [{ ...node, sectionLabel }];
-    }
-    return flattenDocuments(node.children || [], node.label || sectionLabel);
-  });
-}
-
-function simplifyPath(docPath = "") {
-  return String(docPath || "")
-    .replace(/^docs\//, "")
-    .replace(/\/[^/]+\.md$/, "")
-    .replace(/-/g, " / ");
-}
-
-function getDocumentProgress(documentProgress = null, docPath = "") {
-  const storedProgress = documentProgress?.docs?.[docPath]?.progressPercentage;
-  if (Number.isFinite(Number(storedProgress))) {
-    return Math.max(0, Math.min(100, Number(storedProgress)));
-  }
-  if (documentProgress?.currentDocPath === docPath) {
-    return 10;
-  }
-  return 0;
-}
-
-function getDocumentLearningState(documentProgress = null, docPath = "") {
-  const matchedDoc = documentProgress?.docs?.[docPath] || null;
-  const percentage = Number(matchedDoc?.masteryPercentage || 0);
-  return {
-    percentage: Number.isFinite(percentage) ? Math.max(0, Math.min(100, percentage)) : 0,
-    masteryPercentage: Number.isFinite(percentage) ? Math.max(0, Math.min(100, percentage)) : 0,
-    masteryLabel: matchedDoc?.masteryLabel || "未开始",
-    learningStatusLabel: matchedDoc?.learningStatusLabel || "未训练",
-    trainingStarted: Boolean(matchedDoc?.trainingStarted),
-    assessedConceptCount: matchedDoc?.assessedConceptCount || 0,
-    totalConceptCount: matchedDoc?.totalConceptCount || 0,
-  };
-}
-
-function formatProgressBadge(progressPercentage = 0, isCurrent = false) {
-  if (isCurrent) {
-    if (progressPercentage >= 100) {
-      return "当前 · 已读";
-    }
-    if (progressPercentage > 0) {
-      return "当前 · 在读";
-    }
-    return "当前 · 已打开";
-  }
-  if (progressPercentage >= 100) {
-    return "已读";
-  }
-  if (progressPercentage > 0) {
-    return "在读";
-  }
-  return "未读";
-}
-
-function formatLearningBadge(learning = {}) {
-  const status = learning.learningStatusLabel || "未训练";
-  if (status === "已开启训练") {
-    return "已开训练";
-  }
-  return status;
-}
-
-function formatLastStudiedAt(timestamp = "") {
+function daysAgo(timestamp = "") {
   if (!timestamp) {
-    return "上次学习时间未知";
+    return null;
   }
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) {
-    return "上次学习时间未知";
+    return null;
   }
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hour = String(date.getHours()).padStart(2, "0");
-  const minute = String(date.getMinutes()).padStart(2, "0");
-  return `上次学习 ${month}-${day} ${hour}:${minute}`;
+  const diffMs = Date.now() - date.getTime();
+  return Math.max(0, Math.floor(diffMs / (24 * 60 * 60 * 1000)));
 }
 
-function buildRecentReadingDocuments(documentProgress = null, catalogDocuments = []) {
-  const catalogByPath = new Map(catalogDocuments.map((document) => [document.path, document]));
-  const source = Array.isArray(documentProgress?.recentDocs)
-    ? documentProgress.recentDocs
-    : Object.values(documentProgress?.docs || {}).sort((left, right) => (
-      String(right.lastActivityAt || "").localeCompare(String(left.lastActivityAt || ""))
-    ));
+function formatDaysAgoLabel(timestamp = "") {
+  const value = daysAgo(timestamp);
+  if (value === null) {
+    return "刚收进资料库";
+  }
+  if (value <= 0) {
+    return "今天";
+  }
+  return `${value} 天前`;
+}
 
-  return source
-    .filter((document) => document?.docPath || document?.path)
-    .map((document) => {
-      const docPath = document.docPath || document.path;
-      const catalogDocument = catalogByPath.get(docPath);
-      return {
-        path: docPath,
-        title: document.docTitle || catalogDocument?.label || "未命名文档",
-        lastStudiedAt: document.lastActivityAt || "",
-        isCurrent: Boolean(document.isCurrent || documentProgress?.currentDocPath === docPath),
-      };
+function formatLastActivity(timestamp = "") {
+  const value = daysAgo(timestamp);
+  if (value === null) {
+    return "未开始";
+  }
+  return `上次学习 ${value <= 0 ? "今天" : `${value} 天前`}`;
+}
+
+function getTitleFromPath(docPath = "") {
+  return decodeURIComponent(String(docPath || ""))
+    .split("/")
+    .at(-1)
+    ?.replace(/\.md$/i, "")
+    .replace(/-/g, " ")
+    || "未命名文档";
+}
+
+function toRouteSlug(docPath = "") {
+  return getTitleFromPath(docPath)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    || "document";
+}
+
+function getTypeLabel(document) {
+  if (document.sourceType === "custom-material") {
+    return "资料";
+  }
+  return "笔记";
+}
+
+function getTypeIcon(document) {
+  if (document.sourceType === "custom-material") {
+    return (
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M4 1.5h5l3 3V14a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 4 14z" fill="none" stroke="currentColor" strokeWidth="1.2" />
+        <path d="M9 1.5V5h3" fill="none" stroke="currentColor" strokeWidth="1.2" />
+        <path d="M5.2 10.8h1.5c.7 0 1.2-.4 1.2-1s-.5-1-1.2-1H5.2zm3.8 0H10c.9 0 1.6-.7 1.6-1.5S10.9 7.8 10 7.8H9zm-3.8 2.2V7.8m3.8 5.2V7.8" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M4 2.5h8a1 1 0 0 1 1 1v9.5l-2.4-1.2L8 13l-2.6-1.2L3 13V3.5a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M5.2 5.5h5.6M5.2 8h5.6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function getFolderIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M2 5.5h5l1.5 1.8H18v7.2a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 2 14.5z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M2 6V4.7A1.7 1.7 0 0 1 3.7 3h3.6L8.5 4.4H16.3A1.7 1.7 0 0 1 18 6.1V6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function buildStageState(progress = {}) {
+  const progressPercentage = normalizePercentage(progress.progressPercentage);
+  const trainingAnswers = Number(progress.trainingAnswerCount || 0);
+
+  const study = progressPercentage >= 100
+    ? { state: "done", value: "✓" }
+    : progressPercentage > 0
+      ? { state: "active", value: `${progressPercentage}%` }
+      : { state: "idle", value: "—" };
+
+  const practice = progress.trainingCompleted
+    ? { state: "done", value: "✓" }
+    : progress.trainingStarted
+      ? { state: "active", value: trainingAnswers > 0 ? `${trainingAnswers} 题` : "进行中" }
+      : { state: "idle", value: "—" };
+
+  return { study, practice };
+}
+
+function getDocumentGroup(progress = {}) {
+  const masteryPercentage = normalizePercentage(progress.masteryPercentage);
+  const progressPercentage = normalizePercentage(progress.progressPercentage);
+  const learningStatus = progress.learningStatusLabel || "";
+
+  if (masteryPercentage >= 75 || learningStatus === "已掌握" || learningStatus === "训练完成") {
+    return "mastered";
+  }
+  if (
+    progressPercentage >= 100
+    || progress.trainingStarted
+    || learningStatus === "训练中"
+    || learningStatus === "已开启训练"
+    || learningStatus === "已跳过"
+    || learningStatus === "仅阅读"
+  ) {
+    return "review";
+  }
+  if (progressPercentage > 0 || progress.isCurrent) {
+    return "reading";
+  }
+  return "unstarted";
+}
+
+function getSignalColor(document) {
+  if (document.ignored) {
+    return "#888780";
+  }
+  if (document.group === "mastered") {
+    return "#1D9E75";
+  }
+  if (document.group === "unstarted") {
+    return "#888780";
+  }
+  const effectivePercentage = document.masteryPercentage > 0
+    ? document.masteryPercentage
+    : document.progressPercentage;
+
+  if (effectivePercentage >= 40) {
+    return "#BA7517";
+  }
+  return "#E27272";
+}
+
+function getSidebarMetric(document) {
+  if (document.ignored) {
+    return "忽略";
+  }
+  if (document.masteryPercentage > 0) {
+    return `${document.masteryPercentage}%`;
+  }
+  if (document.progressPercentage > 0) {
+    return `${document.progressPercentage}%`;
+  }
+  return "新";
+}
+
+function getHeroMetric(document) {
+  if (document.ignored) {
+    return "已忽略";
+  }
+  if (document.masteryPercentage > 0) {
+    return `掌握 ${document.masteryPercentage}%`;
+  }
+  return `阅读 ${document.progressPercentage}%`;
+}
+
+function getDocumentPreview(document) {
+  const focus = document.folderLabels.at(-1) || document.folderLabels.at(0) || "这份资料";
+  const resume = String(document.readingPreview || "").trim();
+  const chapter = String(document.readingChapter || "").trim();
+  if (document.ignored) {
+    return "这篇已被标记为忽略，默认不进入日常学习流。需要时可以在包含忽略文档后重新打开。";
+  }
+  if (document.progressPercentage >= 100) {
+    if (document.trainingCompleted) {
+      return `正文和训练都已完成，可以回看 ${focus} 的关键内容，或继续下一份资料。`;
+    }
+    if (document.trainingStarted) {
+      return `正文已读完，当前训练进行中；继续把 ${focus} 的关键问题练完。`;
+    }
+    if (document.trainingSkipped) {
+      return `正文已读完，并已按仅阅读完成收尾；需要时仍可重新训练。`;
+    }
+    return `正文已读完，下一步适合用一轮训练确认 ${focus} 里的概念、边界和常见追问是否真的掌握。`;
+  }
+  if (document.progressPercentage > 0) {
+    if (resume) {
+      return `上次读到 ${document.progressPercentage}%${chapter ? ` · ${chapter}` : ""}：${resume}`;
+    }
+    return `上次读到 ${document.progressPercentage}%，可以从 ${focus} 继续读。`;
+  }
+  return `这篇资料聚焦 ${focus}，先抓住核心概念、典型问题和实践边界；读完后可直接进入训练确认掌握度。`;
+}
+
+function getActionHint(document) {
+  if (document.ignored) {
+    return "忽略文档不参与默认推荐";
+  }
+  if (document.progressPercentage < 100) {
+    return document.progressPercentage > 0 ? "从上次位置继续阅读" : "先进入阅读模式";
+  }
+  if (!document.trainingStarted && !document.trainingSkipped && !document.trainingCompleted) {
+    return "阅读已完成，建议练一轮";
+  }
+  if (document.group === "mastered") {
+    return "已掌握，可回看原文";
+  }
+  return "继续当前训练进度";
+}
+
+function buildPrimaryAction(document) {
+  if (document.ignored) {
+    return {
+      label: "查看文档 →",
+      autostart: false,
+    };
+  }
+  if (document.progressPercentage < 100) {
+    return {
+      label: document.progressPercentage > 0 ? "继续学习 →" : "开始学习 →",
+      autostart: false,
+    };
+  }
+  if (
+    !document.trainingStarted
+    && !document.trainingSkipped
+    && !document.trainingCompleted
+    && document.trainingAvailability !== "unavailable"
+  ) {
+    return {
+      label: "开始练习 →",
+      autostart: true,
+    };
+  }
+  if (document.group === "mastered") {
+    return {
+      label: "回看文档 →",
+      autostart: false,
+    };
+  }
+  return {
+    label: "继续训练 →",
+    autostart: true,
+  };
+}
+
+function buildLearningHref(document, options = {}) {
+  const params = new URLSearchParams();
+  params.set("doc", document.path);
+  if (options.autostart) {
+    params.set("autostart", "1");
+  }
+  return `/learn?${params.toString()}`;
+}
+
+function flattenLibrarySegments(folderLabels = []) {
+  if (!folderLabels.length) {
+    return [];
+  }
+  if (folderLabels.length === 1) {
+    return [folderLabels[0]];
+  }
+  return [folderLabels[0], folderLabels.slice(1).join(" / ")];
+}
+
+function encodeNodeKey(path = []) {
+  if (!path.length) {
+    return rootLibraryKey;
+  }
+  return path.map((segment) => encodeURIComponent(segment)).join("/");
+}
+
+function decodeNodeKey(key = "") {
+  if (!key || key === rootLibraryKey) {
+    return [];
+  }
+  return String(key)
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => decodeURIComponent(segment));
+}
+
+function isNodeOnSelectedPath(nodePath = [], selectedPath = []) {
+  if (!nodePath.length) {
+    return false;
+  }
+  return nodePath.every((segment, index) => selectedPath[index] === segment);
+}
+
+function sortDocuments(documents = []) {
+  return documents.slice().sort((left, right) => {
+    if (left.path === right.path) {
+      return 0;
+    }
+    if (left.isCurrent && !right.isCurrent) {
+      return -1;
+    }
+    if (right.isCurrent && !left.isCurrent) {
+      return 1;
+    }
+    const timeCompare = compareIsoTimestamp(right.lastActivityAt, left.lastActivityAt);
+    if (timeCompare !== 0) {
+      return timeCompare;
+    }
+    return left.title.localeCompare(right.title, "zh-CN");
+  });
+}
+
+function aggregateFolderCounts(documents = []) {
+  return documents.reduce((summary, document) => {
+    if (document.group === "mastered") {
+      summary.mastered += 1;
+    } else if (document.group === "unstarted") {
+      summary.unstarted += 1;
+    } else {
+      summary.active += 1;
+    }
+    return summary;
+  }, { mastered: 0, active: 0, unstarted: 0 });
+}
+
+function createLibraryNode({ key, label, path, level }) {
+  return {
+    key,
+    label,
+    path,
+    level,
+    children: [],
+    directDocuments: [],
+    allDocuments: [],
+    documentCount: 0,
+    aggregate: {
+      mastered: 0,
+      active: 0,
+      unstarted: 0,
+    },
+  };
+}
+
+function buildLibraryTree(documents = []) {
+  const root = createLibraryNode({
+    key: rootLibraryKey,
+    label: "我的资料",
+    path: [],
+    level: -1,
+  });
+  const nodeMap = new Map([[root.key, root]]);
+
+  function ensureNode(path) {
+    const key = encodeNodeKey(path);
+    if (nodeMap.has(key)) {
+      return nodeMap.get(key);
+    }
+
+    const parentPath = path.slice(0, -1);
+    const parentNode = parentPath.length ? ensureNode(parentPath) : root;
+    const node = createLibraryNode({
+      key,
+      label: path.at(-1) || "未命名",
+      path,
+      level: path.length - 1,
     });
+    parentNode.children.push(node);
+    nodeMap.set(key, node);
+    return node;
+  }
+
+  for (const document of documents) {
+    const repoNode = ensureNode([document.repoLabel]);
+    const branchSegments = flattenLibrarySegments(document.folderLabels);
+    const deepestPath = branchSegments.length
+      ? [document.repoLabel, ...branchSegments]
+      : [document.repoLabel];
+    const deepestNode = ensureNode(deepestPath);
+    deepestNode.directDocuments.push(document);
+    if (!branchSegments.length) {
+      repoNode.directDocuments.push(document);
+    }
+  }
+
+  function finalizeNode(node) {
+    node.children.sort((left, right) => left.label.localeCompare(right.label, "zh-CN"));
+    node.directDocuments = sortDocuments(
+      node.level >= 0
+        ? node.directDocuments.filter((document, index, items) => items.findIndex((item) => item.path === document.path) === index)
+        : node.directDocuments
+    );
+    for (const child of node.children) {
+      finalizeNode(child);
+    }
+    const allDocuments = sortDocuments([
+      ...node.directDocuments,
+      ...node.children.flatMap((child) => child.allDocuments),
+    ]).filter((document, index, items) => items.findIndex((item) => item.path === document.path) === index);
+    node.allDocuments = allDocuments;
+    node.documentCount = allDocuments.length;
+    node.aggregate = aggregateFolderCounts(allDocuments);
+  }
+
+  finalizeNode(root);
+  return {
+    root,
+    nodeMap,
+  };
+}
+
+function buildSidebarDocument(document, progressEntries = {}, options = {}) {
+  const progress = progressEntries?.[document.path] || {};
+  const progressPercentage = normalizePercentage(progress.progressPercentage);
+  const masteryPercentage = normalizePercentage(progress.masteryPercentage);
+  const group = getDocumentGroup({
+    ...progress,
+    progressPercentage,
+    readingPreview: progress.readingPreview || "",
+    readingChapter: progress.readingChapter || "",
+    masteryPercentage,
+  });
+  const repoLabel = document.providerLabel || "未命名仓库";
+
+  return {
+    path: document.path,
+    routeSlug: toRouteSlug(document.path),
+    title: document.title || getTitleFromPath(document.path),
+    sidebarTitle: document.title || getTitleFromPath(document.path),
+    sourceType: document.sourceType || "built-in-document",
+    providerLabel: document.providerLabel || "JavaGuide",
+    repoLabel,
+    folderLabels: document.folderLabels || [],
+    libraryPath: [repoLabel, ...flattenLibrarySegments(document.folderLabels || [])],
+    progressPercentage,
+    masteryPercentage,
+    learningStatusLabel: progress.learningStatusLabel || "未训练",
+    readingLabel: progress.readingLabel || "未读",
+    trainingStarted: Boolean(progress.trainingStarted),
+    trainingCompleted: Boolean(progress.trainingCompleted),
+    trainingSkipped: Boolean(progress.trainingSkipped),
+    trainingAvailability: progress.trainingAvailability || "",
+    trainingCheckpointProgressLabel: progress.trainingCheckpointProgressLabel || "",
+    trainingAnswerCount: Number(progress.trainingAnswerCount || 0),
+    assessedConceptCount: Number(progress.assessedConceptCount || 0),
+    totalConceptCount: Number(progress.totalConceptCount || 0),
+    evidenceCount: Number(progress.evidenceCount || 0),
+    isCurrent: Boolean(progress.isCurrent),
+    lastActivityAt: progress.lastActivityAt || "",
+    ignored: Boolean(options.ignored),
+    ignoredAt: options.ignoredAt || "",
+    group,
+    stageState: buildStageState(progress),
+  };
+}
+
+function buildRecentActivityMap(recentDocs = []) {
+  const today = new Date();
+  const days = [];
+
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const date = new Date(today);
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - offset);
+    const key = date.toISOString().slice(0, 10);
+    days.push({
+      key,
+      label: offset === 0 ? "今天" : `D-${offset}`,
+      today: offset === 0,
+      learned: recentDocs.some((document) => String(document.lastActivityAt || "").startsWith(key)),
+    });
+  }
+
+  return days;
+}
+
+function buildLearningSummary(progress = null) {
+  const stats = progress?.stats || {};
+  const recentDocs = progress?.recentDocs || [];
+  const activeDays = buildRecentActivityMap(recentDocs);
+  return {
+    statsLabel: `已读 ${stats.completedReadingCount || 0} 篇 · 已开训练 ${stats.startedTrainingCount || 0} 篇 · 已完成 ${stats.completedDocumentCount || 0} 篇`,
+    weekActivity: activeDays,
+  };
+}
+
+function DocumentRow({ document, active, onSelect }) {
+  const color = getSignalColor(document);
+
+  return (
+    <button
+      type="button"
+      className={`ll-doc-row${active ? " is-active" : ""}${document.ignored ? " is-ignored" : ""}`}
+      onClick={() => onSelect(document, "status")}
+      aria-pressed={active}
+      data-testid={`status-doc-row-${document.routeSlug}`}
+    >
+      <span className="ll-doc-row-bar" style={{ background: color }} aria-hidden="true" />
+      <span className="ll-doc-row-icon" style={{ color }}>
+        {getTypeIcon(document)}
+      </span>
+      <span className="ll-doc-row-title" title={document.title}>
+        {document.sidebarTitle}
+        {document.ignored ? <span className="ll-ignored-chip">已忽略</span> : null}
+      </span>
+      <span className="ll-doc-row-value" style={{ color }}>
+        {getSidebarMetric(document)}
+      </span>
+    </button>
+  );
+}
+
+function StageChip({ label, state }) {
+  const tone = state.state === "done" ? "success" : state.state === "active" ? "active" : "idle";
+
+  return (
+    <div className={`ll-stage-chip tone-${tone}`}>
+      <span>{label}</span>
+      <strong>{state.value}</strong>
+    </div>
+  );
+}
+
+function FolderAggregateBar({ aggregate, total }) {
+  const masteredWidth = total ? (aggregate.mastered / total) * 100 : 0;
+  const activeWidth = total ? (aggregate.active / total) * 100 : 0;
+  const unstartedWidth = total ? (aggregate.unstarted / total) * 100 : 0;
+
+  return (
+    <div className="ll-folder-progress" aria-hidden="true">
+      <span style={{ width: `${masteredWidth}%`, background: "#1D9E75" }} />
+      <span style={{ width: `${activeWidth}%`, background: "#BA7517" }} />
+      <span style={{ width: `${unstartedWidth}%`, background: "#DAD9D4" }} />
+    </div>
+  );
+}
+
+function FolderCard({ node, onOpen }) {
+  return (
+    <button
+      type="button"
+      className="ll-folder-card"
+      onClick={() => onOpen(node.key)}
+      data-testid={`library-folder-card-${encodeURIComponent(node.label)}`}
+    >
+      <div className="ll-folder-card-top" />
+      <div className="ll-folder-card-body">
+        <div className="ll-folder-card-head">
+          <span className="ll-folder-card-icon">{getFolderIcon()}</span>
+          <span className="ll-folder-card-count">{node.documentCount} 篇</span>
+        </div>
+        <strong>{node.label}</strong>
+        <FolderAggregateBar aggregate={node.aggregate} total={node.documentCount} />
+        <p>{`已掌握 ${node.aggregate.mastered} · 在读 ${node.aggregate.active} · 未学 ${node.aggregate.unstarted}`}</p>
+      </div>
+    </button>
+  );
+}
+
+function LibraryDocumentCard({ document, active, managementMode, onOpen, onToggleIgnored }) {
+  const color = getSignalColor(document);
+
+  return (
+    <article
+      role="button"
+      tabIndex={0}
+      className={`ll-library-document-card${active ? " is-active" : ""}${document.ignored ? " is-ignored" : ""}`}
+      onClick={() => onOpen(document, "library")}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen(document, "library");
+        }
+      }}
+      data-testid={`library-document-card-${document.routeSlug}`}
+    >
+      <div className="ll-library-document-head">
+        <span className="ll-library-document-kind">{document.ignored ? "已忽略" : getTypeLabel(document)}</span>
+        <span className="ll-library-document-score" style={{ color }}>
+          {getSidebarMetric(document)}
+        </span>
+      </div>
+      <strong>{document.title}</strong>
+      <p>{`${document.providerLabel} / ${document.folderLabels.join(" / ") || "资料库"}`}</p>
+      <div className="ll-library-document-foot">
+        <span className={`ll-library-status tone-${document.group}`}>{groupMeta[document.group].label}</span>
+        <span>{document.ignored ? "默认隐藏" : document.masteryPercentage > 0 ? `掌握 ${document.masteryPercentage}%` : document.readingLabel}</span>
+      </div>
+      {managementMode ? (
+        <button
+          type="button"
+          className="ll-library-ignore-button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleIgnored(document);
+          }}
+        >
+          {document.ignored ? "取消忽略" : "忽略"}
+        </button>
+      ) : null}
+    </article>
+  );
+}
+
+function AddMaterialModal({ onClose }) {
+  return (
+    <div className="ll-modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="ll-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="添加材料"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="ll-modal-head">
+          <div>
+            <p>添加材料</p>
+            <h3>把内容带进来，后续交给 AI 帮你学透</h3>
+          </div>
+          <button type="button" className="ll-icon-button" onClick={onClose} aria-label="关闭">
+            ×
+          </button>
+        </div>
+        <div className="ll-add-grid">
+          {addMaterialOptions.map((option) => (
+            <Link key={option.key} href={option.href} className="ll-add-option" onClick={onClose}>
+              <strong>{option.title}</strong>
+              <p>{option.description}</p>
+              <span>继续 →</span>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LoginModal({ onClose, onLoginSuccess }) {
+  const [handle, setHandle] = useState("");
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [loginError, setLoginError] = useState("");
+
+  async function onSubmit(event) {
+    event.preventDefault();
+    try {
+      setBusy(true);
+      setLoginError("");
+      const data = await postJson("/api/auth/login", {
+        handle: handle.trim(),
+        pin,
+      });
+      onLoginSuccess(data.profile);
+    } catch (nextError) {
+      setLoginError(nextError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="ll-modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="ll-modal ll-login-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="登录 LearningLoop"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="ll-modal-head">
+          <div>
+            <p>登录</p>
+            <h3>接上你的学习档案</h3>
+          </div>
+          <button type="button" className="ll-icon-button" onClick={onClose} aria-label="关闭">
+            ×
+          </button>
+        </div>
+        <form className="ll-login-form" onSubmit={onSubmit}>
+          <label>
+            <span>昵称</span>
+            <input
+              value={handle}
+              onChange={(event) => setHandle(event.target.value)}
+              placeholder="lee_backend"
+              autoFocus
+              required
+            />
+          </label>
+          <label>
+            <span>PIN</span>
+            <input
+              type="password"
+              value={pin}
+              onChange={(event) => setPin(event.target.value)}
+              placeholder="4-12 位数字"
+              required
+            />
+          </label>
+          {loginError ? <p className="ll-login-error">{loginError}</p> : null}
+          <button type="submit" className="ll-primary-button" disabled={busy}>
+            {busy ? "登录中..." : "登录 / 创建账号"}
+          </button>
+          <p className="ll-login-hint">现在先用昵称 + PIN 进入，后续再接正式账号体系。</p>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AvatarMenu({ open, onToggle, onLogout, onLoginClick, userName, isLoggedIn }) {
+  return (
+    <div className="ll-avatar-wrap">
+      <button
+        type="button"
+        className={`ll-avatar${isLoggedIn ? "" : " is-guest"}`}
+        onClick={isLoggedIn ? onToggle : onLoginClick}
+        aria-expanded={isLoggedIn ? open : undefined}
+        aria-label={isLoggedIn ? "打开账户菜单" : "登录 LearningLoop"}
+      >
+        {getInitials(userName)}
+      </button>
+      {isLoggedIn && open ? (
+        <div className="ll-avatar-menu">
+          <Link href="/profile">个人档案</Link>
+          <button type="button" onClick={onLogout}>退出登录</button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function LibraryTreeNode({ node, currentNodeKey, selectedDocPath, selectedLibraryPath, onOpenNode }) {
+  const active = currentNodeKey === node.key;
+  const ancestor = isNodeOnSelectedPath(node.path, selectedLibraryPath);
+  const containsSelectedDoc = Boolean(selectedDocPath) && node.allDocuments.some((document) => document.path === selectedDocPath);
+
+  return (
+    <div className="ll-tree-node">
+      <button
+        type="button"
+        className={`ll-tree-button${active ? " is-active" : ""}${ancestor ? " is-ancestor" : ""}${containsSelectedDoc ? " has-selected-doc" : ""}`}
+        onClick={() => onOpenNode(node.key)}
+        style={{ paddingLeft: `${12 + node.level * 16}px` }}
+      >
+        <span className="ll-tree-button-label">{node.label}</span>
+        <span className="ll-tree-button-count">{node.documentCount}</span>
+      </button>
+      {node.children.length ? (
+        <div className="ll-tree-children">
+          {node.children.map((child) => (
+            <LibraryTreeNode
+              key={child.key}
+              node={child}
+              currentNodeKey={currentNodeKey}
+              selectedDocPath={selectedDocPath}
+              selectedLibraryPath={selectedLibraryPath}
+              onOpenNode={onOpenNode}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DefaultFocusView({ featuredDocument, reviewDocuments, summary, hasProfile }) {
+  const action = buildPrimaryAction(featuredDocument);
+  const color = getSignalColor(featuredDocument);
+
+  return (
+    <section className="ll-default-view">
+      <div className="ll-kicker">继续上次</div>
+      {!hasProfile ? (
+        <p className="ll-status-note">当前还没连接学习档案，先打开一篇 JavaGuide 文档，阅读与训练进度会自动回到这里。</p>
+      ) : null}
+      <div className="ll-hero-card">
+        <span className="ll-hero-bar" style={{ background: color }} aria-hidden="true" />
+        <div className="ll-hero-main">
+          <div className="ll-hero-layout">
+            <div className="ll-hero-body">
+              <div className="ll-hero-title-row">
+                <span className="ll-doc-row-icon" style={{ color }}>
+                  {getTypeIcon(featuredDocument)}
+                </span>
+                <Link href={buildLearningHref(featuredDocument)} className="ll-title-link">
+                  <h1>{featuredDocument.title}</h1>
+                </Link>
+              </div>
+              <p>{`来源 ${featuredDocument.providerLabel} · ${featuredDocument.folderLabels.join(" / ") || "资料库"} · ${formatLastActivity(featuredDocument.lastActivityAt)}`}</p>
+              <p className="ll-document-preview">{getDocumentPreview(featuredDocument)}</p>
+              <div className="ll-stage-row">
+                <StageChip label="学" state={featuredDocument.stageState.study} />
+                <StageChip label="练" state={featuredDocument.stageState.practice} />
+              </div>
+            </div>
+            <aside className="ll-hero-cta">
+              <strong className="ll-hero-score" style={{ color }}>
+                {getHeroMetric(featuredDocument)}
+              </strong>
+              <Link href={buildLearningHref(featuredDocument, { autostart: action.autostart })} className="ll-primary-button">
+                {action.label}
+              </Link>
+              <span>{getActionHint(featuredDocument)}</span>
+            </aside>
+          </div>
+        </div>
+      </div>
+
+      <section className="ll-review-section">
+        <div className="ll-section-head">
+          <div>
+            <h2>今日待复习</h2>
+          </div>
+          <div className="ll-review-head-actions">
+            <span className="ll-danger-badge">{reviewDocuments.length}</span>
+            <span className="ll-inline-link">遗忘曲线临界 · 一起过吗 →</span>
+          </div>
+        </div>
+        <div className="ll-review-grid">
+          {reviewDocuments.length ? reviewDocuments.map((document) => (
+            <article key={document.path} className="ll-review-card">
+              <span className="ll-review-card-bar" style={{ background: getSignalColor(document) }} aria-hidden="true" />
+              <strong title={document.title}>{document.title}</strong>
+              <p>{`距上次 ${formatDaysAgoLabel(document.lastActivityAt)} · ${document.masteryPercentage > 0 ? document.masteryPercentage : document.progressPercentage}%`}</p>
+          <Link href={buildLearningHref(document, { autostart: document.trainingStarted || document.progressPercentage >= 100 })} className="ll-inline-link">
+                {document.trainingStarted ? "继续过 →" : "开始过 →"}
+              </Link>
+            </article>
+          )) : (
+            <article className="ll-review-card">
+              <span className="ll-review-card-bar" style={{ background: "#888780" }} aria-hidden="true" />
+              <strong>暂时没有临界复习材料</strong>
+              <p>继续读一篇 JavaGuide 文档，首页就会自动把它接到这里。</p>
+              <span className="ll-inline-link">从左栏挑一篇开始 →</span>
+            </article>
+          )}
+        </div>
+      </section>
+
+      <section className="ll-stats-bar">
+        <div className="ll-stats-copy">{summary.statsLabel}</div>
+        <div className="ll-week-grid" aria-label="七日学习点阵">
+          {summary.weekActivity.map((day) => (
+            <span
+              key={day.key}
+              className={`ll-week-cell${day.learned ? " is-learned" : ""}${day.today ? " is-today" : ""}`}
+              title={day.label}
+            />
+          ))}
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function LibraryBrowser({
+  currentNode,
+  selectedDocPath,
+  onOpenNode,
+  onOpenDocument,
+  onToggleIgnored,
+}) {
+  const breadcrumbs = [
+    { key: rootLibraryKey, label: "我的资料" },
+    ...currentNode.path.map((segment, index) => ({
+      key: encodeNodeKey(currentNode.path.slice(0, index + 1)),
+      label: segment,
+    })),
+  ];
+  const hasChildren = currentNode.children.length > 0;
+  const directDocuments = currentNode.directDocuments;
+  const breadcrumbLabel = currentNode.path.length
+    ? `我的资料 / ${currentNode.path.join(" / ")}`
+    : "我的资料";
+  const [managementMode, setManagementMode] = useState(false);
+
+  return (
+    <section className="ll-library-browser">
+      <div className="ll-library-head">
+        <div>
+          <div className="ll-breadcrumbs" data-testid="library-breadcrumbs">
+            {breadcrumbs.map((item, index) => (
+              <span key={item.key} className="ll-breadcrumb-item">
+                <button type="button" onClick={() => onOpenNode(item.key)}>
+                  {item.label}
+                </button>
+                {index < breadcrumbs.length - 1 ? <span>/</span> : null}
+              </span>
+            ))}
+          </div>
+          <h2>{breadcrumbLabel}</h2>
+        </div>
+        <div className="ll-library-head-actions">
+          <span>共 {currentNode.documentCount} 篇</span>
+          <button
+            type="button"
+            className={managementMode ? "ll-library-manage-button is-active" : "ll-library-manage-button"}
+            onClick={() => setManagementMode((value) => !value)}
+          >
+            {managementMode ? "完成" : "管理"}
+          </button>
+        </div>
+      </div>
+
+      {hasChildren ? (
+        <section className="ll-library-section">
+          <div className="ll-library-section-title">子文件夹</div>
+          <div className="ll-folder-grid">
+            {currentNode.children.map((child) => (
+              <FolderCard key={child.key} node={child} onOpen={onOpenNode} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {directDocuments.length ? (
+        <section className="ll-library-section">
+          <div className="ll-library-section-title">{hasChildren ? "当前层级文档" : "文档"}</div>
+          <div className="ll-library-document-grid">
+            {directDocuments.map((document) => (
+              <LibraryDocumentCard
+                key={document.path}
+                document={document}
+                active={document.path === selectedDocPath}
+                managementMode={managementMode}
+                onOpen={onOpenDocument}
+                onToggleIgnored={onToggleIgnored}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {!hasChildren && !directDocuments.length ? (
+        <div className="ll-status-note">当前层级下还没有匹配的文档。</div>
+      ) : null}
+    </section>
+  );
+}
+
+function DocumentPlaceholder({ document }) {
+  const color = getSignalColor(document);
+  const action = buildPrimaryAction(document);
+
+  return (
+    <section className="ll-detail-placeholder">
+      <div className="ll-detail-header">
+        <span className="ll-detail-pill">文档预览</span>
+      </div>
+      <div className="ll-detail-card">
+        <div className="ll-detail-layout">
+          <div className="ll-detail-main">
+            <div className="ll-detail-card-top">
+              <span className="ll-doc-row-icon" style={{ color }}>
+                {getTypeIcon(document)}
+              </span>
+              <div>
+                <Link href={buildLearningHref(document)} className="ll-title-link">
+                  <h2>{document.title}</h2>
+                </Link>
+                <p>{`来源 ${document.providerLabel} · ${document.folderLabels.join(" / ") || "资料库"} · ${formatLastActivity(document.lastActivityAt)}`}</p>
+              </div>
+            </div>
+            <p className="ll-detail-copy">{getDocumentPreview(document)}</p>
+            <div className="ll-stage-row">
+              <StageChip label="学" state={document.stageState.study} />
+              <StageChip label="练" state={document.stageState.practice} />
+            </div>
+          </div>
+          <aside className="ll-detail-cta">
+            <strong className="ll-detail-score" style={{ color }}>
+              {getHeroMetric(document)}
+            </strong>
+            <Link href={buildLearningHref(document, { autostart: action.autostart })} className="ll-primary-button">
+              {action.label}
+            </Link>
+            <span>{getActionHint(document)}</span>
+          </aside>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 export function HomePage() {
-  const [handle, setHandle] = useState("");
-  const [pin, setPin] = useState("");
-  const [search, setSearch] = useState("");
-  const [selectedEntry, setSelectedEntry] = useState("javaguide");
-  const [selectedSectionKey, setSelectedSectionKey] = useState("all");
-  const [knowledgeDocuments, setKnowledgeDocuments] = useState([]);
-  const [profile, setProfile] = useState(null);
-  const [error, setError] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [catalogManageMode, setCatalogManageMode] = useState(false);
-  const [ignoringDocPath, setIgnoringDocPath] = useState("");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const searchInputRef = useRef(null);
   const lastProfileSyncRef = useRef(0);
 
-  async function refreshProfile() {
-    const userId = getStoredUserId();
-    if (!userId) {
-      return;
-    }
-    try {
-      const data = await apiFetch(`/api/profile/${userId}`);
-      setProfile(data);
-      lastProfileSyncRef.current = Date.now();
-    } catch {
-      setStoredUserId("");
-    }
-  }
+  const [userId, setUserId] = useState("");
+  const [knowledgeDocuments, setKnowledgeDocuments] = useState([]);
+  const [profile, setProfile] = useState(null);
+  const [search, setSearch] = useState("");
+  const [error, setError] = useState("");
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [addMaterialOpen, setAddMaterialOpen] = useState(false);
+  const [includeIgnoredDocuments, setIncludeIgnoredDocuments] = useState(false);
+  const [mobilePane, setMobilePane] = useState("detail");
+  const [expandedGroups, setExpandedGroups] = useState(() => ({
+    reading: groupMeta.reading.defaultExpanded,
+    review: groupMeta.review.defaultExpanded,
+    mastered: groupMeta.mastered.defaultExpanded,
+    unstarted: groupMeta.unstarted.defaultExpanded,
+  }));
+
+  const deferredQuery = useDeferredValue(search.trim().toLowerCase());
+  const mode = searchParams.get("mode") || "status";
+  const panel = searchParams.get("panel") || (mode === "library" ? "library" : "home");
+  const selectedDocPath = searchParams.get("doc") || "";
+  const selectedNodeKeyParam = searchParams.get("node") || "";
 
   useEffect(() => {
-    apiFetch("/api/knowledge/docs")
-      .then((data) => setKnowledgeDocuments(data.documents || []))
-      .catch((nextError) => setError(nextError.message));
+    setUserId(getStoredUserId());
   }, []);
 
   useEffect(() => {
-    const userId = getStoredUserId();
-    if (!userId) {
-      return;
+    async function loadHomeData() {
+      try {
+        setError("");
+        const docsQuery = userId ? `?userId=${encodeURIComponent(userId)}` : "";
+        const docsPayload = await apiFetch(`/api/knowledge/docs${docsQuery}`);
+        const javaGuideDocs = (docsPayload.documents || []).filter((document) => document.providerLabel === "JavaGuide");
+        setKnowledgeDocuments(javaGuideDocs);
+
+        if (userId) {
+          const nextProfile = await apiFetch(`/api/profile/${userId}`);
+          setProfile(nextProfile);
+          lastProfileSyncRef.current = Date.now();
+        } else {
+          setProfile(null);
+        }
+      } catch (nextError) {
+        setError(nextError.message);
+      }
     }
-    void refreshProfile();
-  }, []);
+
+    void loadHomeData();
+  }, [userId]);
 
   useEffect(() => {
     function shouldRefreshProfile() {
@@ -221,6 +1101,19 @@ export function HomePage() {
         return false;
       }
       return dirtyAt > lastProfileSyncRef.current;
+    }
+
+    async function refreshProfile() {
+      if (!getStoredUserId()) {
+        return;
+      }
+      try {
+        const nextProfile = await apiFetch(`/api/profile/${getStoredUserId()}`);
+        setProfile(nextProfile);
+        lastProfileSyncRef.current = Date.now();
+      } catch (nextError) {
+        setError(nextError.message);
+      }
     }
 
     function handlePotentialReturn(force = false) {
@@ -239,383 +1132,375 @@ export function HomePage() {
       }
     }
 
-    function handlePageShow() {
-      handlePotentialReturn(true);
-    }
-
-    function handlePopState() {
-      handlePotentialReturn(true);
-    }
-
     window.addEventListener("focus", handleFocus);
-    window.addEventListener("pageshow", handlePageShow);
-    window.addEventListener("popstate", handlePopState);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       window.removeEventListener("focus", handleFocus);
-      window.removeEventListener("pageshow", handlePageShow);
-      window.removeEventListener("popstate", handlePopState);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
-  const currentDocumentProgress = profile?.documentProgress || null;
-  const ignoredDocumentPaths = useMemo(
-    () => new Set(currentDocumentProgress?.ignoredDocPaths || []),
-    [currentDocumentProgress?.ignoredDocPaths]
-  );
-  const visibleKnowledgeDocuments = useMemo(
-    () => knowledgeDocuments.filter((document) => !ignoredDocumentPaths.has(document.path)),
-    [ignoredDocumentPaths, knowledgeDocuments]
-  );
-  const knowledgeTree = useMemo(() => buildKnowledgeTree(visibleKnowledgeDocuments), [visibleKnowledgeDocuments]);
-  const sections = useMemo(
-    () => knowledgeTree.filter((section) => section.type === "folder"),
-    [knowledgeTree]
-  );
-  const allCatalogDocuments = useMemo(() => flattenDocuments(knowledgeTree), [knowledgeTree]);
-  const recentReadingDocuments = useMemo(
-    () => buildRecentReadingDocuments(currentDocumentProgress, allCatalogDocuments),
-    [allCatalogDocuments, currentDocumentProgress]
-  );
-  const selectedHistory = selectedSectionKey === "history";
-  const selectedSection = useMemo(
-    () => sections.find((section) => section.key === selectedSectionKey) || null,
-    [sections, selectedSectionKey]
-  );
-  const scopedDocuments = useMemo(
-    () => selectedSection ? flattenDocuments(selectedSection.children || [], selectedSection.label) : allCatalogDocuments,
-    [allCatalogDocuments, selectedSection]
-  );
-  const visibleDocuments = useMemo(() => {
-    const normalizedQuery = search.trim().toLowerCase();
-    if (!normalizedQuery) {
-      return scopedDocuments;
-    }
-    return scopedDocuments.filter((document) => (
-      `${document.label} ${document.path} ${document.sectionLabel}`.toLowerCase().includes(normalizedQuery)
-    ));
-  }, [scopedDocuments, search]);
-  const visibleHistoryDocuments = useMemo(() => {
-    const normalizedQuery = search.trim().toLowerCase();
-    if (!normalizedQuery) {
-      return recentReadingDocuments;
-    }
-    return recentReadingDocuments.filter((document) => (
-      `${document.title} ${document.path}`.toLowerCase().includes(normalizedQuery)
-    ));
-  }, [recentReadingDocuments, search]);
-  const totalDocumentCount = visibleKnowledgeDocuments.length;
-  const displayDocuments = selectedHistory ? visibleHistoryDocuments : visibleDocuments;
-  const matchingDocumentCount = displayDocuments.length;
-  const currentReading = currentDocumentProgress?.currentDocPath ? {
-    path: currentDocumentProgress.currentDocPath,
-    title: currentDocumentProgress.currentDocTitle || allCatalogDocuments.find((document) => document.path === currentDocumentProgress.currentDocPath)?.label || "继续当前文档",
-    progress: getDocumentProgress(currentDocumentProgress, currentDocumentProgress.currentDocPath),
-  } : null;
-  const currentReadingSection = useMemo(() => {
-    if (!currentReading?.path) {
-      return null;
-    }
-    return sections.find((section) => flattenDocuments(section.children || [], section.label).some((document) => document.path === currentReading.path)) || null;
-  }, [currentReading?.path, sections]);
-  const recommendedDocuments = useMemo(() => {
-    return displayDocuments.slice(0, 18);
-  }, [displayDocuments]);
-  const sectionSummaries = useMemo(
-    () => sections.map((section) => {
-      const documents = flattenDocuments(section.children || [], section.label);
-      return {
-        ...section,
-        documentCount: documents.length,
-      };
-    }),
-    [sections]
-  );
-
   useEffect(() => {
-    if (selectedSectionKey !== "all" || !currentReadingSection?.key) {
-      return;
+    function handleKeydown(event) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
     }
-    setSelectedSectionKey(currentReadingSection.key);
-  }, [currentReadingSection?.key, selectedSectionKey]);
 
-  useEffect(() => {
-    if (selectedSectionKey === "all") {
-      return;
-    }
-    if (selectedSectionKey === "history") {
-      return;
-    }
-    if (!sections.some((section) => section.key === selectedSectionKey)) {
-      setSelectedSectionKey("all");
-    }
-  }, [sections, selectedSectionKey]);
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  }, []);
 
-  async function onLogin(event) {
-    event.preventDefault();
+  const documentProgress = profile?.documentProgress || null;
+  const ignoredDocs = documentProgress?.ignoredDocs || {};
+  const ignoredDocPaths = useMemo(
+    () => new Set(documentProgress?.ignoredDocPaths || []),
+    [documentProgress?.ignoredDocPaths]
+  );
+  const ignoredDocumentCount = ignoredDocPaths.size;
+
+  const allUiDocuments = useMemo(() => (
+    knowledgeDocuments.map((document) => buildSidebarDocument(document, documentProgress?.docs || {}, {
+      ignored: ignoredDocPaths.has(document.path),
+      ignoredAt: ignoredDocs[document.path]?.ignoredAt || "",
+    }))
+  ), [documentProgress?.docs, ignoredDocPaths, ignoredDocs, knowledgeDocuments]);
+
+  const uiDocuments = useMemo(
+    () => allUiDocuments.filter((document) => includeIgnoredDocuments || !document.ignored),
+    [allUiDocuments, includeIgnoredDocuments]
+  );
+
+  const filteredDocuments = useMemo(() => (
+    uiDocuments.filter((document) => {
+      if (!deferredQuery) {
+        return true;
+      }
+      return [
+        document.title,
+        document.path,
+        document.folderLabels.join(" "),
+        document.repoLabel,
+      ].some((value) => String(value || "").toLowerCase().includes(deferredQuery));
+    })
+  ), [deferredQuery, uiDocuments]);
+
+  const groupedDocuments = useMemo(() => ({
+    reading: filteredDocuments.filter((document) => document.group === "reading"),
+    review: filteredDocuments.filter((document) => document.group === "review"),
+    mastered: filteredDocuments.filter((document) => document.group === "mastered"),
+    unstarted: filteredDocuments.filter((document) => document.group === "unstarted"),
+  }), [filteredDocuments]);
+
+  const selectedDocument = uiDocuments.find((document) => document.path === selectedDocPath) || null;
+  const selectedLibraryPath = selectedDocument?.libraryPath || [];
+
+  const featuredDocument = useMemo(() => {
+    const currentDoc = uiDocuments.find((document) => document.path === documentProgress?.currentDocPath);
+    if (currentDoc) {
+      return currentDoc;
+    }
+    const recentDoc = (documentProgress?.recentDocs || [])
+      .map((recent) => uiDocuments.find((document) => document.path === recent.docPath))
+      .find(Boolean);
+    if (recentDoc) {
+      return recentDoc;
+    }
+    return groupedDocuments.reading[0]
+      || groupedDocuments.review[0]
+      || groupedDocuments.mastered[0]
+      || filteredDocuments[0]
+      || uiDocuments[0]
+      || null;
+  }, [documentProgress?.currentDocPath, documentProgress?.recentDocs, filteredDocuments, groupedDocuments, uiDocuments]);
+
+  const reviewDocuments = useMemo(() => (
+    groupedDocuments.review
+      .slice()
+      .sort((left, right) => compareIsoTimestamp(right.lastActivityAt, left.lastActivityAt))
+      .slice(0, 3)
+  ), [groupedDocuments.review]);
+
+  const summary = useMemo(() => buildLearningSummary(documentProgress), [documentProgress]);
+  const libraryTree = useMemo(() => buildLibraryTree(filteredDocuments), [filteredDocuments]);
+  const currentNodeKey = selectedNodeKeyParam || rootLibraryKey;
+  const currentLibraryNode = libraryTree.nodeMap.get(currentNodeKey) || libraryTree.root;
+
+  function replaceState(next = {}) {
+    const params = new URLSearchParams(searchParams.toString());
+    const nextMode = next.mode ?? mode;
+    const nextPanel = next.panel ?? panel;
+    const nextDoc = Object.prototype.hasOwnProperty.call(next, "doc") ? next.doc : selectedDocPath;
+    const nextNode = Object.prototype.hasOwnProperty.call(next, "node") ? next.node : selectedNodeKeyParam;
+
+    if (nextMode && nextMode !== "status") {
+      params.set("mode", nextMode);
+    } else {
+      params.delete("mode");
+    }
+
+    if (nextPanel && !(nextMode === "status" && nextPanel === "home")) {
+      params.set("panel", nextPanel);
+    } else {
+      params.delete("panel");
+    }
+
+    if (nextDoc) {
+      params.set("doc", nextDoc);
+    } else {
+      params.delete("doc");
+    }
+
+    if (nextNode && nextNode !== rootLibraryKey) {
+      params.set("node", nextNode);
+    } else {
+      params.delete("node");
+    }
+
+    startTransition(() => {
+      router.replace(params.toString() ? `/?${params.toString()}` : "/", { scroll: false });
+    });
+  }
+
+  function openStatusView() {
+    replaceState({
+      mode: "status",
+      panel: selectedDocPath ? "doc" : "home",
+    });
+    setMobilePane("detail");
+  }
+
+  function openDefaultView() {
+    replaceState({
+      mode: "status",
+      panel: "home",
+      doc: "",
+    });
+    setMobilePane("detail");
+  }
+
+  function openLibraryRoot() {
+    replaceState({
+      mode: "library",
+      panel: "library",
+      node: rootLibraryKey,
+    });
+    setMobilePane("detail");
+  }
+
+  function openLibraryNode(nodeKey) {
+    replaceState({
+      mode: "library",
+      panel: "library",
+      node: nodeKey,
+    });
+    setMobilePane("detail");
+  }
+
+  function openDocument(document, source = "") {
+    router.push(buildLearningHref(document, {
+      autostart: document.trainingStarted || document.progressPercentage >= 100,
+    }));
+    setMobilePane("detail");
+  }
+
+  async function toggleIgnoredDocument(document) {
+    if (!userId) {
+      setLoginOpen(true);
+      return;
+    }
     try {
-      setIsSubmitting(true);
       setError("");
-      const data = await postJson("/api/auth/login", { handle, pin });
-      setProfile(data.profile);
-      setStoredUserId(data.profile.user.id);
-      setHandle("");
-      setPin("");
+      const nextProfile = await postJson("/api/profile/ignored-document", {
+        userId,
+        docPath: document.path,
+        docTitle: document.title,
+        ignored: !document.ignored,
+      });
+      setProfile(nextProfile);
+      lastProfileSyncRef.current = Date.now();
     } catch (nextError) {
       setError(nextError.message);
-    } finally {
-      setIsSubmitting(false);
     }
   }
 
-  async function onIgnoreDocument(document) {
-    const userId = getStoredUserId();
-    if (!userId || !document?.path) {
-      setError("登录后才能忽略文档。");
-      return;
-    }
-    try {
-      setIgnoringDocPath(document.path);
-      setError("");
-      const data = await postJson("/api/profile/ignored-document", {
-        userId,
-        docPath: document.path,
-        docTitle: document.label || document.title || "",
-      });
-      setProfile(data);
-    } catch (nextError) {
-      setError(nextError.message);
-    } finally {
-      setIgnoringDocPath("");
-    }
+  function handleLogout() {
+    setStoredUserId("");
+    setUserId("");
+    setProfile(null);
+    setAvatarOpen(false);
+    openDefaultView();
+  }
+
+  function handleLoginSuccess(nextProfile) {
+    setStoredUserId(nextProfile.user.id);
+    setUserId(nextProfile.user.id);
+    setProfile(nextProfile);
+    lastProfileSyncRef.current = Date.now();
+    setLoginOpen(false);
+    setAvatarOpen(false);
+    setError("");
   }
 
   return (
-    <main className="app-shell home-shell">
-      <section className="home-topbar">
-        <div className="brand-mark">
-          <span className="brand-dot" />
-          <span>LearningLoop AI</span>
-        </div>
-        {profile ? (
-          <div className="topbar-actions">
-            <Link className="secondary-pill" href="/interview-assist">
-              真实面试辅助
-            </Link>
-            <Link className="secondary-pill profile-entry-pill" href="/profile">
-              <span className="status-dot" />
-              <span>{profile.user.handle}</span>
-              <span className="profile-entry-divider" />
-              <span>个人档案</span>
-            </Link>
-            <button
-              type="button"
-              className="secondary-pill"
-              onClick={() => {
-                setProfile(null);
-                setStoredUserId("");
-                setCatalogManageMode(false);
-              }}
-            >
-              退出
-            </button>
-          </div>
-        ) : (
-          <div className="topbar-actions">
-            <Link className="secondary-pill" href="/interview-assist">真实面试辅助</Link>
-            <a className="primary-pill" href="#login-panel">登录</a>
-          </div>
-        )}
-      </section>
-
-      <section className="home-hero compact-home-hero">
-        <p className="section-kicker">LearningLoop AI</p>
-        <h1>搜索技术资料或选择入口</h1>
-        <label className="search-shell" aria-label="搜索目录或文档">
-          <span className="search-icon">⌕</span>
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="搜索技术文档、知识点或学习入口"
+    <main className="ll-home-page">
+      <header className="ll-topbar">
+        <button type="button" className="ll-brand" onClick={openDefaultView}>
+          <span className="ll-brand-mark" aria-hidden="true" />
+          <span>LearningLoop</span>
+        </button>
+        <div className="ll-topbar-actions">
+          <button type="button" className="ll-mobile-nav" onClick={() => setMobilePane((pane) => (pane === "sidebar" ? "detail" : "sidebar"))}>
+            {mobilePane === "sidebar" ? "查看详情" : "资料库"}
+          </button>
+          <Link href="/interview-assist" className="ll-interview-button">
+            <span aria-hidden="true">⚡</span>
+            <span>面试模式</span>
+          </Link>
+          <AvatarMenu
+            open={avatarOpen}
+            onToggle={() => setAvatarOpen((open) => !open)}
+            onLogout={handleLogout}
+            onLoginClick={() => setLoginOpen(true)}
+            userName={profile?.user?.handle || "未登录"}
+            isLoggedIn={Boolean(profile?.user?.id)}
           />
-        </label>
-        <div className="entry-option-row" aria-label="快捷入口">
-          {entryOptions.map((option) => (
-            <button
-              key={option.key}
-              type="button"
-              className={selectedEntry === option.key ? "entry-option active" : "entry-option"}
-              onClick={() => setSelectedEntry(option.key)}
-            >
-              {option.label}
-            </button>
-          ))}
         </div>
-        {search.trim() ? (
-          <p className="search-feedback" aria-live="polite">
-            {matchingDocumentCount
-              ? `找到 ${matchingDocumentCount} 篇匹配文档`
-              : `没有找到“${search.trim()}”相关文档`}
-          </p>
-        ) : null}
-      </section>
+      </header>
 
-      {!profile ? (
-        <section className="auth-strip" id="login-panel">
-          <form className="auth-form-inline" onSubmit={onLogin}>
-            <div className="auth-copy">
-              <div>
-                <strong>登录后同步学习进度</strong>
-                <p>目录浏览不需要登录，登录后阅读页会记录你的进度。</p>
+      <div className="ll-workspace">
+        <aside className={`ll-sidebar${mobilePane === "sidebar" ? " is-mobile-active" : ""}`}>
+          <div className="ll-search-shell">
+            <input
+              ref={searchInputRef}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="搜索资料..."
+              aria-label="搜索资料"
+            />
+            <span>⌘K</span>
+          </div>
+
+          <div className="ll-sidebar-switcher">
+            <button type="button" className={`ll-library-entry${mode === "library" ? " is-active" : ""}`} onClick={openLibraryRoot}>
+              <div className="ll-library-entry-left">
+                <span className="ll-folder-icon" aria-hidden="true">
+                  <svg viewBox="0 0 16 16">
+                    <path d="M1.5 4.5h4l1.2 1.4h7.8v6.6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+                    <path d="M1.5 5V3.7a1 1 0 0 1 1-1h2.7l1 1.1H13.5a1 1 0 0 1 1 1V5" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+                  </svg>
+                </span>
+                <strong>我的资料</strong>
               </div>
-            </div>
-            <div className="auth-fields-inline">
-              <input aria-label="昵称" value={handle} onChange={(event) => setHandle(event.target.value)} placeholder="昵称" />
-              <input aria-label="PIN" type="password" value={pin} onChange={(event) => setPin(event.target.value)} placeholder="PIN" />
-              <button type="submit" className="primary-pill" disabled={isSubmitting}>登录</button>
-            </div>
-          </form>
-        </section>
-      ) : null}
-
-      {error ? <section className="feedback-banner error-banner">{error}</section> : null}
-
-      {selectedEntry === "javaguide" ? (
-      <section className="learning-browser-card compact-catalog">
-        <div className="catalog-workbench">
-          <nav className="catalog-section-rail" aria-label="文档分类">
-            <label className="catalog-rail-search" aria-label="筛选左侧分类下的文档">
-              <span className="catalog-rail-search-icon">⌕</span>
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder={selectedHistory ? "筛选历史文档" : "筛选当前目录"}
-              />
-            </label>
-            {recentReadingDocuments.length ? (
-              <button
-                type="button"
-                className={selectedHistory ? "catalog-section-tab active" : "catalog-section-tab"}
-                onClick={() => setSelectedSectionKey("history")}
-              >
-                <span>历史文档</span>
-                <strong>{recentReadingDocuments.length}</strong>
+              <span>{uiDocuments.length}</span>
+            </button>
+            {mode === "library" ? (
+              <button type="button" className="ll-view-back-button" onClick={openStatusView}>
+                按状态看
               </button>
             ) : null}
-            <button
-              type="button"
-              className={selectedSectionKey === "all" ? "catalog-section-tab active" : "catalog-section-tab"}
-              onClick={() => setSelectedSectionKey("all")}
-            >
-              <span>全部</span>
-              <strong>{totalDocumentCount}</strong>
-            </button>
-            {sectionSummaries.map((section) => (
-              <button
-                key={section.key}
-                type="button"
-                className={selectedSectionKey === section.key ? "catalog-section-tab active" : "catalog-section-tab"}
-                onClick={() => setSelectedSectionKey(section.key)}
-              >
-                <span>{section.label}</span>
-                <strong>{section.documentCount}</strong>
-              </button>
-            ))}
-          </nav>
-
-          <div className="catalog-main-panel">
-            <div className="catalog-list-head">
-              <div>
-                <strong>JavaGuide 全量目录</strong>
-                <p aria-live="polite">
-                  {search.trim()
-                    ? `找到 ${matchingDocumentCount} 篇匹配`
-                    : selectedHistory ? "历史文档" : selectedSection ? "当前分类" : "全部文档"}
-                </p>
-              </div>
-              <div className="catalog-head-actions">
-                {search.trim() ? (
-                  <button type="button" className="catalog-clear-button" onClick={() => setSearch("")}>
-                    清除
-                  </button>
-                ) : null}
-                {profile ? (
-                  <button
-                    type="button"
-                    className={catalogManageMode ? "catalog-manage-button active" : "catalog-manage-button"}
-                    aria-pressed={catalogManageMode}
-                    onClick={() => setCatalogManageMode((current) => !current)}
-                  >
-                    {catalogManageMode ? "完成" : "管理"}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            {recommendedDocuments.length ? (
-              <div className="catalog-doc-grid">
-                {recommendedDocuments.map((document) => {
-                  const documentTitle = document.label || document.title || "未命名文档";
-                  const isCurrent = document.path === currentReading?.path;
-                  const progressPercentage = getDocumentProgress(currentDocumentProgress, document.path);
-                  const mastery = getDocumentLearningState(currentDocumentProgress, document.path);
-                  const secondaryLabel = selectedHistory
-                    ? formatLastStudiedAt(document.lastStudiedAt)
-                    : isCurrent ? "当前阅读" : simplifyPath(document.path);
-
-                  return (
-                    <div
-                      key={document.key || document.path}
-                      className={[
-                        "catalog-doc-row",
-                        isCurrent ? "current" : "",
-                        catalogManageMode ? "manage-mode" : "",
-                      ].filter(Boolean).join(" ")}
-                    >
-                      <Link className="catalog-doc-link" href={documentHref(document.path)}>
-                        <span className="catalog-doc-dot" />
-                        <span className="catalog-doc-title">{documentTitle}</span>
-                        <span className="catalog-doc-badges">
-                          <span className="catalog-doc-progress">{formatProgressBadge(progressPercentage, isCurrent)}</span>
-                          <span className="catalog-doc-mastery">{formatLearningBadge(mastery)}</span>
-                        </span>
-                        <span className="catalog-doc-path">
-                          {secondaryLabel}
-                        </span>
-                      </Link>
-                      {profile && catalogManageMode ? (
-                        <div className="catalog-doc-actions" aria-label={`${documentTitle} 管理操作`}>
-                          <button
-                            type="button"
-                            className="catalog-doc-ignore"
-                            disabled={ignoringDocPath === document.path}
-                            aria-label={`忽略 ${documentTitle}`}
-                            onClick={() => void onIgnoreDocument(document)}
-                          >
-                            {ignoringDocPath === document.path ? "忽略中" : "忽略"}
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="chapter-empty">
-                <p>当前搜索没有匹配到文档，换个关键词试试。</p>
-              </div>
-            )}
           </div>
-        </div>
-      </section>
-      ) : null}
 
-      {selectedEntry !== "javaguide" ? (
-        <section className="learning-browser-card entry-empty-panel">
-          <h2>{entryOptions.find((option) => option.key === selectedEntry)?.label}</h2>
+          {ignoredDocumentCount > 0 ? (
+            <label className="ll-include-ignored-toggle">
+              <input
+                type="checkbox"
+                checked={includeIgnoredDocuments}
+                onChange={(event) => setIncludeIgnoredDocuments(event.target.checked)}
+              />
+              <span>包含忽略文档</span>
+              <strong>{ignoredDocumentCount}</strong>
+            </label>
+          ) : null}
+
+          {mode === "library" ? (
+            <div className="ll-tree-shell" data-testid="library-tree">
+              {libraryTree.root.children.map((node) => (
+                <LibraryTreeNode
+                  key={node.key}
+                  node={node}
+                  currentNodeKey={currentLibraryNode.key}
+                  selectedDocPath={selectedDocPath}
+                  selectedLibraryPath={selectedLibraryPath}
+                  onOpenNode={openLibraryNode}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="ll-group-list">
+              {Object.entries(groupMeta).map(([groupKey, meta]) => {
+                const items = groupedDocuments[groupKey];
+                const expanded = expandedGroups[groupKey];
+                const activeDoc = panel === "doc" ? selectedDocPath : "";
+
+                return (
+                  <section key={groupKey} className="ll-group">
+                    <button
+                      type="button"
+                      className="ll-group-toggle"
+                      onClick={() => setExpandedGroups((current) => ({ ...current, [groupKey]: !current[groupKey] }))}
+                    >
+                      <span>{expanded ? "▼" : "▶"}</span>
+                      <span>{meta.label}</span>
+                      <span>({items.length})</span>
+                      {groupKey === "review" && items.length > 0 ? <span className="ll-group-dot" aria-hidden="true" /> : null}
+                    </button>
+                    {expanded ? (
+                      <div className="ll-group-items">
+                        {items.length ? (
+                          items.map((document) => (
+                            <DocumentRow
+                              key={document.path}
+                              document={document}
+                              active={activeDoc === document.path}
+                              onSelect={openDocument}
+                            />
+                          ))
+                        ) : (
+                          <div className="ll-empty-group">没有匹配的材料</div>
+                        )}
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
+            </div>
+          )}
+
+          <button type="button" className="ll-add-button" onClick={() => setAddMaterialOpen(true)}>
+            + 添加材料
+          </button>
+        </aside>
+
+        <section className={`ll-detail${mobilePane === "detail" ? " is-mobile-active" : ""}`}>
+          {error ? <p className="ll-status-note">{error}</p> : null}
+
+          {panel === "doc" && selectedDocument ? <DocumentPlaceholder document={selectedDocument} /> : null}
+
+          {panel !== "doc" && mode === "library" ? (
+            <LibraryBrowser
+              currentNode={currentLibraryNode}
+              selectedDocPath={selectedDocPath}
+              onOpenNode={openLibraryNode}
+              onOpenDocument={openDocument}
+              onToggleIgnored={toggleIgnoredDocument}
+            />
+          ) : null}
+
+          {panel !== "doc" && mode !== "library" && featuredDocument ? (
+            <DefaultFocusView
+              featuredDocument={featuredDocument}
+              reviewDocuments={reviewDocuments}
+              summary={summary}
+              hasProfile={Boolean(profile?.user?.id)}
+            />
+          ) : null}
         </section>
-      ) : null}
+      </div>
+
+      {addMaterialOpen ? <AddMaterialModal onClose={() => setAddMaterialOpen(false)} /> : null}
+      {loginOpen ? <LoginModal onClose={() => setLoginOpen(false)} onLoginSuccess={handleLoginSuccess} /> : null}
     </main>
   );
 }

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { applyReadingProgress } from "../../../src/user/reading-progress.js";
+import { applyReadingProgress, normalizeReadingDocPath } from "../../../src/user/reading-progress.js";
 
 test("reading progress counts repeated full reads for the same document", () => {
   const targetBaselineId = "bigtech-java-backend";
@@ -21,7 +21,7 @@ test("reading progress counts repeated full reads for the same document", () => 
       targetBaselineId,
       docPath,
       scrollRatio: 0.96,
-      dwellMs: 50_000,
+      dwellMs: 0,
       timestamp: "2026-05-01T08:00:00.000Z",
     }
   );
@@ -39,4 +39,12 @@ test("reading progress counts repeated full reads for the same document", () => 
 
   assert.equal(second.readingProgress.docs[docPath].progressPercentage, 100);
   assert.equal(second.readingProgress.docs[docPath].completedReadCount, 2);
+});
+
+test("reading progress preserves custom material namespace", () => {
+  assert.equal(normalizeReadingDocPath("materials/abc123"), "materials/abc123");
+  assert.equal(normalizeReadingDocPath("/materials/abc123"), "materials/abc123");
+  assert.equal(normalizeReadingDocPath("docs/materials/abc123"), "docs/materials/abc123");
+  assert.throws(() => normalizeReadingDocPath("../materials/abc123"), /invalid/i);
+  assert.throws(() => normalizeReadingDocPath("materials/../abc123"), /invalid/i);
 });

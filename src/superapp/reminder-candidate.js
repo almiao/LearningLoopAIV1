@@ -1,4 +1,5 @@
 import { createBaselinePackDecomposition, defaultBaselinePackId, getBaselinePackById } from "../baseline/baseline-packs.js";
+import { getSourceRefs } from "../knowledge/source-refs.js";
 import { buildTrainingPointsFromDecomposition } from "../training/training-model.js";
 
 const reminderCategoryPriority = [
@@ -139,8 +140,8 @@ export function buildReminderCandidate({ user, memoryProfile }) {
       checkpointStatement: checkpoint.statement,
       diagnosticQuestion: checkpoint.diagnosticQuestion || checkpoint.statement || "",
       materialContext: checkpoint.statement || buildMaterialContext(point),
-      sourcePath: point.javaGuideSources?.[0]?.path || "",
-      sourceTitle: point.javaGuideSources?.[0]?.title || "",
+      sourcePath: getSourceRefs(point)[0]?.path || "",
+      sourceTitle: getSourceRefs(point)[0]?.title || "",
       targetTitle: pack.title,
       lastActivityAt: toIsoOrEmpty(targetRecord?.lastActivityAt),
     },

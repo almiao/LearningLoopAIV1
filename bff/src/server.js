@@ -6,17 +6,27 @@ import {
   getBaselinePackById
 } from "../../src/baseline/baseline-packs.js";
 import {
-  readJavaGuideAsset,
-  readJavaGuideDocument,
-  listKnowledgeDocuments
-} from "../../src/knowledge/java-guide-doc-service.js";
+  listCustomMaterials,
+  readCustomMaterialRender,
+  listSourceDocuments,
+  readCustomMaterialOriginal,
+  readSourceAsset,
+  readSourceDocument,
+  saveCustomMaterial,
+} from "../../src/knowledge/source-document-resolver.js";
+import {
+  convertRemoteMaterialUrl,
+  convertUploadedMaterial,
+} from "../../src/ingestion/material-converter.js";
 import { buildReminderCandidate } from "../../src/superapp/reminder-candidate.js";
 import { createMemoryProfileStore } from "../../src/tutor/memory-profile-store.js";
 import {
   applyDocumentReadingEvent,
   applyDocumentIgnored,
+  applyDocumentUnignored,
   applyDocumentTrainingAnswered,
   applyDocumentTrainingSession,
+  applyDocumentTrainingSkipped,
   applyDocumentTrainingStarted,
   applyDocumentTrainingUnavailable,
   readDocumentTrainingSession,
@@ -45,6 +55,19 @@ function withCorsHeaders(response, statusCode, extraHeaders = {}) {
 function sendJson(response, statusCode, payload) {
   withCorsHeaders(response, statusCode);
   response.end(JSON.stringify(payload));
+}
+
+function sendErrorJson(response, statusCode, payload) {
+  if (response.writableEnded) {
+    return;
+  }
+
+  if (response.headersSent) {
+    response.end();
+    return;
+  }
+
+  sendJson(response, statusCode, payload);
 }
 
 function sendBuffer(response, statusCode, body, extraHeaders = {}) {
@@ -151,11 +174,19 @@ function buildDecompositionSnapshot(session = {}) {
   };
 }
 
+function isCompletedDocumentSession(session = {}) {
+  const hasOpenProbe = Boolean(String(session?.currentProbe || "").trim());
+  const hasCompletionTurn = Array.isArray(session?.turns)
+    && session.turns.some((turn) => turn?.role === "tutor" && turn?.kind === "feedback" && turn?.action === "complete");
+  return Boolean(session?.sessionId && !hasOpenProbe && hasCompletionTurn);
+}
+
 function isResumableDocumentSession(session = {}, { userId = "", docPath = "" } = {}) {
   return Boolean(
     session?.sessionId
     && session.userId === userId
     && session.source?.metadata?.docPath === docPath
+    && !isCompletedDocumentSession(session)
   );
 }
 
@@ -238,8 +269,20 @@ function normalizeTrainingUnavailableMessage(message = "") {
   return "当前文档暂时无法生成训练点，已保留为阅读材料。";
 }
 
-function extractReadableKnowledgeLines(markdown = "") {
-  return String(markdown || "")
+function getDocumentLearningText(document = {}) {
+  const learningText = String(document.learning?.text || "").trim();
+  if (learningText) {
+    return learningText;
+  }
+  const learningMarkdown = String(document.learning?.markdown || "").trim();
+  if (learningMarkdown) {
+    return learningMarkdown;
+  }
+  return String(document.markdown || "").trim();
+}
+
+function extractReadableKnowledgeLines(content = "") {
+  return String(content || "")
     .replace(/\r/g, "")
     .replace(/<!--[\s\S]*?-->/g, "\n")
     .replace(/```[\s\S]*?```/g, "\n")
@@ -251,7 +294,7 @@ function extractReadableKnowledgeLines(markdown = "") {
 }
 
 function hasSufficientKnowledgeContent(document = {}) {
-  const lines = extractReadableKnowledgeLines(document.markdown || "");
+  const lines = extractReadableKnowledgeLines(getDocumentLearningText(document));
   const longLines = lines.filter((line) => line.length >= 18);
   const totalTextLength = lines.join(" ").length;
   return longLines.length >= 3 && totalTextLength >= 220;
@@ -264,7 +307,7 @@ async function handleStartTarget(body) {
   const user = await getUserProfile(body.userId);
   const memoryProfile = await getMemoryProfile(user.memoryProfileId);
   const activeDocument = body.docPath
-    ? await readJavaGuideDocument(body.docPath)
+    ? await readSourceDocument(body.docPath, { userId: user.id })
     : null;
 
   const targetBaselineId = body.targetBaselineId || defaultBaselinePackId;
@@ -301,11 +344,12 @@ async function handleStartTarget(body) {
     ? {
         kind: "knowledge-document",
         title: activeDocument.title,
-        content: activeDocument.markdown,
+        content: getDocumentLearningText(activeDocument),
         metadata: {
           baselinePackId: baselinePack.id,
           targetRole: baselinePack.targetRole,
           docPath: activeDocument.path,
+          sourceRefs: activeDocument.sourceRefs || [],
         },
       }
     : createBaselinePackSource(baselinePack);
@@ -482,6 +526,8 @@ async function handleReadingProgress(body) {
     docTitle: body.docTitle,
     scrollRatio: body.scrollRatio,
     dwellMs: body.dwellMs,
+    readingPreview: body.readingPreview,
+    readingChapter: body.readingChapter,
     timestamp,
   });
   user.documents = applyDocumentReadingEvent(user.documents || {}, {
@@ -489,6 +535,8 @@ async function handleReadingProgress(body) {
     docTitle: body.docTitle || user.targets[targetBaselineId]?.readingProgress?.currentDocTitle || "",
     scrollRatio: body.scrollRatio,
     dwellMs: body.dwellMs,
+    readingPreview: body.readingPreview,
+    readingChapter: body.readingChapter,
     timestamp,
   });
   user.targets[targetBaselineId].lastActivityAt = timestamp;
@@ -506,7 +554,31 @@ async function handleIgnoredDocument(body) {
   }
   const user = await getUserProfile(body.userId);
   const timestamp = new Date().toISOString();
-  user.documents = applyDocumentIgnored(user.documents || {}, {
+  user.documents = body.ignored === false
+    ? applyDocumentUnignored(user.documents || {}, {
+        docPath: body.docPath,
+        timestamp,
+      })
+    : applyDocumentIgnored(user.documents || {}, {
+        docPath: body.docPath,
+        docTitle: body.docTitle || "",
+        timestamp,
+      });
+  user.lastActiveAt = timestamp;
+  await userProfileStore.save(user);
+  return buildProfilePayload(user);
+}
+
+async function handleSkippedTraining(body) {
+  if (!body.userId) {
+    throw new Error("userId is required.");
+  }
+  if (!body.docPath) {
+    throw new Error("docPath is required.");
+  }
+  const user = await getUserProfile(body.userId);
+  const timestamp = new Date().toISOString();
+  user.documents = applyDocumentTrainingSkipped(user.documents || {}, {
     docPath: body.docPath,
     docTitle: body.docTitle || "",
     timestamp,
@@ -522,13 +594,13 @@ function normalizeKnowledgeGoal(goal = "") {
 
 function normalizeKnowledgeTaskType(taskType = "") {
   const normalized = String(taskType || "").trim();
-  return ["summary", "memory_points", "question_points"].includes(normalized)
+  return ["summary", "memory_points", "question_points", "inline_quiz", "selection_explain"].includes(normalized)
     ? normalized
     : "freeform";
 }
 
 function buildFallbackKnowledgeAnswer(question = "", document = {}, { taskType = "freeform" } = {}) {
-  const lines = extractReadableKnowledgeLines(document.markdown || "");
+  const lines = extractReadableKnowledgeLines(getDocumentLearningText(document));
   const headings = lines.filter((line) => line.length <= 48).slice(0, 8);
   const paragraphs = lines.filter((line) => line.length > 18).slice(0, 6);
   if (taskType === "summary" || /总结|概括|3\s*句|三句/.test(question)) {
@@ -536,6 +608,13 @@ function buildFallbackKnowledgeAnswer(question = "", document = {}, { taskType =
   }
   if (taskType === "memory_points") {
     return (headings.length ? headings : paragraphs).map((line, index) => `${index + 1}. ${line}：这是当前目标下值得优先记住的内容。`).join("\n");
+  }
+  if (taskType === "inline_quiz") {
+    const sourceText = String(question || "").includes("原文：")
+      ? String(question || "").split("原文：").at(-1)
+      : (paragraphs[0] || headings[0] || "这段原文的核心概念");
+    const answer = String(sourceText || "").split(/[。！？；\n]/)[0].trim() || "这段原文的核心概念";
+    return `自测题：这段话最核心的概念是什么？\n参考答案：${answer.slice(0, 80)}`;
   }
   if (taskType === "question_points" || /面试|追问|问题/.test(question)) {
     return (headings.length ? headings : paragraphs).map((line, index) => `${index + 1}. 问题：${line} 的核心机制、适用场景和边界是什么？\n考察点：是否真正理解这个关键点，而不是只记住标题。`).join("\n");
@@ -556,7 +635,7 @@ async function handleKnowledgeAnswer(body) {
     throw new Error("docPath is required.");
   }
 
-  const document = await readJavaGuideDocument(docPath);
+  const document = await readSourceDocument(docPath, { userId: body.userId || "" });
   if (!hasSufficientKnowledgeContent(document)) {
     return {
       mode: "knowledge_qa",
@@ -576,7 +655,7 @@ async function handleKnowledgeAnswer(body) {
       goal,
       taskType,
       title: document.title,
-      context: document.markdown,
+      context: getDocumentLearningText(document),
     });
     return {
       ...data,
@@ -639,6 +718,18 @@ function buildServiceBaseUrl(request) {
   const host = request.headers.host || `127.0.0.1:${port}`;
   const protocol = String(request.headers["x-forwarded-proto"] || "http").split(",")[0].trim() || "http";
   return `${protocol}://${host}`;
+}
+
+function buildSafeContentDisposition(filename = "original") {
+  const raw = String(filename || "original").trim() || "original";
+  const asciiFallback = raw
+    .normalize("NFKD")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/["\\]/g, "")
+    .replace(/[;]/g, "")
+    .trim() || "download";
+  const encodedFilename = encodeURIComponent(raw);
+  return `inline; filename="${asciiFallback}"; filename*=UTF-8''${encodedFilename}`;
 }
 
 async function persistAnswerSideEffects(result) {
@@ -799,8 +890,86 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/profile/skipped-training") {
+      sendJson(response, 200, await handleSkippedTraining(await readJsonBody(request)));
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/knowledge/answer") {
       sendJson(response, 200, await handleKnowledgeAnswer(await readJsonBody(request)));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/materials/ingest-url") {
+      const body = await readJsonBody(request);
+      if (!body.userId) {
+        throw new Error("userId is required.");
+      }
+      const converted = await convertRemoteMaterialUrl(body.url);
+      const material = await saveCustomMaterial({
+        userId: body.userId,
+        ...converted,
+      });
+      sendJson(response, 200, { material });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/materials/upload") {
+      const body = await readJsonBody(request);
+      if (!body.userId) {
+        throw new Error("userId is required.");
+      }
+      const converted = await convertUploadedMaterial({
+        filename: body.filename,
+        mimeType: body.mimeType,
+        contentBase64: body.contentBase64,
+      });
+      const material = await saveCustomMaterial({
+        userId: body.userId,
+        ...converted,
+      });
+      sendJson(response, 200, { material });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/materials") {
+      const userId = url.searchParams.get("userId") || "";
+      if (!userId) {
+        throw new Error("userId is required.");
+      }
+      sendJson(response, 200, { materials: await listCustomMaterials(userId) });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/materials/original") {
+      const userId = url.searchParams.get("userId") || "";
+      const materialPath = url.searchParams.get("path") || "";
+      const original = await readCustomMaterialOriginal(userId, materialPath);
+      if (original.redirectUrl) {
+        response.writeHead(302, {
+          "access-control-allow-origin": "*",
+          location: original.redirectUrl,
+        });
+        response.end();
+      } else {
+        sendBuffer(response, 200, original.body, {
+          "cache-control": "private, max-age=60",
+          "content-disposition": buildSafeContentDisposition(original.filename || "original"),
+          "content-type": original.mimeType,
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/materials/render") {
+      const userId = url.searchParams.get("userId") || "";
+      const materialPath = url.searchParams.get("path") || "";
+      const rendered = await readCustomMaterialRender(userId, materialPath);
+      sendBuffer(response, 200, rendered.body, {
+        "cache-control": "private, max-age=60",
+        "content-disposition": buildSafeContentDisposition(rendered.filename || "rendered.html"),
+        "content-type": rendered.mimeType,
+      });
       return;
     }
 
@@ -822,8 +991,9 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/knowledge/doc") {
-      const docPath = url.searchParams.get("path") || "";
-      const document = await readJavaGuideDocument(docPath, {
+      const docPath = url.searchParams.get("path") || url.searchParams.get("doc") || "";
+      const document = await readSourceDocument(docPath, {
+        userId: url.searchParams.get("userId") || "",
         serviceBaseUrl: buildServiceBaseUrl(request),
       });
       sendJson(response, 200, document);
@@ -831,7 +1001,7 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/knowledge/docs") {
-      sendJson(response, 200, { documents: await listKnowledgeDocuments() });
+      sendJson(response, 200, { documents: await listSourceDocuments({ userId: url.searchParams.get("userId") || "" }) });
       return;
     }
 
@@ -841,7 +1011,7 @@ const server = http.createServer(async (request, response) => {
 
       if (assetPath) {
         try {
-          const asset = await readJavaGuideAsset(assetPath);
+          const asset = await readSourceAsset(assetPath);
           sendBuffer(response, 200, asset.body, {
             "cache-control": "public, max-age=3600",
             "content-type": asset.mimeType,
@@ -919,7 +1089,8 @@ const server = http.createServer(async (request, response) => {
 
     sendJson(response, 404, { error: "Not found." });
   } catch (error) {
-    sendJson(response, 400, { error: error instanceof Error ? error.message : "Unknown error" });
+    console.error(error);
+    sendErrorJson(response, 400, { error: error instanceof Error ? error.message : "Unknown error" });
   }
 });
 
@@ -929,4 +1100,4 @@ if (process.env.NODE_ENV !== "test") {
   });
 }
 
-export { server };
+export { server, isCompletedDocumentSession, isResumableDocumentSession };

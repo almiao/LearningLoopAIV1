@@ -272,6 +272,41 @@ test("doc-scoped training can start a fresh round when explicitly restarted", as
   });
 });
 
+test("reading-complete documents can be completed by skipping training", async () => {
+  await withSplitServices(null, async ({ bffBaseUrl }) => {
+    const handle = `reader_training_skip_${Date.now()}`;
+
+    const login = await postJson(`${bffBaseUrl}/api/auth/login`, {
+      handle,
+      pin: "1234"
+    });
+
+    await postJson(`${bffBaseUrl}/api/profile/reading-progress`, {
+      userId: login.profile.user.id,
+      docPath: "docs/ai/agent/mcp.md",
+      docTitle: "万字拆解 MCP，附带工程实践",
+      scrollRatio: 0.91,
+      dwellMs: 0
+    });
+
+    const skipped = await postJson(`${bffBaseUrl}/api/profile/skipped-training`, {
+      userId: login.profile.user.id,
+      docPath: "docs/ai/agent/mcp.md",
+      docTitle: "万字拆解 MCP，附带工程实践"
+    });
+
+    assert.equal(
+      skipped.documentProgress.docs["docs/ai/agent/mcp.md"]?.readingLabel,
+      "已读"
+    );
+    assert.equal(
+      skipped.documentProgress.docs["docs/ai/agent/mcp.md"]?.learningStatusLabel,
+      "已跳过"
+    );
+    assert.equal(skipped.documentProgress.stats.completedDocumentCount, 1);
+  });
+});
+
 test("doc-scoped training degrades to reading-only when decomposition cannot produce training points", async () => {
   await withSplitServices(null, async ({ bffBaseUrl }) => {
     const handle = `tu_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`.slice(0, 20);

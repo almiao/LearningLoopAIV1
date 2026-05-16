@@ -1018,7 +1018,7 @@ export function createBaselinePackSource(pack) {
 
 export function createBaselinePackDecomposition(pack) {
   const domainLookup = Object.fromEntries(pack.domains.map((domain) => [domain.id, domain.title]));
-  const javaGuideSourceClusters = collectPackGuideSources(pack);
+  const sourceClusters = collectPackGuideSources(pack);
   return {
     summary: {
       sourceTitle: pack.title,
@@ -1034,7 +1034,7 @@ export function createBaselinePackDecomposition(pack) {
         itemCount: domain.items.length,
         sampleItems: domain.items.slice(0, 3).map((item) => item.title)
       })),
-      javaGuideSourceClusters
+      sourceClusters
     },
     concepts: pack.abilityItems.map((item) => ({
       ...item,
@@ -1050,7 +1050,12 @@ export function createBaselinePackDecomposition(pack) {
               label: item.provenance.label
             }
           : null,
-      javaGuideSources: (item.javaGuideSources || []).map(normalizeJavaGuideSource),
+      sourceRefs: (item.javaGuideSources || []).map(normalizeJavaGuideSource).map((source) => ({
+        ...source,
+        sourceType: "built-in-document",
+        provider: "built-in-corpus",
+        providerLabel: "JavaGuide",
+      })),
       remediationMaterials: item.remediationAssets || []
     }))
   };

@@ -2,7 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildUserProfileView } from "../../../src/user/profile-aggregator.js";
-import { applyDocumentIgnored } from "../../../src/user/document-progress-state.js";
+import {
+  applyDocumentIgnored,
+  applyDocumentUnignored,
+  applyDocumentTrainingSkipped,
+} from "../../../src/user/document-progress-state.js";
 import { applyReadingProgress } from "../../../src/user/reading-progress.js";
 
 function makeUserTarget() {
@@ -202,6 +206,73 @@ test("document progress marks decomposition-failed documents as reading-only", (
   );
 });
 
+test("document progress marks user-skipped training as a completed reading path", () => {
+  const documents = applyDocumentTrainingSkipped({
+    docs: {
+      "docs/ai/agent/mcp.md": {
+        docPath: "docs/ai/agent/mcp.md",
+        docTitle: "万字拆解 MCP，附带工程实践",
+        progressPercentage: 100,
+        status: "completed",
+        completedReadCount: 1,
+      },
+    },
+  }, {
+    docPath: "docs/ai/agent/mcp.md",
+    docTitle: "万字拆解 MCP，附带工程实践",
+    timestamp: "2026-05-01T10:05:00.000Z",
+  });
+
+  const profile = buildUserProfileView({
+    user: {
+      ...makeUser(makeUserTarget()),
+      documents,
+    },
+    memoryProfile: { id: "mem-1", sessionsStarted: 0, abilityItems: {} },
+  });
+
+  const entry = profile.documentProgress.docs["docs/ai/agent/mcp.md"];
+  assert.equal(entry?.learningStatusLabel, "已跳过");
+  assert.equal(entry?.trainingSkipped, true);
+  assert.equal(profile.documentProgress.stats.completedDocumentCount, 1);
+});
+
+test("document progress rewards completed training even before mastery threshold", () => {
+  const profile = buildUserProfileView({
+    user: {
+      ...makeUser(makeUserTarget()),
+      documents: {
+        docs: {
+          "docs/ai/agent/mcp.md": {
+            docPath: "docs/ai/agent/mcp.md",
+            docTitle: "万字拆解 MCP，附带工程实践",
+            progressPercentage: 100,
+            status: "completed",
+            completedReadCount: 1,
+            activeSessionSnapshot: {
+              sessionId: "session-complete",
+              currentProbe: "",
+              turns: [
+                {
+                  role: "tutor",
+                  kind: "feedback",
+                  action: "complete",
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+    memoryProfile: { id: "mem-1", sessionsStarted: 0, abilityItems: {} },
+  });
+
+  const entry = profile.documentProgress.docs["docs/ai/agent/mcp.md"];
+  assert.equal(entry?.learningStatusLabel, "训练完成");
+  assert.equal(entry?.trainingCompleted, true);
+  assert.equal(profile.documentProgress.stats.completedDocumentCount, 1);
+});
+
 test("document progress exposes checkpoint fraction for in-progress training", () => {
   const targetRecord = applyReadingProgress(makeUserTarget(), {
     targetBaselineId: "bigtech-java-backend",
@@ -354,4 +425,41 @@ test("document progress hides ignored documents from current and recent views", 
     ["docs/system-design/framework/spring/spring-transaction.md"]
   );
   assert.equal(profile.documentProgress.currentDocPath, "docs/system-design/framework/spring/spring-transaction.md");
+});
+
+test("document progress can restore ignored documents", () => {
+  const user = makeUser(makeUserTarget());
+  const ignoredDocuments = applyDocumentIgnored({
+    currentDocPath: "docs/ai/agent/mcp.md",
+    currentDocTitle: "万字拆解 MCP，附带工程实践",
+    docs: {
+      "docs/ai/agent/mcp.md": {
+        docPath: "docs/ai/agent/mcp.md",
+        docTitle: "万字拆解 MCP，附带工程实践",
+        progressPercentage: 42,
+        lastActivityAt: "2026-05-01T10:03:00.000Z",
+      },
+    },
+  }, {
+    docPath: "docs/ai/agent/mcp.md",
+    docTitle: "万字拆解 MCP，附带工程实践",
+    timestamp: "2026-05-01T10:10:00.000Z",
+  });
+  user.documents = applyDocumentUnignored(ignoredDocuments, {
+    docPath: "docs/ai/agent/mcp.md",
+    timestamp: "2026-05-01T10:12:00.000Z",
+  });
+
+  const profile = buildUserProfileView({
+    user,
+    memoryProfile: {
+      id: "mem-1",
+      sessionsStarted: 0,
+      abilityItems: {},
+    },
+  });
+
+  assert.deepEqual(profile.documentProgress.ignoredDocPaths, []);
+  assert.equal(profile.documentProgress.docs["docs/ai/agent/mcp.md"].progressPercentage, 42);
+  assert.equal(profile.documentProgress.currentDocPath, "docs/ai/agent/mcp.md");
 });

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Xiaohongshu Favorites"
+  short_description: "Download XHS favorites into Markdown"
+  default_prompt: "Use $xiaohongshu-favorites to download my Xiaohongshu favorites into Markdown."

@@ -53,6 +53,12 @@ load_env_file() {
 load_env_file "$ROOT_DIR/.env"
 load_env_file "$ROOT_DIR/.env.local"
 
+DEFAULT_PYTHON_CLI_BIN_DIR="/Library/Frameworks/Python.framework/Versions/3.11/bin"
+PYTHON_CLI_BIN_DIR="${PYTHON_CLI_BIN_DIR:-$DEFAULT_PYTHON_CLI_BIN_DIR}"
+if [[ -d "$PYTHON_CLI_BIN_DIR" ]]; then
+  export PATH="$PYTHON_CLI_BIN_DIR:$PATH"
+fi
+
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "Missing required command: $1" >&2

@@ -20,6 +20,7 @@ import {
   stopTrackedServices,
   waitForHealth,
   waitForListeningPort,
+  withLocalToolPath,
 } from "./service-runtime.mjs";
 
 function parsePort(name, value, fallback) {
@@ -48,7 +49,7 @@ async function main() {
     ["ai-service", aiPort],
   ]);
 
-  const serviceEnv = runtimeEnv;
+  const serviceEnv = withLocalToolPath(runtimeEnv);
   const pythonSpec = await ensurePythonDependencies(serviceEnv);
   console.log(`Using Node.js ${nodeRuntime.version} from ${nodeRuntime.command}`);
   await ensureFrontendDependencies(serviceEnv, nodeRuntime);

@@ -52,6 +52,19 @@ class KnowledgeAnswerTests(unittest.TestCase):
         self.assertIn("根据文章内容自行决定问题数量", prompt)
         self.assertNotIn("5-8", prompt)
 
+    def test_inline_quiz_prompt_requires_one_atomic_question(self) -> None:
+        prompt = build_knowledge_answer_prompt(
+            question="请基于这段原文出一道单点自测题。原文：分组由首部 header 和数据段组成。",
+            context="分组由首部 header 和数据段组成。分组又称为包，首部可称为包头。",
+            goal="interview",
+            task_type="inline_quiz",
+        )
+
+        self.assertIn("当前能力：划线段落单点自测", prompt)
+        self.assertIn("只输出一道题，题目只能考一个原子知识点", prompt)
+        self.assertIn("不要把多个事实合并成复合题", prompt)
+        self.assertIn("输出格式固定为两行", prompt)
+
     def test_text_llm_calls_preserve_markdown_newlines(self) -> None:
         markdown_reply = "\n### 节点\n\n1. prepare 阶段\n2. commit 阶段\n\n- 异常时按 binlog 是否完整判断\n"
 
@@ -201,6 +214,18 @@ Tools 注册让模型可以安全调用外部能力来完成真实任务。
         self.assertIn("当前目标：面试准备", content)
         self.assertIn("问题：", content)
         self.assertIn("考察点：", content)
+
+    def test_heuristic_inline_quiz_uses_single_question_format(self) -> None:
+        content = HeuristicTutorIntelligence().answer_knowledge_question(
+            question="请基于这段原文出一道单点自测题。原文：分组由首部 header 和数据段组成。分组又称为包，首部可称为包头。",
+            task_type="inline_quiz",
+            goal="interview",
+            context="分组由首部 header 和数据段组成。分组又称为包，首部可称为包头。",
+        )
+
+        self.assertIn("自测题：", content)
+        self.assertIn("参考答案：", content)
+        self.assertNotIn("还有什么", content)
 
 
 if __name__ == "__main__":

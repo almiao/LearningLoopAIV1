@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -91,6 +91,8 @@ function validateUserShape(user, expectedId = "") {
 }
 
 export function createUserProfileStore({ usersDir = defaultUsersDir } = {}) {
+  const writeQueues = new Map();
+
   async function ensureDir() {
     await mkdir(usersDir, { recursive: true });
   }
@@ -98,6 +100,34 @@ export function createUserProfileStore({ usersDir = defaultUsersDir } = {}) {
   function getUserPath(userId) {
     assertSafeUserId(userId);
     return path.join(usersDir, `${userId}.json`);
+  }
+
+  async function writeUserAtomically(user) {
+    const userPath = getUserPath(user.id);
+    const tempPath = `${userPath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+    try {
+      await writeFile(tempPath, `${JSON.stringify(user, null, 2)}\n`, "utf8");
+      await rename(tempPath, userPath);
+    } catch (error) {
+      await rm(tempPath, { force: true }).catch(() => {});
+      throw error;
+    }
+  }
+
+  async function enqueueUserWrite(user) {
+    const userId = user.id;
+    const previous = writeQueues.get(userId) || Promise.resolve();
+    const next = previous
+      .catch(() => {})
+      .then(() => writeUserAtomically(user));
+    writeQueues.set(userId, next);
+    try {
+      await next;
+    } finally {
+      if (writeQueues.get(userId) === next) {
+        writeQueues.delete(userId);
+      }
+    }
   }
 
   async function listUsers() {
@@ -157,7 +187,7 @@ export function createUserProfileStore({ usersDir = defaultUsersDir } = {}) {
     async save(user) {
       validateUserShape(user, user.id);
       await ensureDir();
-      await writeFile(getUserPath(user.id), `${JSON.stringify(user, null, 2)}\n`, "utf8");
+      await enqueueUserWrite(user);
     }
   };
 }

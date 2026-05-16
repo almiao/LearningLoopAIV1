@@ -55,6 +55,7 @@ const testFiles = [
   "tests/integration/ai-service/automated-eval-module.test.js",
   "tests/integration/user/profile-flow.test.js",
   "tests/integration/interview-assist/flow.test.js",
+  "tests/unit/knowledge/legacy-material-migrator.test.js",
   "tests/unit/split-entrypoints.test.js",
   "tests/unit/interview-assist-contract.test.js",
   "tests/unit/superapp/reminder-candidate.test.js",

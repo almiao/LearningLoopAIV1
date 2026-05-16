@@ -120,6 +120,12 @@ function mergeReadingEntry(target = {}, source = {}) {
 }
 
 function buildLearningStatusLabel(entry = {}) {
+  if (entry.trainingSkipped) {
+    return "已跳过";
+  }
+  if (entry.trainingCompleted) {
+    return "训练完成";
+  }
   if (entry.trainingAvailability === "unavailable") {
     return "仅阅读";
   }
@@ -157,6 +163,13 @@ function buildTrainingCheckpointProgressLabel(readingEntry = {}) {
   return `${currentIndex + 1}/${checkpoints.length}`;
 }
 
+function isCompletedTrainingSessionSnapshot(session = {}) {
+  const hasOpenProbe = Boolean(String(session?.currentProbe || "").trim());
+  const hasCompletionTurn = Array.isArray(session?.turns)
+    && session.turns.some((turn) => turn?.role === "tutor" && turn?.kind === "feedback" && turn?.action === "complete");
+  return Boolean(session?.sessionId && !hasOpenProbe && hasCompletionTurn);
+}
+
 function buildRecentDocumentHistory(documentEntries = {}, currentDocPath = "") {
   return Object.values(documentEntries)
     .filter((entry) => entry.documentActivityAt)
@@ -187,6 +200,8 @@ export function applyDocumentReadingEvent(documents = {}, {
   docTitle = "",
   scrollRatio,
   dwellMs,
+  readingPreview = "",
+  readingChapter = "",
   timestamp = new Date().toISOString(),
 } = {}) {
   const normalizedDocPath = normalizeReadingDocPath(docPath);
@@ -206,6 +221,8 @@ export function applyDocumentReadingEvent(documents = {}, {
       docTitle,
       scrollRatio,
       dwellMs,
+      readingPreview,
+      readingChapter,
       timestamp,
     }),
     lastActivityAt: timestamp,
@@ -322,7 +339,45 @@ export function applyDocumentTrainingSession(documents = {}, {
     decompositionSnapshot: decompositionSnapshot || previousEntry.decompositionSnapshot || null,
     currentTrainingPointId: currentTrainingPointId || previousEntry.currentTrainingPointId || "",
     currentCheckpointId: currentCheckpointId || previousEntry.currentCheckpointId || "",
+    trainingCompletedAt: isCompletedTrainingSessionSnapshot(sessionSnapshot)
+      ? previousEntry.trainingCompletedAt || timestamp
+      : previousEntry.trainingCompletedAt || "",
+    trainingSkippedAt: "",
     sessionUpdatedAt: timestamp,
+    lastActivityAt: timestamp,
+  };
+
+  return {
+    ...state,
+    currentDocPath: normalizedDocPath,
+    currentDocTitle: docTitle || nextEntry.docTitle || state.currentDocTitle || "",
+    lastUpdatedAt: timestamp,
+    docs: {
+      ...state.docs,
+      [normalizedDocPath]: nextEntry,
+    },
+  };
+}
+
+export function applyDocumentTrainingSkipped(documents = {}, {
+  docPath = "",
+  docTitle = "",
+  timestamp = new Date().toISOString(),
+} = {}) {
+  const normalizedDocPath = normalizeReadingDocPath(docPath);
+  if (!normalizedDocPath) {
+    return documents;
+  }
+
+  const state = ensureDocumentsState(documents);
+  const previousEntry = ensureDocumentEntry(state.docs[normalizedDocPath] || {}, {
+    docPath: normalizedDocPath,
+    docTitle,
+  });
+  const nextEntry = {
+    ...previousEntry,
+    trainingSkippedAt: timestamp,
+    trainingUnavailableReason: "",
     lastActivityAt: timestamp,
   };
 
@@ -409,6 +464,28 @@ export function applyDocumentIgnored(documents = {}, {
       ...state.ignoredDocs,
       [normalizedDocPath]: nextIgnoredEntry,
     },
+  };
+}
+
+export function applyDocumentUnignored(documents = {}, {
+  docPath = "",
+  timestamp = new Date().toISOString(),
+} = {}) {
+  const normalizedDocPath = normalizeReadingDocPath(docPath);
+  if (!normalizedDocPath) {
+    return documents;
+  }
+
+  const state = ensureDocumentsState(documents);
+  const {
+    [normalizedDocPath]: _removedIgnoredDocument,
+    ...remainingIgnoredDocs
+  } = state.ignoredDocs;
+
+  return {
+    ...state,
+    lastUpdatedAt: timestamp,
+    ignoredDocs: remainingIgnoredDocs,
   };
 }
 
@@ -509,6 +586,11 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
           || Number(readingEntry.trainingAnswerCount || 0) > 0
           || Number(memoryEntry.assessedConceptCount || 0) > 0
         );
+        const trainingCompleted = Boolean(
+          readingEntry.trainingCompletedAt
+          || isCompletedTrainingSessionSnapshot(readingEntry.activeSessionSnapshot)
+        );
+        const trainingSkipped = Boolean(readingEntry.trainingSkippedAt);
         const masteryLabel = buildMasteryLabel(masteryPercentage, {
           hasEvidence: Number(memoryEntry.assessedConceptCount || 0) > 0,
           hasReading: progressPercentage > 0,
@@ -527,8 +609,14 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
           progressPercentage,
           readingStatus: readingEntry.status || (progressPercentage > 0 ? "opened" : "unread"),
           readingLabel: progressLabel(progressPercentage),
+          readingPreview: readingEntry.readingPreview || "",
+          readingChapter: readingEntry.readingChapter || "",
           completedReadCount: Number(readingEntry.completedReadCount || 0),
           trainingStarted,
+          trainingCompleted,
+          trainingCompletedAt: readingEntry.trainingCompletedAt || "",
+          trainingSkipped,
+          trainingSkippedAt: readingEntry.trainingSkippedAt || "",
           trainingStartedAt: readingEntry.trainingStartedAt || "",
           trainingSessionCount: Number(readingEntry.trainingSessionCount || 0),
           trainingAnswerCount: Number(readingEntry.trainingAnswerCount || 0),
@@ -564,6 +652,10 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
     stats: {
       startedReadingCount: docList.filter((item) => item.progressPercentage > 0).length,
       completedReadingCount: docList.filter((item) => item.progressPercentage >= 100).length,
+      completedDocumentCount: docList.filter((item) => (
+        item.progressPercentage >= 100
+        && (item.trainingCompleted || item.trainingSkipped || item.trainingAvailability === "unavailable")
+      )).length,
       startedTrainingCount: docList.filter((item) => item.trainingStarted).length,
       assessedTrainingCount: docList.filter((item) => item.assessedConceptCount > 0).length,
     },

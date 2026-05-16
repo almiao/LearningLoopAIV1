@@ -1,6 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { buildSelfSourceRef } from "./source-refs.js";
+import { buildLearningFromMarkdown, buildRenderDescriptor } from "./source-document-format.js";
+
 const defaultKnowledgeRoot = process.env.LLAI_KNOWLEDGE_BASE_ROOT || path.resolve(process.cwd(), "data/javaguide");
 const knowledgeRoot = path.resolve(defaultKnowledgeRoot);
 const docsRoot = path.join(knowledgeRoot, "docs");
@@ -23,7 +26,7 @@ function normalizeSlashes(value = "") {
   return String(value || "").replace(/\\/g, "/");
 }
 
-function ensureDocsRelativePath(inputPath = "") {
+export function ensureBuiltInDocumentRelativePath(inputPath = "") {
   const raw = normalizeSlashes(inputPath).trim().replace(/^\/+/, "");
   const withoutDocsPrefix = raw.startsWith("docs/") ? raw.slice("docs/".length) : raw;
   const normalized = path.posix.normalize(withoutDocsPrefix || ".");
@@ -32,33 +35,38 @@ function ensureDocsRelativePath(inputPath = "") {
     return "README.md";
   }
   if (normalized === ".." || normalized.startsWith("../")) {
-    throw new Error("Knowledge path is outside docs root.");
+    throw new Error("Source document path is outside built-in corpus root.");
   }
   return normalized;
 }
 
-function normalizeDocPath(inputPath = "") {
-  return `docs/${ensureDocsRelativePath(inputPath)}`;
+export function normalizeBuiltInDocumentPath(inputPath = "") {
+  return `docs/${ensureBuiltInDocumentRelativePath(inputPath)}`;
 }
 
 function buildSafePath(root, relativePath) {
   const absolutePath = path.resolve(root, relativePath);
   if (absolutePath !== root && !absolutePath.startsWith(`${root}${path.sep}`)) {
-    throw new Error("Knowledge path is outside root.");
+    throw new Error("Source document path is outside root.");
   }
   return absolutePath;
 }
 
-export async function readKnowledgeManifest() {
+export async function readBuiltInManifest() {
   if (!manifestCache) {
     manifestCache = JSON.parse(await readFile(manifestPath, "utf8"));
   }
   return manifestCache;
 }
 
-export async function listKnowledgeDocuments() {
-  const manifest = await readKnowledgeManifest();
-  return manifest.docs || [];
+export async function listBuiltInDocuments() {
+  const manifest = await readBuiltInManifest();
+  return (manifest.docs || []).map((document) => ({
+    ...document,
+    sourceType: "built-in-document",
+    provider: "built-in-corpus",
+    providerLabel: "JavaGuide",
+  }));
 }
 
 function splitHash(target = "") {
@@ -89,7 +97,7 @@ function isExternalUrl(target = "") {
 }
 
 function resolveRelativePath(currentDocPath, targetPath, { treatAsMarkdown = true } = {}) {
-  const currentRelative = ensureDocsRelativePath(currentDocPath);
+  const currentRelative = ensureBuiltInDocumentRelativePath(currentDocPath);
   const currentDirectory = path.posix.dirname(currentRelative);
   const sourceTarget = normalizeSlashes(targetPath).replace(/^\/+/, "");
   let resolved = sourceTarget.startsWith("docs/")
@@ -100,7 +108,7 @@ function resolveRelativePath(currentDocPath, targetPath, { treatAsMarkdown = tru
     resolved = currentRelative;
   }
   if (resolved === ".." || resolved.startsWith("../")) {
-    throw new Error("Resolved knowledge path is outside docs root.");
+    throw new Error("Resolved source path is outside built-in corpus root.");
   }
   if (treatAsMarkdown) {
     if (resolved.endsWith("/")) {
@@ -152,11 +160,11 @@ function splitFenceSegments(markdown = "") {
 }
 
 function rewriteMarkdownSegment(segment, currentDocPath, serviceBaseUrl) {
-  const rewrittenImages = segment.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, rawTarget) => (
+  const rewrittenImages = segment.replace(/!\[([^\]]*)]\(([^)]+)\)/g, (_, alt, rawTarget) => (
     `![${alt}](${rewriteImageTarget(rawTarget, currentDocPath, serviceBaseUrl)})`
   ));
 
-  return rewrittenImages.replace(/(^|[^!])\[([^\]]+)\]\(([^)]+)\)/gm, (_, prefix, label, rawTarget) => (
+  return rewrittenImages.replace(/(^|[^!])\[([^\]]+)]\(([^)]+)\)/gm, (_, prefix, label, rawTarget) => (
     `${prefix}[${label}](${rewriteLinkTarget(rawTarget, currentDocPath, serviceBaseUrl)})`
   ));
 }
@@ -175,27 +183,71 @@ export function getAssetMimeType(assetPath = "") {
   return assetMimeTypes[path.extname(String(assetPath || "").toLowerCase())] || "application/octet-stream";
 }
 
-export async function readJavaGuideDocument(docPath, { serviceBaseUrl = "" } = {}) {
-  const normalizedDocPath = normalizeDocPath(docPath);
-  const manifest = await readKnowledgeManifest();
+export async function readBuiltInDocument(docPath, { serviceBaseUrl = "" } = {}) {
+  const normalizedDocPath = normalizeBuiltInDocumentPath(docPath);
+  const manifest = await readBuiltInManifest();
   const metadata = (manifest.docs || []).find((doc) => doc.path === normalizedDocPath);
   if (!metadata) {
-    throw new Error("Knowledge document not found.");
+    throw new Error("Source document not found.");
   }
 
-  const relativePath = ensureDocsRelativePath(normalizedDocPath);
+  const relativePath = ensureBuiltInDocumentRelativePath(normalizedDocPath);
   const rawMarkdown = await readFile(buildSafePath(docsRoot, relativePath), "utf8");
-
-  return {
+  const markdown = serviceBaseUrl
+    ? rewriteMarkdownLinks(rawMarkdown, normalizedDocPath, serviceBaseUrl)
+    : rawMarkdown;
+  const learningBase = buildLearningFromMarkdown(rawMarkdown, { fallbackTitle: metadata.title });
+  const document = {
     ...metadata,
-    markdown: serviceBaseUrl
-      ? rewriteMarkdownLinks(rawMarkdown, normalizedDocPath, serviceBaseUrl)
-      : rawMarkdown,
+    sourceType: "built-in-document",
+    provider: "built-in-corpus",
+    providerLabel: "JavaGuide",
+    primaryFormat: "markdown",
+    markdown,
+    source: {
+      kind: "built-in-document",
+      mimeType: "text/markdown",
+      filename: path.posix.basename(normalizedDocPath),
+      url: "",
+      storedAssetPath: normalizedDocPath,
+      snapshotAvailable: true,
+      snapshotCapturedAt: "",
+      byteSize: Buffer.byteLength(rawMarkdown, "utf8"),
+    },
+    render: {
+      ...buildRenderDescriptor({
+        format: "markdown",
+        hasOriginalPreview: false,
+        hasLearningPreview: true,
+      }),
+      viewUrl: "",
+      fallbackUrl: "",
+    },
+    learning: {
+      ...learningBase,
+      markdown,
+      chunkCount: learningBase.text
+        ? learningBase.text.split(/\n{2,}/).map((item) => item.trim()).filter(Boolean).length
+        : 0,
+      sufficientForQa: learningBase.text.length >= 220,
+      sufficientForTraining: learningBase.text.length >= 220,
+      extractionStatus: "ready",
+      extractionNotes: "",
+    },
+    originalSource: {
+      kind: "built-in-document",
+      previewable: false,
+    },
+  };
+  const selfRef = buildSelfSourceRef(document);
+  return {
+    ...document,
+    sourceRefs: selfRef ? [selfRef] : [],
   };
 }
 
-export async function readJavaGuideAsset(assetPath) {
-  const relativePath = ensureDocsRelativePath(assetPath);
+export async function readBuiltInAsset(assetPath) {
+  const relativePath = ensureBuiltInDocumentRelativePath(assetPath);
   const absolutePath = buildSafePath(assetsRoot, relativePath);
   return {
     absolutePath,

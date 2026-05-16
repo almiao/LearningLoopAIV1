@@ -1,5 +1,6 @@
 import { getBaselinePackById } from "../baseline/baseline-packs.js";
-import { getJavaGuideDocumentOrder } from "../knowledge/java-guide-order.js";
+import { getBuiltInDocumentOrder } from "../knowledge/built-in-document-order.js";
+import { getSourceRefs } from "../knowledge/source-refs.js";
 
 function normalizeSource(source) {
   if (!source) {
@@ -28,7 +29,7 @@ export function buildReadingDomainsForTarget(targetBaselineId = "") {
     const uniqueDocs = new Map();
 
     for (const item of domain.items || []) {
-      for (const rawSource of item.javaGuideSources || []) {
+      for (const rawSource of getSourceRefs(item)) {
         const source = normalizeSource(rawSource);
         if (!source?.path) {
           continue;
@@ -44,8 +45,8 @@ export function buildReadingDomainsForTarget(targetBaselineId = "") {
 
     const docs = [...uniqueDocs.values()]
       .sort((left, right) => {
-        const leftOrder = getJavaGuideDocumentOrder(left.path);
-        const rightOrder = getJavaGuideDocumentOrder(right.path);
+        const leftOrder = getBuiltInDocumentOrder(left.path);
+        const rightOrder = getBuiltInDocumentOrder(right.path);
         if (leftOrder !== rightOrder) {
           return leftOrder - rightOrder;
         }

@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "../../");
-const defaultJavaGuideRoot = process.env.LLAI_JAVAGUIDE_ROOT || "/Users/lee/IdeaProjects/JavaGuide";
-const sourceDocsRoot = path.resolve(defaultJavaGuideRoot, "docs");
+const defaultBuiltInCorpusRoot = process.env.LLAI_BUILTIN_CORPUS_ROOT
+  || process.env.LLAI_JAVAGUIDE_ROOT
+  || "/Users/lee/IdeaProjects/JavaGuide";
+const sourceDocsRoot = path.resolve(defaultBuiltInCorpusRoot, "docs");
 const generatedManifestPath = path.resolve(repoRoot, "data/javaguide/manifest.json");
 const skipDirectoryNames = new Set([".git", ".vuepress", "node_modules", "snippets"]);
 
@@ -43,7 +45,7 @@ function walkDocsDirectory(root, current = "", acc = []) {
       walkDocsDirectory(root, relativePath, acc);
       continue;
     }
-    if (entry.isFile() && path.extname(entry.name).toLowerCase() === ".md") {
+    if (entry.isFile() && path.extname(absolutePath).toLowerCase() === ".md") {
       acc.push(normalizeDocPath(relativePath));
     }
   }
@@ -72,14 +74,14 @@ function buildOrderMap() {
   return new Map(orderedDocs.map((docPath, index) => [docPath, index]));
 }
 
-export function getJavaGuideDocumentOrder(docPath = "") {
+export function getBuiltInDocumentOrder(docPath = "") {
   if (!orderCache) {
     orderCache = buildOrderMap();
   }
   return orderCache.get(normalizeDocPath(docPath)) ?? Number.MAX_SAFE_INTEGER;
 }
 
-export function getJavaGuideDocumentOrderMap() {
+export function getBuiltInDocumentOrderMap() {
   if (!orderCache) {
     orderCache = buildOrderMap();
   }

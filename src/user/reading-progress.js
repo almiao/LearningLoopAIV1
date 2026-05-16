@@ -1,9 +1,15 @@
 import { findReadingDomainForDoc } from "./reading-roadmap.js";
 
 export function normalizeReadingDocPath(docPath = "") {
-  const normalized = String(docPath || "").trim().replace(/^\/+/, "");
+  const normalized = decodeURIComponent(String(docPath || "").trim()).replace(/^\/+/, "");
   if (!normalized) {
     return "";
+  }
+  if (normalized.includes("..") || normalized.startsWith("/")) {
+    throw new Error("Reading document path is invalid.");
+  }
+  if (normalized.startsWith("materials/")) {
+    return normalized;
   }
   return normalized.startsWith("docs/") ? normalized : `docs/${normalized}`;
 }
@@ -54,6 +60,8 @@ export function buildDocumentProgress(previousDocument = {}, {
   docTitle = "",
   scrollRatio,
   dwellMs,
+  readingPreview = "",
+  readingChapter = "",
   timestamp,
 } = {}) {
   if (!docPath) {
@@ -72,7 +80,7 @@ export function buildDocumentProgress(previousDocument = {}, {
   );
   const previousProgress = Number(previousDocument.progressPercentage || 0);
   const scrollProgress = maxScrollRatio > 0 ? Math.round(maxScrollRatio * 100) : 0;
-  const isComplete = maxScrollRatio >= 0.9 && maxDwellMs >= 45_000;
+  const isComplete = maxScrollRatio >= 0.9;
   const measuredProgress = isComplete ? 100 : Math.min(90, scrollProgress);
   const progressPercentage = clamp(Math.max(previousProgress, 10, measuredProgress), 0, 100);
   const previousCompletedAt = previousDocument.completedAt || "";
@@ -101,6 +109,8 @@ export function buildDocumentProgress(previousDocument = {}, {
     lastReadAt: timestamp,
     completedAt: progressPercentage >= 100 ? previousDocument.completedAt || timestamp : previousDocument.completedAt || "",
     completedReadCount,
+    readingPreview: String(readingPreview || previousDocument.readingPreview || "").trim().slice(0, 160),
+    readingChapter: String(readingChapter || previousDocument.readingChapter || "").trim().slice(0, 120),
   };
 }
 
@@ -124,6 +134,8 @@ export function applyReadingProgress(targetRecord = {}, {
   docTitle = "",
   scrollRatio,
   dwellMs,
+  readingPreview = "",
+  readingChapter = "",
   timestamp = new Date().toISOString(),
 } = {}) {
   if (!targetBaselineId) {
@@ -149,6 +161,8 @@ export function applyReadingProgress(targetRecord = {}, {
     docTitle: resolved.docTitle,
     scrollRatio,
     dwellMs,
+    readingPreview,
+    readingChapter,
     timestamp,
   });
 

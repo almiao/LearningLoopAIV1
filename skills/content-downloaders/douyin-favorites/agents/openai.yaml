@@ -1,0 +1,4 @@
+interface:
+  display_name: "Douyin Favorites"
+  short_description: "Open and archive Douyin favorites into Markdown"
+  default_prompt: "Use $douyin-favorites to open my latest Douyin favorite in the desktop app and turn it into a Markdown record."

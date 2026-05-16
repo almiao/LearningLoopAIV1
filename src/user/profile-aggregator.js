@@ -1,5 +1,6 @@
 import { createBaselinePackDecomposition, getBaselinePackById } from "../baseline/baseline-packs.js";
-import { getJavaGuideDocumentOrder } from "../knowledge/java-guide-order.js";
+import { getBuiltInDocumentOrder } from "../knowledge/built-in-document-order.js";
+import { getSourceRefs } from "../knowledge/source-refs.js";
 import {
   buildMasteryLabel,
   buildTargetLabel,
@@ -48,7 +49,7 @@ function buildDocumentMasteryMap(itemViews = []) {
   const masteryMap = new Map();
 
   for (const item of itemViews) {
-    for (const source of item.javaGuideSources || []) {
+    for (const source of item.sourceRefs || []) {
       if (!source.path) {
         continue;
       }
@@ -98,7 +99,7 @@ function summarizeState(item = {}) {
   return "partial";
 }
 
-function normalizeGuideSources(sources = []) {
+function normalizeSources(sources = []) {
   return (sources || []).map((source) => (
     typeof source === "string"
       ? { path: source, title: "" }
@@ -110,8 +111,8 @@ function normalizeGuideSources(sources = []) {
 }
 
 function getConceptOrder(concept, fallbackOrder = Number.MAX_SAFE_INTEGER) {
-  const orders = normalizeGuideSources(concept.javaGuideSources)
-    .map((source) => getJavaGuideDocumentOrder(source.path))
+  const orders = normalizeSources(getSourceRefs(concept))
+    .map((source) => getBuiltInDocumentOrder(source.path))
     .filter((value) => Number.isFinite(value) && value < Number.MAX_SAFE_INTEGER);
   return orders.length ? Math.min(...orders) : fallbackOrder;
 }
@@ -119,7 +120,7 @@ function getConceptOrder(concept, fallbackOrder = Number.MAX_SAFE_INTEGER) {
 function buildAbilityItemView(point, memoryItem = null, readingProgress = null) {
   const evidenceCount = memoryItem?.evidenceCount || 0;
   const state = memoryItem?.state || "不可判";
-  const sources = normalizeGuideSources(point.javaGuideSources);
+  const sources = normalizeSources(getSourceRefs(point));
   const primarySource = sources[0] || null;
   const hasReadingProgress = Boolean(readingProgress && Number(readingProgress.progressPercentage || 0) > 0);
   const masteryScore = calculateMasteryScore({
@@ -141,7 +142,7 @@ function buildAbilityItemView(point, memoryItem = null, readingProgress = null) 
     derivedPrinciple: memoryItem?.derivedPrinciple || "",
     primaryDocPath: primarySource?.path || "",
     primaryDocTitle: primarySource?.title || "",
-    javaGuideSources: sources,
+    sourceRefs: sources,
     sourceOrder: getConceptOrder(point, point.order || 0),
   };
 }
@@ -200,7 +201,7 @@ function buildTargetView(targetRecord, memoryProfile) {
   const readingProgress = targetRecord.readingProgress || {};
   const readingDocMap = readingProgress.docs || {};
   const itemViews = trainingPoints.map((point) => {
-    const primaryDocPath = normalizeGuideSources(point.javaGuideSources)[0]?.path || "";
+    const primaryDocPath = normalizeSources(getSourceRefs(point))[0]?.path || "";
     return buildAbilityItemView(
       point,
       aggregatePointMemory(point, memoryProfile),

@@ -1,3 +1,5 @@
+import { getSourceRefs } from "../knowledge/source-refs.js";
+
 function normalizeSources(sources = []) {
   return (sources || []).map((source) => (
     typeof source === "string"
@@ -48,7 +50,7 @@ export function buildTrainingPointsFromDecomposition(decomposition = {}) {
       importance: point.importance || "secondary",
       abilityDomainId: point.abilityDomainId || point.domainId || "general",
       abilityDomainTitle: point.abilityDomainTitle || point.domainTitle || "通用能力",
-      javaGuideSources: normalizeSources(point.javaGuideSources),
+      sourceRefs: normalizeSources(getSourceRefs(point)),
       remediationMaterials: point.remediationMaterials || [],
       remediationHint: point.remediationHint || "",
       order: point.order || pointIndex + 1,
@@ -73,7 +75,7 @@ export function buildTrainingPointsFromDecomposition(decomposition = {}) {
     importance: concept.importance || "secondary",
     abilityDomainId: concept.abilityDomainId || concept.domainId || "general",
     abilityDomainTitle: concept.abilityDomainTitle || concept.domainTitle || "通用能力",
-    javaGuideSources: normalizeSources(concept.javaGuideSources),
+    sourceRefs: normalizeSources(getSourceRefs(concept)),
     remediationMaterials: concept.remediationMaterials || [],
     remediationHint: concept.remediationHint || "",
     order: concept.order || index + 1,

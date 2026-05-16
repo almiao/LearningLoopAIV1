@@ -15,6 +15,7 @@ from app.engine.context_packet import build_context_packet
 from app.engine.session_engine import (
     answer_session,
     build_evaluation_message,
+    build_training_decomposition_intro,
     build_memory_summary_message,
     create_session,
     describe_next_step,
@@ -35,7 +36,7 @@ def make_concept() -> dict:
         "checkQuestion": "现在用你自己的话说一下：为什么有了 MVCC 还要关心当前读和锁？",
         "remediationHint": "先分清快照读和当前读，再说锁的边界。",
         "remediationMaterials": [],
-        "javaGuideSources": [],
+        "sourceRefs": [],
         "questionFamily": "concept",
     }
 
@@ -80,6 +81,63 @@ def make_multi_concept_session_payload() -> SimpleNamespace:
     return payload
 
 
+def make_multi_checkpoint_point_payload() -> SimpleNamespace:
+    payload = make_session_payload()
+    payload.decomposition = normalize_decomposition_payload(
+        {
+            "summary": {
+                "sourceTitle": "一致性哈希",
+                "keyThemes": ["取模哈希伸缩问题"],
+                "framing": "先确认普通哈希取模的伸缩性缺陷，再进入下一主线。",
+            },
+            "trainingPoints": [
+                {
+                    "id": "hash-modulo-scalability",
+                    "title": "普通哈希取模的伸缩性缺陷",
+                    "summary": "理解节点数变化时普通取模哈希会导致大规模数据迁移。",
+                    "importance": "core",
+                    "checkpoints": [
+                        {
+                            "id": "hash-modulo-ratio",
+                            "statement": "能说出迁移比例公式 (N-1)/N",
+                            "successCriteria": "能说出节点从 N 变成 N-1 时迁移比例约为 (N-1)/N。",
+                            "diagnosticQuestion": "节点从 N 变成 N-1 后，需要迁移的数据比例是多少？",
+                        },
+                        {
+                            "id": "hash-modulo-why",
+                            "statement": "能解释为什么取模哈希无法容忍节点动态变化",
+                            "successCriteria": "能说明重新 hash 后映射关系整体错乱。",
+                            "diagnosticQuestion": "重新计算所有 key 的 hash 值能避免数据错乱吗？为什么？",
+                        },
+                        {
+                            "id": "hash-modulo-cost",
+                            "statement": "能说明大规模迁移带来的成本",
+                            "successCriteria": "能说明迁移会带来网络、缓存和可用性压力。",
+                            "diagnosticQuestion": "大规模迁移会带来哪些系统成本？",
+                        },
+                    ],
+                },
+                {
+                    "id": "consistent-hash-ring",
+                    "title": "一致性哈希环",
+                    "summary": "理解一致性哈希如何降低节点变化时的迁移范围。",
+                    "importance": "core",
+                    "checkpoints": [
+                        {
+                            "id": "consistent-hash-ring-basic",
+                            "statement": "能解释一致性哈希环的基本查找方式",
+                            "successCriteria": "能说明 key 沿环顺时针找到第一个节点。",
+                            "diagnosticQuestion": "一致性哈希环上 key 如何找到目标节点？",
+                        }
+                    ],
+                },
+            ],
+        },
+        payload.source,
+    )
+    return payload
+
+
 class TrainingMessageCopyTest(unittest.TestCase):
     def test_evaluation_message_uses_answer_score_copy_and_chinese_claim(self):
         message = build_evaluation_message(
@@ -97,6 +155,53 @@ class TrainingMessageCopyTest(unittest.TestCase):
         self.assertIn("已确认：你知道 LRU 会在容量达到上限后的写入路径上触发淘汰。", message)
         self.assertNotIn("系统把握", message)
         self.assertNotIn("证据：", message)
+        self.assertNotIn("怎么涨分：", message)
+        self.assertIn("下一步：", message)
+
+    def test_training_intro_frames_existing_plan_without_new_ui_contract(self):
+        intro = build_training_decomposition_intro(
+            [
+                {
+                    "id": "mvcc-boundary",
+                    "title": "MVCC 和当前读边界",
+                    "summary": "分清快照读和当前读。",
+                    "importance": "core",
+                    "checkpoints": [
+                        {"id": "mvcc-boundary-cp-1", "statement": "能解释 MVCC 管快照读"},
+                        {"id": "mvcc-boundary-cp-2", "statement": "能解释当前读还要看锁"},
+                    ],
+                },
+                {
+                    "id": "lock-boundary",
+                    "title": "锁边界",
+                    "summary": "理解 next-key lock 的边界。",
+                    "importance": "secondary",
+                    "checkpoints": [
+                        {"id": "lock-boundary-cp-1", "statement": "能解释锁范围"}
+                    ],
+                },
+            ],
+            {"id": "mvcc-boundary", "title": "MVCC 和当前读边界"},
+            {"framing": "围绕快照读和当前读边界来拆题。"},
+            memory_profile={
+                "abilityItems": {
+                    "mvcc-boundary-cp-1": {
+                        "state": "partial",
+                        "score": 72,
+                        "evidenceCount": 1,
+                    }
+                }
+            },
+            target_title="Java Backend",
+        )
+
+        self.assertIn("先看主线", intro)
+        self.assertIn("为什么练：面向 Java Backend", intro)
+        self.assertIn("预计题量：约 3 个子项", intro)
+        self.assertIn("当前掌握：已有 1 个子项有历史评分", intro)
+        self.assertIn("重要程度：高优先级 1 个，常规优先级 1 个", intro)
+        self.assertNotIn("练完预计", intro)
+        self.assertNotIn("提升", intro)
 
     def test_evaluation_message_does_not_surface_internal_evidence_insufficient_state(self):
         message = build_evaluation_message(
@@ -189,6 +294,24 @@ class FakeTeachIntelligence:
 
     def explain_concept(self, *args, **kwargs):
         raise AssertionError("teach control should use generate_turn_envelope, not explain_concept")
+
+
+class FakeTeachStopIntelligence(FakeTeachIntelligence):
+    def generate_turn_envelope(self, *, concept, context_packet, answer, forced_action=None):
+        envelope = super().generate_turn_envelope(
+            concept=concept,
+            context_packet=context_packet,
+            answer=answer,
+            forced_action=forced_action,
+        )
+        envelope["next_move"] = {
+            **envelope["next_move"],
+            "intent": "解析后直接收口本轮训练。",
+            "reason": "当前训练范围已经讲解完毕。",
+            "ui_mode": "stop",
+            "follow_up_question": "",
+        }
+        return envelope
 
 
 class FakeQuestionIntelligence:
@@ -344,6 +467,36 @@ class TutorFlowTests(unittest.TestCase):
         self.assertNotIn("current_gap", packet["anchor_state"])
         self.assertNotIn("last_teaching_point", packet["anchor_state"])
 
+    def test_context_packet_preserves_structured_source_refs_in_raw_evidence(self):
+        session = create_session(make_session_payload())
+        concept = {
+            **session["concepts"][0],
+            "sourceRefs": [
+                {
+                    "path": "materials/redis-design-second-edition",
+                    "title": "Redis 设计与实现（第二版）",
+                    "sourceType": "uploaded-file",
+                    "provider": "user-material",
+                    "originalFilename": "redis-design-second-edition.pdf",
+                    "originalMimeType": "application/pdf",
+                }
+            ],
+        }
+
+        packet = build_context_packet(
+            session=session,
+            concept=concept,
+            answer="Redis 字典扩容会渐进式 rehash。",
+            prior_evidence=[],
+        )
+
+        raw_source_refs = packet["draft_evidence"]["sourceRefs"]
+        self.assertIsInstance(raw_source_refs[0], dict)
+        self.assertEqual(raw_source_refs[0]["path"], "materials/redis-design-second-edition")
+        self.assertEqual(raw_source_refs[0]["sourceType"], "uploaded-file")
+        self.assertEqual(raw_source_refs[0]["provider"], "user-material")
+        self.assertEqual(raw_source_refs[0]["originalFilename"], "redis-design-second-edition.pdf")
+
     def test_prompt_builders_include_contract_priority_and_examples(self):
         concept = make_concept()
         context_packet = {
@@ -378,6 +531,8 @@ class TutorFlowTests(unittest.TestCase):
         self.assertIn("this diagnosis call only produces assessment facts", diagnosis_prompt)
         self.assertIn("A separate parallel reply/teach call writes the learner-facing explanation", diagnosis_prompt)
         self.assertIn("judgment_reason must not introduce new concepts", diagnosis_prompt)
+        self.assertIn("why the current numeric score is justified", diagnosis_prompt)
+        self.assertIn("one missing conceptual step", diagnosis_prompt)
         self.assertIn("teach the correct answer", diagnosis_prompt)
         self.assertIn("give next-step instructions", diagnosis_prompt)
         self.assertIn("CONFLICT RESOLUTION ORDER", envelope_prompt)
@@ -576,6 +731,60 @@ class TutorFlowTests(unittest.TestCase):
         self.assertEqual(first["currentQuestionMeta"]["trainingProgress"]["trainingPoint"]["currentIndex"], 2)
         self.assertEqual(first["currentQuestionMeta"]["trainingProgress"]["trainingPoint"]["total"], 2)
 
+    def test_same_training_point_only_uses_one_extra_checkpoint(self):
+        session = create_session(make_multi_checkpoint_point_payload())
+        payload = SimpleNamespace(
+            answer="节点变化后取模结果会整体变化。",
+            interactionPreference=None,
+            burdenSignal="normal",
+            intent="",
+        )
+
+        with patch("app.engine.session_engine.get_tutor_intelligence", return_value=FakeVerifyForeverIntelligence()):
+            first = answer_session(session, payload)
+
+        self.assertEqual(first["currentTrainingPointId"], "hash-modulo-scalability")
+        self.assertEqual(first["currentCheckpointId"], "hash-modulo-why")
+        self.assertEqual(session["trainingPointFollowupCounts"]["hash-modulo-scalability"], 1)
+
+        with patch("app.engine.session_engine.get_tutor_intelligence", return_value=FakeVerifyForeverIntelligence()):
+            second = answer_session(session, payload)
+
+        self.assertEqual(second["currentTrainingPointId"], "consistent-hash-ring")
+        self.assertEqual(second["currentCheckpointId"], "consistent-hash-ring-basic")
+        self.assertEqual(session["conceptStates"]["hash-modulo-cost"]["result"], "skipped_followup_budget")
+
+    def test_wrong_followup_consumes_training_point_followup_budget(self):
+        session = create_session(make_multi_checkpoint_point_payload())
+        wrong_payload = SimpleNamespace(
+            answer="只迁移 1/N。",
+            interactionPreference=None,
+            burdenSignal="normal",
+            intent="",
+        )
+        repair_payload = SimpleNamespace(
+            answer="不能，映射几乎整体乱了。",
+            interactionPreference=None,
+            burdenSignal="normal",
+            intent="",
+        )
+
+        with patch("app.engine.session_engine.get_tutor_intelligence", return_value=FakeWrongIntelligence()):
+            first = answer_session(session, wrong_payload)
+
+        self.assertEqual(first["currentTrainingPointId"], "hash-modulo-scalability")
+        self.assertEqual(first["currentCheckpointId"], "hash-modulo-ratio")
+        self.assertEqual(first["currentQuestionMeta"]["phase"], "follow-up")
+        self.assertEqual(session["trainingPointFollowupCounts"]["hash-modulo-scalability"], 1)
+
+        with patch("app.engine.session_engine.get_tutor_intelligence", return_value=FakeVerifyForeverIntelligence()):
+            second = answer_session(session, repair_payload)
+
+        self.assertEqual(second["currentTrainingPointId"], "consistent-hash-ring")
+        self.assertEqual(second["currentCheckpointId"], "consistent-hash-ring-basic")
+        self.assertEqual(session["conceptStates"]["hash-modulo-why"]["result"], "skipped_followup_budget")
+        self.assertEqual(session["conceptStates"]["hash-modulo-cost"]["result"], "skipped_followup_budget")
+
     def test_dynamic_question_generation_clears_previous_probe_on_checkpoint_switch(self):
         payload = make_multi_concept_session_payload()
         payload.decomposition = {
@@ -636,6 +845,29 @@ class TutorFlowTests(unittest.TestCase):
 
         self.assertEqual(first["currentProbe"], "")
         self.assertEqual(first["latestFeedback"]["turnResolution"]["mode"], "stop")
+
+    def test_teach_control_respects_stop_next_move_without_advancing(self):
+        session = create_session(make_multi_concept_session_payload())
+        payload = SimpleNamespace(
+            answer="查看解析",
+            interactionPreference=None,
+            burdenSignal="normal",
+            intent="teach",
+        )
+
+        with patch("app.engine.session_engine.get_tutor_intelligence", return_value=FakeTeachStopIntelligence()):
+            projected = answer_session(session, payload)
+
+        self.assertEqual(projected["currentTrainingPointId"], "mvcc-boundary")
+        self.assertEqual(projected["currentCheckpointId"], "mvcc-boundary-cp-1")
+        self.assertEqual(projected["currentProbe"], "")
+        self.assertIsNone(projected["currentQuestionMeta"])
+        self.assertEqual(projected["latestFeedback"]["turnResolution"]["mode"], "stop")
+        self.assertEqual(projected["latestFeedback"]["turnResolution"]["reason"], "next_move_requests_stop")
+        self.assertEqual(projected["turns"][-1]["kind"], "feedback")
+        self.assertEqual(projected["turns"][-1]["action"], "complete")
+        self.assertIn("本轮总结", projected["turns"][-1]["content"])
+        self.assertNotEqual(projected["currentTrainingPointId"], "next-anchor")
 
     def test_advance_control_emits_completion_summary_when_scope_ends(self):
         session = create_session(make_session_payload())

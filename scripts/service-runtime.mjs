@@ -28,6 +28,7 @@ export const localLivekitWsUrl = `ws://127.0.0.1:${localLivekitPort}`;
 export const localLivekitHttpUrl = `http://127.0.0.1:${localLivekitPort}`;
 export const localLivekitApiKey = "devkey";
 export const localLivekitApiSecret = "secret";
+const defaultPythonCliBinDir = "/Library/Frameworks/Python.framework/Versions/3.11/bin";
 
 function compareVersions(left, right) {
   const leftParts = String(left)
@@ -172,6 +173,22 @@ function withRuntimePath(env, nodeRuntime) {
   return {
     ...env,
     [key]: [nodeRuntime.binDir, existingPath].filter(Boolean).join(path.delimiter),
+  };
+}
+
+export function withLocalToolPath(env = process.env) {
+  if (isWindows) {
+    return env;
+  }
+  const key = "PATH";
+  const existingPath = env[key] || process.env[key] || "";
+  const pythonCliBinDir = env.PYTHON_CLI_BIN_DIR || defaultPythonCliBinDir;
+  if (!existsSync(pythonCliBinDir)) {
+    return env;
+  }
+  return {
+    ...env,
+    [key]: [pythonCliBinDir, existingPath].filter(Boolean).join(path.delimiter),
   };
 }
 

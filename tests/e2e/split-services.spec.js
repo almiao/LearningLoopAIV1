@@ -57,7 +57,7 @@ test("split BFF starts document-scoped training from the active document", async
     assert.doesNotMatch(session.currentProbe, /ReentrantLock|AQS|acquire\/release/i);
     assert.ok(
       (session.concepts || []).every((concept) =>
-        (concept.javaGuideSources || []).some((source) => source.path === "docs/ai/agent/agent-basis.md")
+        (concept.sourceRefs || []).some((source) => source.path === "docs/ai/agent/agent-basis.md")
       )
     );
   });

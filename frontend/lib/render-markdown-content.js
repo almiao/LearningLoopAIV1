@@ -70,6 +70,43 @@ function renderInlineMarkdown(text, keyPrefix) {
     });
 }
 
+function renderWhitelistedInlineMarkdown(text, keyPrefix) {
+  return String(text || "")
+    .replace(/!\[[^\]]*]\([^)]+\)/g, "")
+    .split(/(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|(?<!\*)\*[^*\n]+\*(?!\*))/g)
+    .filter(Boolean)
+    .map((part, index) => {
+      if (part.startsWith("[") && part.includes("](") && part.endsWith(")")) {
+        const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+        if (!linkMatch) {
+          return <span key={`${keyPrefix}-text-${index}`}>{part}</span>;
+        }
+        const href = parseMarkdownTarget(linkMatch[2]);
+        const isInternal = href.startsWith("/") || href.startsWith("#");
+        return (
+          <a
+            key={`${keyPrefix}-link-${index}`}
+            href={href}
+            rel={isInternal ? undefined : "noreferrer"}
+            target={isInternal ? undefined : "_blank"}
+          >
+            {linkMatch[1]}
+          </a>
+        );
+      }
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return <strong key={`${keyPrefix}-strong-${index}`}>{part.slice(2, -2)}</strong>;
+      }
+      if (part.startsWith("*") && part.endsWith("*")) {
+        return <em key={`${keyPrefix}-em-${index}`}>{part.slice(1, -1)}</em>;
+      }
+      if (part.startsWith("`") && part.endsWith("`")) {
+        return <code key={`${keyPrefix}-code-${index}`}>{part.slice(1, -1)}</code>;
+      }
+      return <span key={`${keyPrefix}-text-${index}`}>{part}</span>;
+    });
+}
+
 export function readHeading(line) {
   const match = String(line || "").trim().match(/^(#{1,6})\s+(.*)$/);
   if (!match) {
@@ -192,6 +229,44 @@ export function renderMarkdownContent(value, keyPrefix) {
       continue;
     }
 
+    if (index + 1 < lines.length && trimmedLine.includes("|") && isTableDivider(lines[index + 1])) {
+      const headerCells = parseTableCells(trimmedLine);
+      const bodyRows = [];
+      index += 2;
+      while (index < lines.length && String(lines[index] || "").trim().includes("|")) {
+        bodyRows.push(parseTableCells(lines[index]));
+        index += 1;
+      }
+      nodes.push(
+        <div key={`${keyPrefix}-table-${blockIndex}`} className="markdown-table-wrap">
+          <table className="markdown-table">
+            <thead>
+              <tr>
+                {headerCells.map((cell, cellIndex) => (
+                  <th key={`${keyPrefix}-table-${blockIndex}-head-${cellIndex}`}>
+                    {renderWhitelistedInlineMarkdown(cell, `${keyPrefix}-table-${blockIndex}-head-${cellIndex}`)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {bodyRows.map((row, rowIndex) => (
+                <tr key={`${keyPrefix}-table-${blockIndex}-row-${rowIndex}`}>
+                  {row.map((cell, cellIndex) => (
+                    <td key={`${keyPrefix}-table-${blockIndex}-cell-${rowIndex}-${cellIndex}`}>
+                      {renderWhitelistedInlineMarkdown(cell, `${keyPrefix}-table-${blockIndex}-cell-${rowIndex}-${cellIndex}`)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      blockIndex += 1;
+      continue;
+    }
+
     if (/^\d+\.\s+/.test(trimmedLine)) {
       const items = [];
       while (index < lines.length && /^\d+\.\s+/.test((lines[index] || "").trim())) {
@@ -282,6 +357,145 @@ export function renderMarkdownContent(value, keyPrefix) {
       nodes.push(
         <p key={`${keyPrefix}-p-${blockIndex}`}>
           {renderInlineMarkdown(paragraphLines.join(" "), `${keyPrefix}-p-${blockIndex}`)}
+        </p>
+      );
+      blockIndex += 1;
+    }
+  }
+
+  return nodes;
+}
+
+export function renderWhitelistedMarkdownContent(value, keyPrefix) {
+  const normalized = String(value || "").replace(/\r/g, "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const lines = normalized.split("\n");
+  const nodes = [];
+  let index = 0;
+  let blockIndex = 0;
+
+  while (index < lines.length) {
+    const rawLine = lines[index] || "";
+    const trimmedLine = rawLine.trim();
+
+    if (!trimmedLine || /^\[\^[^\]]+\]:/.test(trimmedLine)) {
+      index += 1;
+      continue;
+    }
+
+    if (/^(```|~~~)/.test(trimmedLine)) {
+      const fence = trimmedLine.slice(0, 3);
+      const language = trimmedLine.slice(3).trim();
+      const codeLines = [];
+      index += 1;
+      while (index < lines.length && !String(lines[index] || "").trim().startsWith(fence)) {
+        codeLines.push(lines[index] || "");
+        index += 1;
+      }
+      if (index < lines.length) {
+        index += 1;
+      }
+      nodes.push(
+        <pre key={`${keyPrefix}-code-${blockIndex}`} className="markdown-pre">
+          <code data-language={language || undefined}>{codeLines.join("\n")}</code>
+        </pre>
+      );
+      blockIndex += 1;
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(trimmedLine)) {
+      const items = [];
+      while (index < lines.length && /^\d+\.\s+/.test((lines[index] || "").trim())) {
+        items.push(lines[index].trim());
+        index += 1;
+      }
+      nodes.push(
+        <ol key={`${keyPrefix}-ol-${blockIndex}`}>
+          {items.map((line, lineIndex) => (
+            <li key={`${keyPrefix}-ol-${blockIndex}-${lineIndex}`}>
+              {renderWhitelistedInlineMarkdown(readOrderedItem(line), `${keyPrefix}-ol-${blockIndex}-${lineIndex}`)}
+            </li>
+          ))}
+        </ol>
+      );
+      blockIndex += 1;
+      continue;
+    }
+
+    if (/^\s*[-*]\s+/.test(rawLine)) {
+      const items = [];
+      while (index < lines.length && /^\s*[-*]\s+/.test(lines[index] || "")) {
+        items.push(lines[index]);
+        index += 1;
+      }
+      nodes.push(
+        <ul key={`${keyPrefix}-ul-${blockIndex}`}>
+          {items.map((line, lineIndex) => (
+            <li key={`${keyPrefix}-ul-${blockIndex}-${lineIndex}`}>
+              {renderWhitelistedInlineMarkdown(readBulletItem(line), `${keyPrefix}-ul-${blockIndex}-${lineIndex}`)}
+            </li>
+          ))}
+        </ul>
+      );
+      blockIndex += 1;
+      continue;
+    }
+
+    if (/^>/.test(trimmedLine)) {
+      const quoteLines = [];
+      while (index < lines.length && /^>/.test(String(lines[index] || "").trim())) {
+        quoteLines.push(String(lines[index] || "").trim().replace(/^>\s?/, ""));
+        index += 1;
+      }
+      nodes.push(
+        <blockquote key={`${keyPrefix}-quote-${blockIndex}`}>
+          {renderWhitelistedMarkdownContent(quoteLines.join("\n"), `${keyPrefix}-quote-${blockIndex}`)}
+        </blockquote>
+      );
+      blockIndex += 1;
+      continue;
+    }
+
+    if (/^---+$/.test(trimmedLine)) {
+      nodes.push(<hr key={`${keyPrefix}-hr-${blockIndex}`} />);
+      blockIndex += 1;
+      index += 1;
+      continue;
+    }
+
+    const paragraphLines = [];
+    while (index < lines.length) {
+      const currentLine = lines[index] || "";
+      const trimmedCurrentLine = currentLine.trim();
+      if (!trimmedCurrentLine) {
+        index += 1;
+        break;
+      }
+      if (
+        paragraphLines.length &&
+        (
+          /^(```|~~~)/.test(trimmedCurrentLine) ||
+          /^\d+\.\s+/.test(trimmedCurrentLine) ||
+          /^\s*[-*]\s+/.test(currentLine) ||
+          /^>/.test(trimmedCurrentLine) ||
+          /^---+$/.test(trimmedCurrentLine) ||
+          (trimmedCurrentLine.includes("|") && isTableDivider(lines[index + 1]))
+        )
+      ) {
+        break;
+      }
+      paragraphLines.push(trimmedCurrentLine.replace(/^#{1,6}\s+/, ""));
+      index += 1;
+    }
+
+    if (paragraphLines.length) {
+      nodes.push(
+        <p key={`${keyPrefix}-p-${blockIndex}`}>
+          {renderWhitelistedInlineMarkdown(paragraphLines.join(" "), `${keyPrefix}-p-${blockIndex}`)}
         </p>
       );
       blockIndex += 1;

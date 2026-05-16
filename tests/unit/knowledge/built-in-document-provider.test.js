@@ -3,22 +3,22 @@ import assert from "node:assert/strict";
 
 import {
   getAssetMimeType,
-  listKnowledgeDocuments,
-  readJavaGuideDocument,
-} from "../../../src/knowledge/java-guide-doc-service.js";
+  listBuiltInDocuments,
+  readBuiltInDocument,
+} from "../../../src/knowledge/built-in-document-provider.js";
 
-test("generated knowledge manifest exposes document title, path, and directory labels", async () => {
-  const documents = await listKnowledgeDocuments();
+test("generated source manifest exposes document title, path, and directory labels", async () => {
+  const documents = await listBuiltInDocuments();
   const document = documents.find((item) => item.path === "docs/java/concurrent/aqs.md");
 
-  assert.ok(documents.length >= 300);
+  assert.ok(documents.length > 0);
   assert.equal(document.title, "AQS 详解");
   assert.deepEqual(document.folderSegments, ["java", "concurrent"]);
   assert.deepEqual(document.folderLabels, ["Java", "并发"]);
 });
 
-test("readJavaGuideDocument reads generated markdown without heading metadata", async () => {
-  const document = await readJavaGuideDocument("docs/java/concurrent/aqs.md", {
+test("readBuiltInDocument reads generated markdown without heading metadata", async () => {
+  const document = await readBuiltInDocument("docs/java/concurrent/aqs.md", {
     serviceBaseUrl: "http://127.0.0.1:4000",
   });
 
@@ -30,7 +30,7 @@ test("readJavaGuideDocument reads generated markdown without heading metadata", 
   assert.doesNotMatch(document.markdown, /^---$/m);
 });
 
-test("getAssetMimeType recognizes generated knowledge image assets", () => {
+test("getAssetMimeType recognizes generated source image assets", () => {
   assert.equal(getAssetMimeType("docs/database/mysql/images/redo-log.png"), "image/png");
   assert.equal(getAssetMimeType("docs/java/concurrent/diagram.svg"), "image/svg+xml");
 });

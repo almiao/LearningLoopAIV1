@@ -1,7 +1,18 @@
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:4000";
+export const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:4000";
+
+export function buildApiUrl(pathname = "") {
+  const normalizedPath = String(pathname || "").trim();
+  if (!normalizedPath) {
+    return apiBaseUrl;
+  }
+  if (/^https?:\/\//i.test(normalizedPath)) {
+    return normalizedPath;
+  }
+  return `${apiBaseUrl}${normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`}`;
+}
 
 export async function apiFetch(pathname, options = {}) {
-  const response = await fetch(`${apiBaseUrl}${pathname}`, {
+  const response = await fetch(buildApiUrl(pathname), {
     ...options,
     headers: {
       "content-type": "application/json",
@@ -40,14 +51,15 @@ function parseSseEvent(rawEvent) {
   };
 }
 
-export async function postEventStream(pathname, payload, onEvent) {
-  const response = await fetch(`${apiBaseUrl}${pathname}`, {
+export async function postEventStream(pathname, payload, onEvent, options = {}) {
+  const response = await fetch(buildApiUrl(pathname), {
     method: "POST",
     headers: {
       "content-type": "application/json"
     },
     body: JSON.stringify(payload),
-    cache: "no-store"
+    cache: "no-store",
+    signal: options.signal,
   });
 
   if (!response.ok || !response.body) {
