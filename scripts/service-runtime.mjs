@@ -719,7 +719,7 @@ export function assertPortsAvailable(portEntries) {
     .join("; ");
 
   throw new Error(
-    `${details}. Stop the existing process or override FRONTEND_PORT/BFF_PORT/SUPERAPP_PORT/AI_PORT.`
+    `${details}. Stop the existing process or override FRONTEND_PORT/BFF_PORT/SUPERAPP_PORT/TTS_WORKER_PORT/AI_PORT.`
   );
 }
 
