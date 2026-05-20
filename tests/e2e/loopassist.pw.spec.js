@@ -68,6 +68,9 @@ test("LoopAssist remains voice-only when microphone setup fails", async ({ page 
   });
 
   await page.goto("/loopassist");
+  await expect(page.getByTestId("loopassist-shell")).not.toContainText("即时回答支架");
+  await expect(page.getByTestId("loopassist-shell")).not.toContainText("本轮节奏");
+  await page.getByTestId("loopassist-scope-toggle").click();
   await expect(page.getByTestId("loopassist-preview")).toContainText("AQS");
   await page.getByTestId("loopassist-start").click();
   await expect(page.getByTestId("loopassist-transcript")).toContainText("我们先聊 AQS");

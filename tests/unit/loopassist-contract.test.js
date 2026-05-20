@@ -31,10 +31,13 @@ test("LoopAssist interview room keeps side panel transcript-only", async () => {
   assert.match(source, /仅支持语音回答/);
   assert.match(source, /loopassist-start-answer/);
   assert.match(source, /loopassist-finish-answer/);
+  assert.match(source, /loopassist-scope-toggle/);
+  assert.match(source, /loopassist-scope-popover/);
   assert.match(source, /ttsStatus/);
   assert.match(source, /answerSegmentsRef/);
   assert.doesNotMatch(source, /submitVoiceAnswer\(finalText\)/);
   assert.doesNotMatch(source, /textarea|typedAnswer|manualFallback|文字兜底|输入你的回答/);
+  assert.doesNotMatch(source, /即时回答支架|本轮节奏|answerScaffold|prepGoals|loopassist-stage-list/);
   assert.match(transcriptAside, /Transcript/);
   assert.match(transcriptAside, /turn\.role === "interviewer"/);
   assert.doesNotMatch(transcriptAside, /seedId|source|scope|diagnostic|hint/i);

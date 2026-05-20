@@ -25,28 +25,6 @@ const defaultScope = {
   questionBudget: 8,
 };
 
-const prepGoals = [
-  "回答先给结论，再补背景和原理，别从定义背起。",
-  "每题至少带一个真实项目场景，不只停留在八股表述。",
-  "被追问时优先说明取舍、风险和代价，回答更像真实工作经验。",
-  "结束后沉淀 3 条可复述版本，方便下一轮快速复练。",
-];
-
-const answerScaffold = [
-  {
-    title: "先讲结论",
-    detail: "先给最终判断，告诉面试官你会怎么做，而不是先铺背景。",
-  },
-  {
-    title: "再讲场景",
-    detail: "把答案挂到订单、检索、并发或线上排查场景里，证明你不是死记硬背。",
-  },
-  {
-    title: "最后补取舍",
-    detail: "点出性能收益、实现成本和副作用，回答会更像真实一面。",
-  },
-];
-
 const waveHeights = [18, 28, 38, 24, 42, 30, 20, 36, 48, 32, 22, 34, 26, 40, 28, 18];
 
 function readStoredUserId() {
@@ -112,6 +90,7 @@ export function LoopAssistWorkspace() {
   const [lastInterviewerText, setLastInterviewerText] = useState("");
   const [ttsStatus, setTtsStatus] = useState("idle");
   const [ttsMessage, setTtsMessage] = useState("");
+  const [isScopeOpen, setIsScopeOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const roomRef = useRef(null);
   const audioRef = useRef(null);
@@ -222,25 +201,6 @@ export function LoopAssistWorkspace() {
             ? "准备进入"
             : "待开始";
 
-  const scopeCards = [
-    {
-      label: "岗位方向",
-      value: scope.role || "等待加载",
-    },
-    {
-      label: "目标轮次",
-      value: scope.round || "等待加载",
-    },
-    {
-      label: "公司风格",
-      value: scope.companyStyle || "未指定",
-    },
-    {
-      label: "题量预算",
-      value: `${questionBudget} 题，先广后深`,
-    },
-  ];
-
   const previewCards = preview?.sampleSeeds?.slice(0, 3) || [];
   const reviewPanels = review
     ? [
@@ -255,42 +215,6 @@ export function LoopAssistWorkspace() {
     : [
         { title: "这轮最该改什么", items: ["不要把定义背成百科词条，先回答业务为什么这样做，再补底层原理。"] },
         { title: "下一轮准备", items: ["准备一个亲自排查过的慢 SQL 或并发案例。", "把“为什么不是别的方案”练成固定三句。"] },
-      ];
-
-  const reviewMetrics = review
-    ? [
-        {
-          label: "准备度",
-          value: `${review.readinessScore ?? 0} / 100`,
-          width: `${Math.min(Math.max(review.readinessScore ?? 0, 0), 100)}%`,
-        },
-        {
-          label: "优势命中",
-          value: String((review.strengths || []).length),
-          width: `${Math.min(((review.strengths || []).length / 5) * 100, 100)}%`,
-        },
-        {
-          label: "薄弱项",
-          value: String((review.weaknesses || []).length),
-          width: `${Math.min(((review.weaknesses || []).length / 5) * 100, 100)}%`,
-        },
-      ]
-    : [
-        {
-          label: "当前进度",
-          value: `${formatCount(askedCount)} / ${formatCount(questionBudget)}`,
-          width: `${Math.min((askedCount / questionBudget) * 100, 100)}%`,
-        },
-        {
-          label: "收音状态",
-          value: currentStatusLabel,
-          width: answerState === "listening" ? "88%" : answerState === "connecting" ? "52%" : "28%",
-        },
-        {
-          label: "题源命中",
-          value: `${preview?.matchedCount || 0} 条`,
-          width: `${Math.min(((preview?.matchedCount || 0) / Math.max(options?.counts?.seeds || 12, 1)) * 100, 100)}%`,
-        },
       ];
 
   function updateScope(key, value) {
@@ -324,6 +248,7 @@ export function LoopAssistWorkspace() {
     setLastInterviewerText("");
     setTtsStatus("idle");
     setTtsMessage("");
+    setIsScopeOpen(false);
     answerSegmentsRef.current = [];
   }
 
@@ -331,6 +256,7 @@ export function LoopAssistWorkspace() {
     setError("");
     setVoiceIssue("");
     setReview(null);
+    setIsScopeOpen(false);
     setStatus("starting");
     try {
       const nextSession = await startLoopAssist({
@@ -572,8 +498,114 @@ export function LoopAssistWorkspace() {
             <span className="loopassist-status-dot" aria-hidden="true" />
             <span>{preview?.matchedCount || 0} 条真实面经已匹配</span>
           </div>
+          <div className="loopassist-scope-menu">
+            <button
+              type="button"
+              className="loopassist-secondary"
+              onClick={() => setIsScopeOpen((current) => !current)}
+              data-testid="loopassist-scope-toggle"
+            >
+              选题 / 本场设定
+            </button>
+            {isScopeOpen ? (
+              <section className="loopassist-scope-popover" data-testid="loopassist-scope-popover">
+                <div className="loopassist-card-head">
+                  <h2>本场设定</h2>
+                  <span>{currentStatusLabel}</span>
+                </div>
+                <div className="loopassist-config-grid">
+                  <label>
+                    岗位
+                    <select
+                      value={scope.role}
+                      onChange={(event) => updateScope("role", event.target.value)}
+                      data-testid="loopassist-role"
+                    >
+                      {(options?.roles || []).slice(0, 20).map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label} ({item.count})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    轮次
+                    <select
+                      value={scope.round}
+                      onChange={(event) => updateScope("round", event.target.value)}
+                      data-testid="loopassist-round"
+                    >
+                      {(options?.rounds || []).slice(0, 12).map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label} ({item.count})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    公司风格
+                    <select
+                      value={scope.companyStyle}
+                      onChange={(event) => updateScope("companyStyle", event.target.value)}
+                      data-testid="loopassist-company"
+                    >
+                      {(options?.companyStyles || []).slice(0, 20).map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label} ({item.count})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    面试风格
+                    <select
+                      value={scope.interviewStyle}
+                      onChange={(event) => updateScope("interviewStyle", event.target.value)}
+                      data-testid="loopassist-style"
+                    >
+                      {(options?.interviewStyles || []).map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    题量
+                    <input
+                      type="number"
+                      min="4"
+                      max="12"
+                      value={scope.questionBudget}
+                      onChange={(event) => updateScope("questionBudget", Number(event.target.value) || 8)}
+                      data-testid="loopassist-budget"
+                    />
+                  </label>
+                </div>
+                <div className="loopassist-topic-cloud" data-testid="loopassist-topics">
+                  {topicOptions.map((item) => (
+                    <button
+                      type="button"
+                      key={item.value}
+                      className={scope.topics.includes(item.value) ? "is-selected" : ""}
+                      onClick={() => toggleTopic(item.value)}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="loopassist-preview" data-testid="loopassist-preview">
+                  <strong>{preview?.matchedCount || 0} 条匹配题源</strong>
+                  <span>{previewCards[0]?.baseQuestion || "已准备好从真实面经中挑题。"}</span>
+                  {(preview?.warnings || []).map((warning) => (
+                    <em key={warning}>{warning}</em>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </div>
           <button type="button" className="loopassist-secondary" onClick={resetWorkspace}>
-            重新选题
+            重置
           </button>
           {status === "interview" || status === "reviewing" ? (
             <button type="button" className="loopassist-primary" onClick={finishAndReview}>
@@ -604,187 +636,18 @@ export function LoopAssistWorkspace() {
           <p className="loopassist-hero-kicker">Voice-first mock interview</p>
           <h1>{stageHeading}</h1>
           <p className="loopassist-hero-copy">
-            同一页完成设定、开场、连续追问、即时答题支架与面后复盘，让 LoopAssist 更像一次真正的技术面试，而不是分散的工具拼盘。
+            同一页完成开场、连续追问、语音作答与面后复盘；选题和本场设定收进右上角悬浮层，不再常驻占用面试空间。
           </p>
           <div className="loopassist-hero-metrics">
             <article>
               <span>本轮题源</span>
               <strong>{sampleTopics.length ? sampleTopics.join(" + ") : "并发 + 索引 + 场景追问"}</strong>
             </article>
-            <article>
-              <span>面试节奏</span>
-              <strong>开场 3 分钟 · 深挖 28 分钟 · 复盘 14 分钟</strong>
-            </article>
           </div>
         </div>
-
-        <aside className="loopassist-agenda-card">
-          <h2>本轮节奏</h2>
-          <ol>
-            <li>
-              <strong>01</strong>
-              <div>
-                <h3>先定场</h3>
-                <p>根据岗位、轮次和公司风格锁定真实面经组合。</p>
-              </div>
-            </li>
-            <li>
-              <strong>02</strong>
-              <div>
-                <h3>再追问</h3>
-                <p>同题连续深挖，尽量贴近真实一面的追问节奏。</p>
-              </div>
-            </li>
-            <li>
-              <strong>03</strong>
-              <div>
-                <h3>最后复盘</h3>
-                <p>沉淀可复述答案和下一轮最值得优先补的薄弱点。</p>
-              </div>
-            </li>
-          </ol>
-        </aside>
       </section>
 
       <section className="loopassist-layout">
-        <aside className="loopassist-column loopassist-column-left">
-          <section className="loopassist-card">
-            <div className="loopassist-card-head">
-              <h2>本场设定</h2>
-              <span>{currentStatusLabel}</span>
-            </div>
-            <div className="loopassist-config-grid">
-              <label>
-                岗位
-                <select
-                  value={scope.role}
-                  onChange={(event) => updateScope("role", event.target.value)}
-                  data-testid="loopassist-role"
-                >
-                  {(options?.roles || []).slice(0, 20).map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label} ({item.count})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                轮次
-                <select
-                  value={scope.round}
-                  onChange={(event) => updateScope("round", event.target.value)}
-                  data-testid="loopassist-round"
-                >
-                  {(options?.rounds || []).slice(0, 12).map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label} ({item.count})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                公司风格
-                <select
-                  value={scope.companyStyle}
-                  onChange={(event) => updateScope("companyStyle", event.target.value)}
-                  data-testid="loopassist-company"
-                >
-                  {(options?.companyStyles || []).slice(0, 20).map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label} ({item.count})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                面试风格
-                <select
-                  value={scope.interviewStyle}
-                  onChange={(event) => updateScope("interviewStyle", event.target.value)}
-                  data-testid="loopassist-style"
-                >
-                  {(options?.interviewStyles || []).map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                题量
-                <input
-                  type="number"
-                  min="4"
-                  max="12"
-                  value={scope.questionBudget}
-                  onChange={(event) => updateScope("questionBudget", Number(event.target.value) || 8)}
-                  data-testid="loopassist-budget"
-                />
-              </label>
-            </div>
-            <div className="loopassist-topic-cloud" data-testid="loopassist-topics">
-              {topicOptions.map((item) => (
-                <button
-                  type="button"
-                  key={item.value}
-                  className={scope.topics.includes(item.value) ? "is-selected" : ""}
-                  onClick={() => toggleTopic(item.value)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-            <div className="loopassist-config-summary">
-              {scopeCards.map((item) => (
-                <article key={item.label}>
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <section className="loopassist-card">
-            <div className="loopassist-card-head">
-              <h2>真实题源预览</h2>
-              <span>{preview?.matchedCount || 0} 条</span>
-            </div>
-            <div className="loopassist-preview" data-testid="loopassist-preview">
-              <strong>{preview?.matchedCount || 0} 条匹配题源</strong>
-              <span>{previewCards[0]?.baseQuestion || "已准备好从真实面经中挑题。"}</span>
-              {(preview?.warnings || []).map((warning) => (
-                <em key={warning}>{warning}</em>
-              ))}
-            </div>
-            <div className="loopassist-source-list">
-              {previewCards.length ? (
-                previewCards.map((item) => (
-                  <article key={item.seedId || item.baseQuestion}>
-                    <span>{(item.topics || []).join(" · ") || "真实面经"}</span>
-                    <strong>{item.baseQuestion}</strong>
-                  </article>
-                ))
-              ) : (
-                <article>
-                  <span>等待题源</span>
-                  <strong>选择岗位、轮次和主题后，这里会展示命中的真实面经问题。</strong>
-                </article>
-              )}
-            </div>
-          </section>
-
-          <section className="loopassist-card">
-            <div className="loopassist-card-head">
-              <h2>本轮目标</h2>
-            </div>
-            <ul className="loopassist-checklist">
-              {prepGoals.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </section>
-        </aside>
-
         <div className="loopassist-column loopassist-column-main">
           <section className="loopassist-card loopassist-interview-card">
             <div className="loopassist-card-head">
@@ -804,21 +667,6 @@ export function LoopAssistWorkspace() {
               <p>{stageSummary}</p>
             </article>
 
-            <div className="loopassist-chat-list loopassist-stage-list">
-              {transcript.length ? (
-                transcript.map((turn) => (
-                  <article key={turn.turnId} className={`loopassist-chat-turn is-${turn.role}`}>
-                    <strong>{turn.role === "interviewer" ? "面试官" : "候选人"}</strong>
-                    <p>{turn.text}</p>
-                  </article>
-                ))
-              ) : (
-                <article className="loopassist-empty-state">
-                  <strong>还没开始本轮模拟</strong>
-                  <p>先在左侧确认岗位、轮次和题量，再点击右上角“开始本轮”。</p>
-                </article>
-              )}
-            </div>
           </section>
 
           <section className="loopassist-card loopassist-answer-card">
@@ -918,63 +766,29 @@ export function LoopAssistWorkspace() {
             </div>
           </aside>
 
-          <section className="loopassist-card">
-            <div className="loopassist-card-head">
-              <h2>即时回答支架</h2>
-            </div>
-            <div className="loopassist-scaffold-list">
-              {answerScaffold.map((item, index) => (
-                <article key={item.title}>
-                  <strong>{String(index + 1).padStart(2, "0")}</strong>
-                  <div>
-                    <h3>{item.title}</h3>
-                    <p>{item.detail}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <section className="loopassist-card">
-            <div className="loopassist-card-head">
-              <h2>观察维度</h2>
-            </div>
-            <div className="loopassist-metric-list">
-              {reviewMetrics.map((item) => (
-                <article key={item.label}>
-                  <div>
-                    <span>{item.label}</span>
-                    <strong>{item.value}</strong>
-                  </div>
-                  <div className="loopassist-progress-track">
-                    <span style={{ width: item.width }} />
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <section className="loopassist-card loopassist-review" data-testid="loopassist-review">
-            <div className="loopassist-card-head">
-              <h2>面后复盘</h2>
-              {review ? <span>{review.readinessScore} / 100</span> : null}
-            </div>
-            <div className="loopassist-review-grid">
-              {reviewPanels.map((panel) => (
-                <section key={panel.title}>
-                  <h2>{panel.title}</h2>
-                  {panel.items.map((item) => (
-                    <p key={item}>{item}</p>
-                  ))}
-                </section>
-              ))}
-            </div>
-            {status === "review" ? (
-              <button type="button" className="loopassist-start" onClick={resetWorkspace}>
-                再来一轮
-              </button>
-            ) : null}
-          </section>
+          {status === "review" || status === "reviewing" ? (
+            <section className="loopassist-card loopassist-review" data-testid="loopassist-review">
+              <div className="loopassist-card-head">
+                <h2>面后复盘</h2>
+                {review ? <span>{review.readinessScore} / 100</span> : null}
+              </div>
+              <div className="loopassist-review-grid">
+                {reviewPanels.map((panel) => (
+                  <section key={panel.title}>
+                    <h2>{panel.title}</h2>
+                    {panel.items.map((item) => (
+                      <p key={item}>{item}</p>
+                    ))}
+                  </section>
+                ))}
+              </div>
+              {status === "review" ? (
+                <button type="button" className="loopassist-start" onClick={resetWorkspace}>
+                  再来一轮
+                </button>
+              ) : null}
+            </section>
+          ) : null}
         </aside>
       </section>
     </main>

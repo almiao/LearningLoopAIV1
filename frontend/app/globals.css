@@ -9184,6 +9184,26 @@ button {
   gap: 10px;
 }
 
+.loopassist-scope-menu {
+  position: relative;
+}
+
+.loopassist-scope-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  gap: 14px;
+  width: min(560px, calc(100vw - 32px));
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 252, 0.98);
+  box-shadow: 0 24px 80px rgba(17, 17, 17, 0.14);
+  backdrop-filter: blur(18px);
+}
+
 .loopassist-status-pill,
 .loopassist-secondary,
 .loopassist-primary,
@@ -9269,15 +9289,12 @@ button {
 }
 
 .loopassist-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 20px;
+  display: block;
   margin-bottom: 20px;
 }
 
 .loopassist-card,
-.loopassist-hero-card,
-.loopassist-agenda-card {
+.loopassist-hero-card {
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--surface);
@@ -9352,14 +9369,12 @@ button {
 
 .loopassist-hero-metrics {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   margin-top: 16px;
 }
 
-.loopassist-hero-metrics article,
-.loopassist-config-summary article,
-.loopassist-source-list article {
+.loopassist-hero-metrics article {
   border-radius: 12px;
   background: var(--surface-subtle);
 }
@@ -9369,10 +9384,7 @@ button {
 }
 
 .loopassist-hero-metrics span,
-.loopassist-config-summary span,
-.loopassist-source-list span,
 .loopassist-answer-preview span,
-.loopassist-metric-list span,
 .loopassist-card-head span {
   color: var(--text-soft);
   font-size: 11px;
@@ -9380,10 +9392,7 @@ button {
 }
 
 .loopassist-hero-metrics strong,
-.loopassist-config-summary strong,
-.loopassist-source-list strong,
-.loopassist-answer-preview strong,
-.loopassist-metric-list strong {
+.loopassist-answer-preview strong {
   display: block;
   margin-top: 6px;
   color: #2b2925;
@@ -9391,11 +9400,6 @@ button {
   line-height: 1.45;
 }
 
-.loopassist-agenda-card {
-  padding: 20px;
-}
-
-.loopassist-agenda-card h2,
 .loopassist-card-head h2,
 .loopassist-review-grid h2 {
   margin: 0;
@@ -9403,49 +9407,10 @@ button {
   font-weight: 800;
 }
 
-.loopassist-agenda-card ol {
-  display: grid;
-  gap: 12px;
-  margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.loopassist-agenda-card li,
-.loopassist-scaffold-list article {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
-}
-
-.loopassist-agenda-card li strong,
-.loopassist-scaffold-list article strong {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 30px;
-  border-radius: 10px;
-  background: var(--surface-subtle);
-  color: #4d463d;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.loopassist-agenda-card h3,
-.loopassist-scaffold-list h3 {
-  margin: 0 0 4px;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.loopassist-agenda-card p,
-.loopassist-scaffold-list p,
 .loopassist-card-head p,
 .loopassist-live-question p,
 .loopassist-empty-state p,
 .loopassist-review-grid p,
-.loopassist-chat-turn p,
 .loopassist-transcript-line p,
 .loopassist-error {
   margin: 0;
@@ -9456,7 +9421,7 @@ button {
 
 .loopassist-layout {
   display: grid;
-  grid-template-columns: 292px minmax(0, 1fr) 324px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: 20px;
   align-items: start;
 }
@@ -9485,6 +9450,7 @@ button {
 
 .loopassist-config-grid {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -9529,17 +9495,6 @@ button {
   color: #7a5414;
 }
 
-.loopassist-config-summary {
-  display: grid;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.loopassist-config-summary article,
-.loopassist-source-list article {
-  padding: 10px 12px;
-}
-
 .loopassist-preview {
   display: grid;
   gap: 6px;
@@ -9562,40 +9517,10 @@ button {
   line-height: 1.5;
 }
 
-.loopassist-source-list,
-.loopassist-checklist,
-.loopassist-scaffold-list,
-.loopassist-metric-list,
 .loopassist-review-grid,
 .loopassist-transcript-body {
   display: grid;
   gap: 10px;
-}
-
-.loopassist-checklist {
-  padding: 0;
-  margin: 0;
-  list-style: none;
-}
-
-.loopassist-checklist li {
-  position: relative;
-  padding-left: 22px;
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.loopassist-checklist li::before {
-  content: "";
-  position: absolute;
-  top: 7px;
-  left: 0;
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--accent-green);
-  box-shadow: 0 0 0 4px var(--accent-green-bg);
 }
 
 .loopassist-interview-card {
@@ -9628,14 +9553,12 @@ button {
   line-height: 1.4;
 }
 
-.loopassist-stage-list,
 .loopassist-transcript-body {
   max-height: 440px;
   overflow: auto;
   padding-right: 4px;
 }
 
-.loopassist-chat-turn,
 .loopassist-transcript-line {
   width: min(92%, 560px);
   padding: 14px 16px;
@@ -9644,13 +9567,11 @@ button {
   background: #fbfcfd;
 }
 
-.loopassist-chat-turn.is-candidate,
 .loopassist-transcript-line.is-candidate {
   justify-self: end;
   background: var(--surface-subtle);
 }
 
-.loopassist-chat-turn strong,
 .loopassist-transcript-line strong,
 .loopassist-empty-state strong {
   display: block;
@@ -9736,32 +9657,6 @@ button {
   width: 100%;
 }
 
-.loopassist-metric-list article {
-  display: grid;
-  gap: 8px;
-}
-
-.loopassist-metric-list article > div:first-child {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.loopassist-progress-track {
-  overflow: hidden;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--surface-subtle);
-}
-
-.loopassist-progress-track span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #176b4d 0%, #2b67c8 100%);
-}
-
 .loopassist-review {
   align-content: start;
 }
@@ -9795,12 +9690,10 @@ button {
 }
 
 @media (max-width: 1240px) {
-  .loopassist-hero,
   .loopassist-layout {
     grid-template-columns: 1fr;
   }
 
-  .loopassist-stage-list,
   .loopassist-transcript-body {
     max-height: none;
   }
@@ -9842,5 +9735,19 @@ button {
   .loopassist-status-pill {
     width: 100%;
     justify-content: center;
+  }
+
+  .loopassist-scope-menu {
+    width: 100%;
+  }
+
+  .loopassist-scope-popover {
+    position: static;
+    width: 100%;
+    margin-top: 10px;
+  }
+
+  .loopassist-config-grid {
+    grid-template-columns: 1fr;
   }
 }
