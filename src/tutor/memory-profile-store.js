@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createMemoryProfile } from "./capability-memory.js";
+import { createMemoryProfile, getCheckpointMasteryBucket, normalizeMemoryProfileShape } from "./capability-memory.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,14 +34,18 @@ function validateProfileShape(profile, expectedId = "") {
   if (typeof profile.sessionsStarted !== "number" || profile.sessionsStarted < 0) {
     throw new Error("Memory profile sessionsStarted is invalid.");
   }
-  if (!isPlainObject(profile.abilityItems)) {
-    throw new Error("Memory profile abilityItems is invalid.");
+  const checkpointMastery = getCheckpointMasteryBucket(profile);
+  if (!isPlainObject(checkpointMastery)) {
+    throw new Error("Memory profile checkpointMastery is invalid.");
   }
 
-  for (const [key, item] of Object.entries(profile.abilityItems)) {
+  for (const [key, item] of Object.entries(checkpointMastery)) {
     assertSafeProfileId(key);
     if (!isPlainObject(item)) {
       throw new Error("Memory profile item is invalid.");
+    }
+    if (item.checkpointId && item.checkpointId !== key) {
+      throw new Error("Memory profile item id mismatch.");
     }
     if (item.abilityItemId && item.abilityItemId !== key) {
       throw new Error("Memory profile item id mismatch.");
@@ -67,6 +71,18 @@ function validateProfileShape(profile, expectedId = "") {
     if (item.recentConflictingEvidence && !Array.isArray(item.recentConflictingEvidence)) {
       throw new Error("Memory profile recentConflictingEvidence is invalid.");
     }
+    if (item.nextReviewAt && typeof item.nextReviewAt !== "string") {
+      throw new Error("Memory profile nextReviewAt is invalid.");
+    }
+    if (item.lastReviewedAt && typeof item.lastReviewedAt !== "string") {
+      throw new Error("Memory profile lastReviewedAt is invalid.");
+    }
+    if (item.stability !== undefined && (typeof item.stability !== "number" || item.stability < 0)) {
+      throw new Error("Memory profile stability is invalid.");
+    }
+    if (item.recallConfidence !== undefined && (typeof item.recallConfidence !== "number" || item.recallConfidence < 0 || item.recallConfidence > 1)) {
+      throw new Error("Memory profile recallConfidence is invalid.");
+    }
   }
 }
 
@@ -89,7 +105,7 @@ export function createMemoryProfileStore({ profilesDir = defaultProfilesDir } = 
           const raw = await readFile(getProfilePath(profileId), "utf8");
           const parsed = JSON.parse(raw);
           validateProfileShape(parsed, profileId);
-          return parsed;
+          return normalizeMemoryProfileShape(parsed);
         } catch (error) {
           if (String(error?.message || "").includes("Invalid memory profile id")) {
             throw error;
@@ -112,8 +128,9 @@ export function createMemoryProfileStore({ profilesDir = defaultProfilesDir } = 
       }
 
       await ensureDir();
-      validateProfileShape(profile, profile.id);
-      await writeFile(getProfilePath(profile.id), `${JSON.stringify(profile, null, 2)}\n`, "utf8");
+      const normalizedProfile = normalizeMemoryProfileShape(profile);
+      validateProfileShape(normalizedProfile, normalizedProfile.id);
+      await writeFile(getProfilePath(normalizedProfile.id), `${JSON.stringify(normalizedProfile, null, 2)}\n`, "utf8");
     }
   };
 }

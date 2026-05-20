@@ -10,6 +10,7 @@ FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 BFF_PORT="${BFF_PORT:-4000}"
 SUPERAPP_PORT="${SUPERAPP_PORT:-4100}"
 LIVEKIT_AGENT_PORT="${LIVEKIT_AGENT_PORT:-4200}"
+TTS_WORKER_PORT="${TTS_WORKER_PORT:-4300}"
 AI_PORT="${AI_PORT:-8000}"
 LIVEKIT_SERVER_PORT="${LIVEKIT_SERVER_PORT:-7880}"
 LIVEKIT_WORKER_PORT="${LIVEKIT_WORKER_PORT:-8081}"
@@ -130,6 +131,7 @@ wait_for_port() {
 wait_for_all_health_checks() {
   wait_for_health "LiveKit agent bridge" "http://127.0.0.1:${LIVEKIT_AGENT_PORT}/api/health"
   wait_for_health "AI service" "http://127.0.0.1:${AI_PORT}/api/health"
+  wait_for_health "TTS worker" "http://127.0.0.1:${TTS_WORKER_PORT}/api/health"
   wait_for_health "BFF" "http://127.0.0.1:${BFF_PORT}/api/health"
   wait_for_health "Superapp service" "http://127.0.0.1:${SUPERAPP_PORT}/api/health"
   wait_for_health "Frontend" "http://127.0.0.1:${FRONTEND_PORT}"
@@ -137,7 +139,7 @@ wait_for_all_health_checks() {
 
 verify_pid_files() {
   local service pid_file pid
-  for service in livekit-server livekit-agent ai-service bff superapp-service frontend; do
+  for service in livekit-server livekit-agent ai-service tts-worker bff superapp-service frontend; do
     pid_file="$PID_DIR/$service.pid"
     if [[ ! -f "$pid_file" ]]; then
       echo "$service did not write PID file: $pid_file" >&2
@@ -161,6 +163,7 @@ Learning Loop AI split services are running.
 - Superapp service: http://127.0.0.1:${SUPERAPP_PORT}
 - LiveKit bridge: http://127.0.0.1:${LIVEKIT_AGENT_PORT}
 - AI service: http://127.0.0.1:${AI_PORT}
+- TTS worker: http://127.0.0.1:${TTS_WORKER_PORT}
 - LiveKit server: ${LIVEKIT_WS_URL}
 
 Logs:
@@ -170,6 +173,7 @@ Logs:
 - $LOG_DIR/bff.log
 - $LOG_DIR/superapp-service.log
 - $LOG_DIR/ai-service.log
+- $LOG_DIR/tts-worker.log
 - $LOG_DIR/supervisor.log
 
 PID files:
@@ -179,6 +183,7 @@ PID files:
 - $PID_DIR/bff.pid
 - $PID_DIR/superapp-service.pid
 - $PID_DIR/ai-service.pid
+- $PID_DIR/tts-worker.pid
 
 To stop all services:
   bash stop-services.sh
@@ -234,6 +239,7 @@ kill_existing_on_port "$BFF_PORT"
 kill_existing_on_port "$SUPERAPP_PORT"
 kill_existing_on_port "$LIVEKIT_AGENT_PORT"
 kill_existing_on_port "$LIVEKIT_WORKER_PORT"
+kill_existing_on_port "$TTS_WORKER_PORT"
 kill_existing_on_port "$AI_PORT"
 kill_existing_on_port "$LIVEKIT_SERVER_PORT"
 
@@ -261,6 +267,13 @@ nohup bash -lc "
 " >"$LOG_DIR/ai-service.log" 2>&1 < /dev/null &
 echo $! >"$PID_DIR/ai-service.pid"
 
+echo "Starting TTS worker..."
+nohup bash -lc "
+  cd '$ROOT_DIR'
+  exec python3 -m uvicorn app.loopassist.tts_worker:app --host 127.0.0.1 --port '$TTS_WORKER_PORT' --app-dir ai-service
+" >"$LOG_DIR/tts-worker.log" 2>&1 < /dev/null &
+echo $! >"$PID_DIR/tts-worker.pid"
+
 echo "Starting LiveKit agent bridge..."
 nohup bash -lc "
   cd '$ROOT_DIR'
@@ -271,7 +284,7 @@ echo $! >"$PID_DIR/livekit-agent.pid"
 echo "Starting BFF..."
 nohup bash -lc "
   cd '$ROOT_DIR'
-  exec env PORT='$BFF_PORT' AI_SERVICE_URL='http://127.0.0.1:${AI_PORT}' node bff/src/server.js
+  exec env PORT='$BFF_PORT' AI_SERVICE_URL='http://127.0.0.1:${AI_PORT}' TTS_SERVICE_URL='http://127.0.0.1:${TTS_WORKER_PORT}' node bff/src/server.js
 " >"$LOG_DIR/bff.log" 2>&1 < /dev/null &
 echo $! >"$PID_DIR/bff.pid"
 

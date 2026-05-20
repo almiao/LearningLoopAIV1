@@ -16,7 +16,7 @@ function createMemoryProfile(id = `ai_profile_${Date.now()}`) {
   return {
     id,
     sessionsStarted: 0,
-    abilityItems: {}
+    checkpointMastery: {}
   };
 }
 
@@ -254,7 +254,7 @@ test("python ai-service answer stream emits backend-owned append-only turns befo
     const processDetails = turnAppends
       .filter((event) => event.data.turn.kind === "process")
       .map((event) => event.data.turn.content);
-    assert.ok(processDetails.some((content) => String(content).includes("正在同步到对话并准备下一步")));
+    assert.ok(processDetails.some((content) => String(content).includes("正在落账评分与记忆，并判断继续追问、进入下一题还是收口总结。")));
     assert.ok(processDetails.some((content) => String(content).includes("讲解已追加")));
   });
 });

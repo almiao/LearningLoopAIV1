@@ -4,11 +4,11 @@ import asyncio
 import json
 import queue
 import threading
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from app.core.tracing import (
@@ -42,6 +42,13 @@ from app.interview_assist import (
     describe_interview_assist,
     store_voice_demo,
     stream_assist_answer,
+)
+from app.loopassist import (
+    answer_loopassist,
+    create_loopassist_session,
+    review_loopassist_session,
+    synthesize_loopassist_tts,
+    stream_loopassist_answer,
 )
 from app.interview_assist.aliyun_realtime_asr import AliyunRealtimeRecognizer
 from app.observability import events
@@ -292,6 +299,28 @@ class InterviewAssistRenderedRequest(BaseModel):
     renderedAt: Optional[int] = None
 
 
+class LoopAssistStartRequest(BaseModel):
+    userId: str = ""
+    scope: Dict[str, Any] = {}
+    seeds: List[Dict[str, Any]] = []
+
+
+class LoopAssistAnswerRequest(BaseModel):
+    sessionId: str
+    answer: str
+
+
+class LoopAssistReviewRequest(BaseModel):
+    sessionId: str
+
+
+class LoopAssistTtsRequest(BaseModel):
+    text: str
+    speaker: str = ""
+    language: str = ""
+    instruct: str = ""
+
+
 app = FastAPI(title="Learning Loop AI Service")
 snapshot_store = SnapshotStore()
 app.add_middleware(
@@ -408,6 +437,96 @@ def answer_superapp_knowledge_question(payload: SuperappKnowledgeQuestionRequest
         "content": content,
         "suggestedFollowUp": "把这个点出成一道快答题",
     }
+
+
+@app.post("/api/loopassist/start")
+def loopassist_start(payload: LoopAssistStartRequest) -> Dict[str, Any]:
+    return create_loopassist_session(
+        scope=payload.scope or {},
+        seeds=payload.seeds or [],
+        user_id=payload.userId,
+    )
+
+
+@app.post("/api/loopassist/answer")
+def loopassist_answer(payload: LoopAssistAnswerRequest) -> Dict[str, Any]:
+    try:
+        return answer_loopassist(session_id=payload.sessionId, answer=payload.answer)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/loopassist/answer-stream")
+def loopassist_answer_stream(payload: LoopAssistAnswerRequest) -> StreamingResponse:
+    def generate():
+        event_queue: queue.Queue[tuple[str, Dict[str, Any]]] = queue.Queue()
+
+        def emit(event: str, data: Dict[str, Any]) -> None:
+            event_queue.put((event, data))
+
+        def worker():
+            try:
+                stream_loopassist_answer(
+                    session_id=payload.sessionId,
+                    answer=payload.answer,
+                    emit=emit,
+                )
+            except KeyError as exc:  # pragma: no cover - streamed back to client
+                event_queue.put(("error", {"error": str(exc)}))
+            except Exception as exc:  # pragma: no cover - streamed back to client
+                event_queue.put(("error", {"error": str(exc) or "LoopAssist stream failed."}))
+            finally:
+                event_queue.put(("done", {}))
+
+        threading.Thread(target=worker, daemon=True).start()
+        yield sse_event("reply_status", {"status": "started"})
+        while True:
+            event, data = event_queue.get()
+            if event == "done":
+                yield sse_event("done", data)
+                break
+            yield sse_event(event, data)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/loopassist/review")
+def loopassist_review(payload: LoopAssistReviewRequest) -> Dict[str, Any]:
+    try:
+        return review_loopassist_session(session_id=payload.sessionId)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/loopassist/tts")
+def loopassist_tts(payload: LoopAssistTtsRequest) -> Response:
+    try:
+        audio, metadata = synthesize_loopassist_tts(
+            text=payload.text,
+            speaker=payload.speaker,
+            language=payload.language,
+            instruct=payload.instruct,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return Response(
+        content=audio,
+        media_type="audio/wav",
+        headers={
+            "x-loopassist-tts-provider": str(metadata.get("provider") or "qwen3-tts"),
+            "x-loopassist-tts-speaker": str(metadata.get("speaker") or ""),
+        },
+    )
 
 
 @app.post("/api/interview-assist/session")

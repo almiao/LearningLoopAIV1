@@ -266,4 +266,4 @@ The feedback must not jump ahead of already-shown weak process messages when the
 - Prefer explicit weak turns over frontend inference for workflow state.
 - Treat ordering regressions as contract breaks and cover them with tests.
 - Complete a scoped run with exactly one `feedback:complete` turn that explains what was practiced, which checkpoints were accurate / need reinforcement / need calibration / skipped, what was written to long-term memory, and how current next-run entry points select questions.
-- Do not invent completion statistics. Derive them from `conceptStates.result` and `memoryProfile.abilityItems[*].state`, and state product limitations honestly when the current routing does not yet reorder the full next run by weakness.
+- Do not invent completion statistics. Derive them from `conceptStates.result` and `learner_mastery.checkpointMastery[*].state`, and state product limitations honestly when the current routing does not yet reorder the full next run by weakness.

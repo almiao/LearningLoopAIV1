@@ -87,6 +87,9 @@ function validateUserShape(user, expectedId = "") {
     if (user.documents.ignoredDocs !== undefined && (!user.documents.ignoredDocs || typeof user.documents.ignoredDocs !== "object" || Array.isArray(user.documents.ignoredDocs))) {
       throw new Error("User documents ignoredDocs are invalid.");
     }
+    if (user.documents.snoozedRecommendations !== undefined && (!user.documents.snoozedRecommendations || typeof user.documents.snoozedRecommendations !== "object" || Array.isArray(user.documents.snoozedRecommendations))) {
+      throw new Error("User documents snoozedRecommendations are invalid.");
+    }
   }
 }
 

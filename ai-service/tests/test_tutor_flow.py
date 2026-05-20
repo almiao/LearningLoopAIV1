@@ -68,7 +68,7 @@ def make_session_payload() -> SimpleNamespace:
         },
         interactionPreference="balanced",
         targetBaseline={"id": "baseline-1", "title": "Java Backend"},
-        memoryProfile={"id": "memory-1", "abilityItems": {}},
+        memoryProfile={"id": "memory-1", "checkpointMastery": {}},
     )
 
 
@@ -184,7 +184,7 @@ class TrainingMessageCopyTest(unittest.TestCase):
             {"id": "mvcc-boundary", "title": "MVCC 和当前读边界"},
             {"framing": "围绕快照读和当前读边界来拆题。"},
             memory_profile={
-                "abilityItems": {
+                "checkpointMastery": {
                     "mvcc-boundary-cp-1": {
                         "state": "partial",
                         "score": 72,

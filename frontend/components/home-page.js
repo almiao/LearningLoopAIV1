@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, postJson } from "../lib/api";
+import { buildReentryPlan } from "../lib/reentry-actions";
 import { getStoredUserId, setStoredUserId } from "../lib/user-session";
 
 const profileDirtyStorageKey = "learning-loop-profile-dirty-at";
@@ -251,60 +252,159 @@ function getDocumentPreview(document) {
 }
 
 function getActionHint(document) {
-  if (document.ignored) {
-    return "忽略文档不参与默认推荐";
-  }
-  if (document.progressPercentage < 100) {
-    return document.progressPercentage > 0 ? "从上次位置继续阅读" : "先进入阅读模式";
-  }
-  if (!document.trainingStarted && !document.trainingSkipped && !document.trainingCompleted) {
-    return "阅读已完成，建议练一轮";
-  }
-  if (document.group === "mastered") {
-    return "已掌握，可回看原文";
-  }
-  return "继续当前训练进度";
+  return buildReentryPlan(document).reason;
 }
 
-function buildPrimaryAction(document) {
-  if (document.ignored) {
+function buildHeroCopy(document = {}, plan = buildReentryPlan(document)) {
+  if (plan.intent === "resume_training") {
     return {
-      label: "查看文档 →",
-      autostart: false,
+      badge: document.trainingCheckpointProgressLabel
+        ? `上次停在 ${document.trainingCheckpointProgressLabel}`
+        : "中断恢复",
+      title: "先把这轮接上",
+      reason: "你上次练到一半，直接恢复上下文，比重新开始更省力。",
     };
   }
-  if (document.progressPercentage < 100) {
+  if (plan.intent === "quick_review") {
     return {
-      label: document.progressPercentage > 0 ? "继续学习 →" : "开始学习 →",
-      autostart: false,
+      badge: "快速复习",
+      title: "先把关键点拉回来",
+      reason: "这篇你已经学过了，现在更适合用一轮短复习把它重新唤醒。",
     };
   }
-  if (
-    !document.trainingStarted
-    && !document.trainingSkipped
-    && !document.trainingCompleted
-    && document.trainingAvailability !== "unavailable"
-  ) {
+  if (plan.intent === "start_training") {
     return {
-      label: "开始练习 →",
-      autostart: true,
+      badge: "开始训练",
+      title: "该把这篇材料练成会讲",
+      reason: "正文已经看完了，下一步最值回票价的是留下一轮真实答题证据。",
     };
   }
-  if (document.group === "mastered") {
+  if (plan.intent === "resume_reading") {
     return {
-      label: "回看文档 →",
-      autostart: false,
+      badge: "阅读中",
+      title: "从上次位置接着读",
+      reason: "上下文已经建立好，顺着这一篇推进最省心。",
     };
   }
   return {
-    label: "继续训练 →",
-    autostart: true,
+    badge: plan.stageLabel,
+    title: plan.title,
+    reason: plan.reason,
   };
+}
+
+function formatReviewWindow(nextReviewAt = "") {
+  if (!nextReviewAt) {
+    return "";
+  }
+  const date = new Date(nextReviewAt);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const diffMs = date.getTime() - Date.now();
+  if (diffMs <= 0) {
+    return "复习时间已到";
+  }
+  const diffDays = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
+  if (diffDays <= 1) {
+    return "建议明天前复习";
+  }
+  return `${diffDays} 天内适合复习`;
+}
+
+function getPracticeStateLabel(document = {}) {
+  if (document.trainingCompleted) {
+    return "训练已收口";
+  }
+  if (document.trainingStarted) {
+    return "训练进行中";
+  }
+  if (document.trainingSkipped) {
+    return "按仅阅读收尾";
+  }
+  if (document.trainingAvailability === "unavailable") {
+    return "当前只支持阅读";
+  }
+  return "还没开始训练";
+}
+
+function buildRecommendationFacts(document = {}, plan = buildReentryPlan(document)) {
+  const facts = [];
+
+  if (plan.intent === "resume_reading") {
+    facts.push("未读完正文");
+    const lastFolder = document.folderLabels?.at(-1);
+    if (document.readingChapter && document.readingChapter !== lastFolder) {
+      facts.push(`上次在 ${document.readingChapter}`);
+    }
+    return facts.slice(0, 2);
+  }
+
+  if (plan.intent === "resume_training") {
+    if (document.trainingCheckpointProgressLabel) {
+      facts.push(`停在 ${document.trainingCheckpointProgressLabel}`);
+    }
+    if (document.evidenceCount > 0) {
+      facts.push(`已记录 ${document.evidenceCount} 条回答证据`);
+    }
+    return facts.slice(0, 2);
+  }
+
+  if (plan.intent === "start_training") {
+    facts.push("正文已读完");
+    facts.push(document.evidenceCount > 0 ? `已记录 ${document.evidenceCount} 条回答证据` : "还没留下答题证据");
+    return facts.slice(0, 2);
+  }
+
+  const reviewWindow = formatReviewWindow(document.nextReviewAt);
+  if (reviewWindow) {
+    facts.push(reviewWindow);
+  }
+
+  if (document.evidenceCount > 0) {
+    facts.push(`已记录 ${document.evidenceCount} 条回答证据`);
+  }
+
+  if (!facts.length && document.progressPercentage >= 100) {
+    facts.push("正文已读完");
+  }
+
+  return facts.slice(0, 2);
+}
+
+function buildRememberedHighlights(document = {}) {
+  const highlights = [];
+  if (document.trainingCheckpointProgressLabel) {
+    highlights.push(`训练停在：${document.trainingCheckpointProgressLabel}`);
+  }
+  if (document.learningStatusLabel && !["未训练", "训练中", "已开启训练"].includes(document.learningStatusLabel)) {
+    highlights.push(`当前状态：${document.learningStatusLabel}`);
+  }
+  if (document.assessedConceptCount > 0) {
+    highlights.push(`已形成 ${document.assessedConceptCount} 个知识点判断`);
+  }
+  return highlights.slice(0, 2);
+}
+
+function getSnoozeLabel(plan = {}) {
+  return plan.intent === "resume_reading" ? "今天先不读这个" : "今天先不练这个";
+}
+
+function buildPrimaryAction(document) {
+  return buildReentryPlan(document).primaryAction;
+}
+
+function isRecommendationSnoozed(document = {}) {
+  const until = new Date(document.snoozedRecommendationUntil || "");
+  return Number.isFinite(until.getTime()) && until.getTime() > Date.now();
 }
 
 function buildLearningHref(document, options = {}) {
   const params = new URLSearchParams();
   params.set("doc", document.path);
+  if (options.intent) {
+    params.set("intent", options.intent);
+  }
   if (options.autostart) {
     params.set("autostart", "1");
   }
@@ -502,6 +602,7 @@ function buildSidebarDocument(document, progressEntries = {}, options = {}) {
     lastActivityAt: progress.lastActivityAt || "",
     ignored: Boolean(options.ignored),
     ignoredAt: options.ignoredAt || "",
+    snoozedRecommendationUntil: options.snoozedRecommendationUntil || "",
     group,
     stageState: buildStageState(progress),
   };
@@ -817,13 +918,18 @@ function LibraryTreeNode({ node, currentNodeKey, selectedDocPath, selectedLibrar
   );
 }
 
-function DefaultFocusView({ featuredDocument, reviewDocuments, summary, hasProfile }) {
-  const action = buildPrimaryAction(featuredDocument);
+function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDocuments, summary, hasProfile, onSnoozeRecommendation }) {
+  const reentryPlan = buildReentryPlan(featuredDocument);
+  const action = reentryPlan.primaryAction;
   const color = getSignalColor(featuredDocument);
+  const heroCopy = buildHeroCopy(featuredDocument, reentryPlan);
+  const recommendationFacts = buildRecommendationFacts(featuredDocument, reentryPlan);
+  const rememberedHighlights = buildRememberedHighlights(featuredDocument);
+  const snoozeLabel = getSnoozeLabel(reentryPlan);
 
   return (
     <section className="ll-default-view">
-      <div className="ll-kicker">继续上次</div>
+      <div className="ll-kicker">今天先做什么</div>
       {!hasProfile ? (
         <p className="ll-status-note">当前还没连接学习档案，先打开一篇 JavaGuide 文档，阅读与训练进度会自动回到这里。</p>
       ) : null}
@@ -832,29 +938,81 @@ function DefaultFocusView({ featuredDocument, reviewDocuments, summary, hasProfi
         <div className="ll-hero-main">
           <div className="ll-hero-layout">
             <div className="ll-hero-body">
-              <div className="ll-hero-title-row">
-                <span className="ll-doc-row-icon" style={{ color }}>
-                  {getTypeIcon(featuredDocument)}
-                </span>
-                <Link href={buildLearningHref(featuredDocument)} className="ll-title-link">
-                  <h1>{featuredDocument.title}</h1>
-                </Link>
-              </div>
-              <p>{`来源 ${featuredDocument.providerLabel} · ${featuredDocument.folderLabels.join(" / ") || "资料库"} · ${formatLastActivity(featuredDocument.lastActivityAt)}`}</p>
-              <p className="ll-document-preview">{getDocumentPreview(featuredDocument)}</p>
-              <div className="ll-stage-row">
-                <StageChip label="学" state={featuredDocument.stageState.study} />
-                <StageChip label="练" state={featuredDocument.stageState.practice} />
-              </div>
+              <section className="ll-hero-task ll-hero-recommendation">
+                <div className="ll-reentry-badge">{heroCopy.badge}</div>
+                <h1 className="ll-reentry-title">{heroCopy.title}</h1>
+                <p className="ll-reentry-reason">{heroCopy.reason}</p>
+              </section>
+
+              <section className="ll-hero-support-strip">
+                <div className="ll-hero-context-row">
+                  <span className="ll-doc-row-icon" style={{ color }}>
+                    {getTypeIcon(featuredDocument)}
+                  </span>
+                  <div className="ll-doc-title-block">
+                    <p className="ll-hero-caption">材料</p>
+                    <Link href={buildLearningHref(featuredDocument)} className="ll-title-link">
+                      <h2>{featuredDocument.title}</h2>
+                    </Link>
+                    <p>{`来源 ${featuredDocument.providerLabel} · ${featuredDocument.folderLabels.join(" / ") || "资料库"} · ${formatLastActivity(featuredDocument.lastActivityAt)}`}</p>
+                  </div>
+                </div>
+                {recommendationFacts.length ? (
+                  <div className="ll-hero-footer-row">
+                    <div className="ll-recommendation-facts" aria-label="推荐依据">
+                      {recommendationFacts.map((fact) => (
+                        <span key={fact} className="ll-recommendation-chip">{fact}</span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </section>
             </div>
             <aside className="ll-hero-cta">
               <strong className="ll-hero-score" style={{ color }}>
                 {getHeroMetric(featuredDocument)}
               </strong>
-              <Link href={buildLearningHref(featuredDocument, { autostart: action.autostart })} className="ll-primary-button">
+              <Link href={buildLearningHref(featuredDocument, { autostart: action.autostart, intent: action.kind })} className="ll-primary-button">
                 {action.label}
               </Link>
-              <span>{getActionHint(featuredDocument)}</span>
+              <Link
+                href={recommendedNewDocument ? buildLearningHref(recommendedNewDocument) : "/?mode=library&panel=library"}
+                className="ll-secondary-button ll-hero-explore-button"
+              >
+                开始新的一篇 →
+              </Link>
+              {featuredDocument.group !== "unstarted" ? (
+                <button
+                  type="button"
+                  className="ll-text-button"
+                  onClick={() => onSnoozeRecommendation(featuredDocument)}
+                >
+                  {snoozeLabel}
+                </button>
+              ) : null}
+              {rememberedHighlights.length ? (
+                <div className="ll-hero-memory-panel">
+                  <strong>系统记住了什么</strong>
+                  <ul className="ll-explain-list">
+                    {rememberedHighlights.map((fact) => (
+                      <li key={fact}>{fact}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {reentryPlan.secondaryActions?.length ? (
+                <div className="ll-reentry-secondary-links" aria-label="备选动作">
+                  {reentryPlan.secondaryActions.map((secondaryAction) => (
+                    <Link
+                      key={`${featuredDocument.path}:${secondaryAction.kind}`}
+                      href={buildLearningHref(featuredDocument, { autostart: secondaryAction.autostart, intent: secondaryAction.kind })}
+                      className="ll-reentry-secondary-link"
+                    >
+                      {secondaryAction.label}
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
             </aside>
           </div>
         </div>
@@ -871,16 +1029,26 @@ function DefaultFocusView({ featuredDocument, reviewDocuments, summary, hasProfi
           </div>
         </div>
         <div className="ll-review-grid">
-          {reviewDocuments.length ? reviewDocuments.map((document) => (
-            <article key={document.path} className="ll-review-card">
-              <span className="ll-review-card-bar" style={{ background: getSignalColor(document) }} aria-hidden="true" />
-              <strong title={document.title}>{document.title}</strong>
-              <p>{`距上次 ${formatDaysAgoLabel(document.lastActivityAt)} · ${document.masteryPercentage > 0 ? document.masteryPercentage : document.progressPercentage}%`}</p>
-          <Link href={buildLearningHref(document, { autostart: document.trainingStarted || document.progressPercentage >= 100 })} className="ll-inline-link">
-                {document.trainingStarted ? "继续过 →" : "开始过 →"}
-              </Link>
-            </article>
-          )) : (
+          {reviewDocuments.length ? reviewDocuments.map((document) => {
+            const reviewPlan = buildReentryPlan(document);
+            const reviewFacts = buildRecommendationFacts(document, reviewPlan);
+            return (
+              <article key={document.path} className="ll-review-card">
+                <span className="ll-review-card-bar" style={{ background: getSignalColor(document) }} aria-hidden="true" />
+                <strong title={document.title}>{document.title}</strong>
+                <p>{`${reviewPlan.stageLabel} · 距上次 ${formatDaysAgoLabel(document.lastActivityAt)}`}</p>
+                <p className="ll-review-reason">{reviewPlan.reason}</p>
+                <ul className="ll-review-facts" aria-label="推荐依据">
+                  {reviewFacts.slice(0, 3).map((fact) => (
+                    <li key={`${document.path}:${fact}`}>{fact}</li>
+                  ))}
+                </ul>
+                <Link href={buildLearningHref(document, { autostart: reviewPlan.primaryAction.autostart, intent: reviewPlan.primaryAction.kind })} className="ll-inline-link">
+                  {reviewPlan.primaryAction.label}
+                </Link>
+              </article>
+            );
+          }) : (
             <article className="ll-review-card">
               <span className="ll-review-card-bar" style={{ background: "#888780" }} aria-hidden="true" />
               <strong>暂时没有临界复习材料</strong>
@@ -907,11 +1075,26 @@ function DefaultFocusView({ featuredDocument, reviewDocuments, summary, hasProfi
   );
 }
 
+function IgnoredDocumentToggle({ checked, count, onChange, className = "" }) {
+  const toggleClassName = className ? `ll-include-ignored-toggle ${className}` : "ll-include-ignored-toggle";
+
+  return (
+    <label className={toggleClassName}>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <span>包含忽略文档</span>
+      <strong>{count}</strong>
+    </label>
+  );
+}
+
 function LibraryBrowser({
   currentNode,
   selectedDocPath,
+  includeIgnoredDocuments,
+  ignoredDocumentCount,
   onOpenNode,
   onOpenDocument,
+  onIncludeIgnoredChange,
   onToggleIgnored,
 }) {
   const breadcrumbs = [
@@ -946,6 +1129,14 @@ function LibraryBrowser({
         </div>
         <div className="ll-library-head-actions">
           <span>共 {currentNode.documentCount} 篇</span>
+          {ignoredDocumentCount > 0 ? (
+            <IgnoredDocumentToggle
+              checked={includeIgnoredDocuments}
+              count={ignoredDocumentCount}
+              onChange={onIncludeIgnoredChange}
+              className="is-library-head"
+            />
+          ) : null}
           <button
             type="button"
             className={managementMode ? "ll-library-manage-button is-active" : "ll-library-manage-button"}
@@ -993,8 +1184,9 @@ function LibraryBrowser({
 }
 
 function DocumentPlaceholder({ document }) {
+  const reentryPlan = buildReentryPlan(document);
   const color = getSignalColor(document);
-  const action = buildPrimaryAction(document);
+  const action = reentryPlan.primaryAction;
 
   return (
     <section className="ll-detail-placeholder">
@@ -1004,6 +1196,11 @@ function DocumentPlaceholder({ document }) {
       <div className="ll-detail-card">
         <div className="ll-detail-layout">
           <div className="ll-detail-main">
+            <section className="ll-hero-task ll-detail-task">
+              <div className="ll-reentry-badge">{reentryPlan.stageLabel}</div>
+              <strong className="ll-reentry-title">{reentryPlan.title}</strong>
+              <p className="ll-reentry-reason">{reentryPlan.reason}</p>
+            </section>
             <div className="ll-detail-card-top">
               <span className="ll-doc-row-icon" style={{ color }}>
                 {getTypeIcon(document)}
@@ -1025,10 +1222,23 @@ function DocumentPlaceholder({ document }) {
             <strong className="ll-detail-score" style={{ color }}>
               {getHeroMetric(document)}
             </strong>
-            <Link href={buildLearningHref(document, { autostart: action.autostart })} className="ll-primary-button">
+            <Link href={buildLearningHref(document, { autostart: action.autostart, intent: action.kind })} className="ll-primary-button">
               {action.label}
             </Link>
             <span>{getActionHint(document)}</span>
+            {reentryPlan.secondaryActions?.length ? (
+              <div className="ll-reentry-secondary-links" aria-label="备选动作">
+                {reentryPlan.secondaryActions.map((secondaryAction) => (
+                  <Link
+                    key={`${document.path}:${secondaryAction.kind}`}
+                    href={buildLearningHref(document, { autostart: secondaryAction.autostart, intent: secondaryAction.kind })}
+                    className="ll-reentry-secondary-link"
+                  >
+                    {secondaryAction.label}
+                  </Link>
+                ))}
+              </div>
+            ) : null}
           </aside>
         </div>
       </div>
@@ -1158,14 +1368,19 @@ export function HomePage() {
     () => new Set(documentProgress?.ignoredDocPaths || []),
     [documentProgress?.ignoredDocPaths]
   );
+  const snoozedRecommendationDocPaths = useMemo(
+    () => new Set(documentProgress?.snoozedRecommendationDocPaths || []),
+    [documentProgress?.snoozedRecommendationDocPaths]
+  );
   const ignoredDocumentCount = ignoredDocPaths.size;
 
   const allUiDocuments = useMemo(() => (
     knowledgeDocuments.map((document) => buildSidebarDocument(document, documentProgress?.docs || {}, {
       ignored: ignoredDocPaths.has(document.path),
       ignoredAt: ignoredDocs[document.path]?.ignoredAt || "",
+      snoozedRecommendationUntil: documentProgress?.snoozedRecommendations?.[document.path]?.snoozedUntil || "",
     }))
-  ), [documentProgress?.docs, ignoredDocPaths, ignoredDocs, knowledgeDocuments]);
+  ), [documentProgress?.docs, documentProgress?.snoozedRecommendations, ignoredDocPaths, ignoredDocs, knowledgeDocuments]);
 
   const uiDocuments = useMemo(
     () => allUiDocuments.filter((document) => includeIgnoredDocuments || !document.ignored),
@@ -1197,23 +1412,38 @@ export function HomePage() {
   const selectedLibraryPath = selectedDocument?.libraryPath || [];
 
   const featuredDocument = useMemo(() => {
-    const currentDoc = uiDocuments.find((document) => document.path === documentProgress?.currentDocPath);
+    const availableDocuments = uiDocuments.filter((document) => !isRecommendationSnoozed(document));
+    const candidatePool = availableDocuments.length ? availableDocuments : uiDocuments;
+    const currentDoc = candidatePool.find((document) => document.path === documentProgress?.currentDocPath);
     if (currentDoc) {
       return currentDoc;
     }
     const recentDoc = (documentProgress?.recentDocs || [])
-      .map((recent) => uiDocuments.find((document) => document.path === recent.docPath))
+      .map((recent) => candidatePool.find((document) => document.path === recent.docPath))
       .find(Boolean);
     if (recentDoc) {
       return recentDoc;
     }
-    return groupedDocuments.reading[0]
-      || groupedDocuments.review[0]
-      || groupedDocuments.mastered[0]
-      || filteredDocuments[0]
-      || uiDocuments[0]
+    return candidatePool.find((document) => document.group === "reading")
+      || candidatePool.find((document) => document.group === "review")
+      || candidatePool.find((document) => document.group === "mastered")
+      || candidatePool.find((document) => document.group === "unstarted")
+      || filteredDocuments.find((document) => !isRecommendationSnoozed(document))
+      || candidatePool[0]
       || null;
   }, [documentProgress?.currentDocPath, documentProgress?.recentDocs, filteredDocuments, groupedDocuments, uiDocuments]);
+
+  const recommendedNewDocument = useMemo(() => {
+    const preferred = groupedDocuments.unstarted.find((document) => !snoozedRecommendationDocPaths.has(document.path));
+    if (preferred) {
+      return preferred;
+    }
+    return uiDocuments.find((document) => (
+      document.path !== featuredDocument?.path
+      && !document.ignored
+      && !snoozedRecommendationDocPaths.has(document.path)
+    )) || null;
+  }, [featuredDocument?.path, groupedDocuments.unstarted, snoozedRecommendationDocPaths, uiDocuments]);
 
   const reviewDocuments = useMemo(() => (
     groupedDocuments.review
@@ -1301,6 +1531,7 @@ export function HomePage() {
   function openDocument(document, source = "") {
     router.push(buildLearningHref(document, {
       autostart: document.trainingStarted || document.progressPercentage >= 100,
+      intent: buildReentryPlan(document).primaryAction.kind,
     }));
     setMobilePane("detail");
   }
@@ -1317,6 +1548,27 @@ export function HomePage() {
         docPath: document.path,
         docTitle: document.title,
         ignored: !document.ignored,
+      });
+      setProfile(nextProfile);
+      lastProfileSyncRef.current = Date.now();
+    } catch (nextError) {
+      setError(nextError.message);
+    }
+  }
+
+  async function snoozeFeaturedDocument(document) {
+    const activeUserId = profile?.user?.id || userId;
+    if (!activeUserId) {
+      setLoginOpen(true);
+      return;
+    }
+    try {
+      setError("");
+      const nextProfile = await postJson("/api/profile/recommendation-snooze", {
+        userId: activeUserId,
+        docPath: document.path,
+        docTitle: document.title,
+        hours: 12,
       });
       setProfile(nextProfile);
       lastProfileSyncRef.current = Date.now();
@@ -1357,6 +1609,10 @@ export function HomePage() {
           <Link href="/interview-assist" className="ll-interview-button">
             <span aria-hidden="true">⚡</span>
             <span>面试模式</span>
+          </Link>
+          <Link href="/loopassist" className="ll-interview-button">
+            <span aria-hidden="true">AI</span>
+            <span>LoopAssist</span>
           </Link>
           <AvatarMenu
             open={avatarOpen}
@@ -1402,16 +1658,12 @@ export function HomePage() {
             ) : null}
           </div>
 
-          {ignoredDocumentCount > 0 ? (
-            <label className="ll-include-ignored-toggle">
-              <input
-                type="checkbox"
-                checked={includeIgnoredDocuments}
-                onChange={(event) => setIncludeIgnoredDocuments(event.target.checked)}
-              />
-              <span>包含忽略文档</span>
-              <strong>{ignoredDocumentCount}</strong>
-            </label>
+          {mode !== "library" && ignoredDocumentCount > 0 ? (
+            <IgnoredDocumentToggle
+              checked={includeIgnoredDocuments}
+              count={ignoredDocumentCount}
+              onChange={setIncludeIgnoredDocuments}
+            />
           ) : null}
 
           {mode === "library" ? (
@@ -1482,8 +1734,11 @@ export function HomePage() {
             <LibraryBrowser
               currentNode={currentLibraryNode}
               selectedDocPath={selectedDocPath}
+              includeIgnoredDocuments={includeIgnoredDocuments}
+              ignoredDocumentCount={ignoredDocumentCount}
               onOpenNode={openLibraryNode}
               onOpenDocument={openDocument}
+              onIncludeIgnoredChange={setIncludeIgnoredDocuments}
               onToggleIgnored={toggleIgnoredDocument}
             />
           ) : null}
@@ -1491,9 +1746,11 @@ export function HomePage() {
           {panel !== "doc" && mode !== "library" && featuredDocument ? (
             <DefaultFocusView
               featuredDocument={featuredDocument}
+              recommendedNewDocument={recommendedNewDocument}
               reviewDocuments={reviewDocuments}
               summary={summary}
               hasProfile={Boolean(profile?.user?.id)}
+              onSnoozeRecommendation={snoozeFeaturedDocument}
             />
           ) : null}
         </section>

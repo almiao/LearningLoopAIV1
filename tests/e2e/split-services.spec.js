@@ -62,3 +62,38 @@ test("split BFF starts document-scoped training from the active document", async
     );
   });
 });
+
+test("split BFF exposes LoopAssist scope options and proxies the interview loop", async () => {
+  await withSplitServices(null, async ({ bffBaseUrl }) => {
+    const optionsResponse = await fetch(`${bffBaseUrl}/api/loopassist/options`);
+    const options = await optionsResponse.json();
+    assert.equal(optionsResponse.ok, true);
+    assert.ok(options.roles.length > 0);
+    assert.ok(options.topics.length > 0);
+
+    const session = await postJson(`${bffBaseUrl}/api/loopassist/start`, {
+      scope: {
+        role: options.roles[0].value,
+        round: options.rounds[0].value,
+        topics: [options.topics[0].value],
+        companyStyle: options.companyStyles[0].value,
+        interviewStyle: "realistic",
+        questionBudget: 6,
+      },
+    });
+    assert.ok(session.sessionId);
+    assert.equal(session.transcript.at(-1).role, "interviewer");
+
+    const answered = await postJson(`${bffBaseUrl}/api/loopassist/answer`, {
+      sessionId: session.sessionId,
+      answer: "我会先给出结论，再结合项目里的指标和排查路径展开。",
+    });
+    assert.equal(answered.transcript.at(-1).role, "interviewer");
+
+    const review = await postJson(`${bffBaseUrl}/api/loopassist/review`, {
+      sessionId: session.sessionId,
+    });
+    assert.ok(review.review.readinessScore > 0);
+    assert.ok(review.transcript.length >= 3);
+  }, { aiPort: 18120, bffPort: 14120 });
+});

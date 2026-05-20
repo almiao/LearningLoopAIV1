@@ -29,16 +29,30 @@ import {
   applyDocumentTrainingSkipped,
   applyDocumentTrainingStarted,
   applyDocumentTrainingUnavailable,
+  applyDocumentRecommendationSnooze,
   readDocumentTrainingSession,
 } from "../../src/user/document-progress-state.js";
 import { applyReadingProgress } from "../../src/user/reading-progress.js";
 import { createUserProfileStore } from "../../src/user/user-profile-store.js";
 import { buildUserProfileView } from "../../src/user/profile-aggregator.js";
+import {
+  createUserRulesStore,
+  interactionPreferenceRule,
+} from "../../src/user/user-rules-store.js";
+import { createSessionSummariesStore } from "../../src/user/session-summary-store.js";
+import {
+  buildLoopAssistOptions,
+  previewLoopAssistScope,
+  selectLoopAssistSeeds,
+} from "../../src/loopassist/corpus.js";
 
 const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
+const ttsServiceUrl = process.env.TTS_SERVICE_URL || "http://127.0.0.1:4300";
 const port = Number(process.env.PORT || 4000);
 const memoryProfileStore = createMemoryProfileStore();
 const userProfileStore = createUserProfileStore();
+const userRulesStore = createUserRulesStore();
+const sessionSummariesStore = createSessionSummariesStore();
 const superappDemoHandle = process.env.SUPERAPP_DEMO_HANDLE || "learningloop_superapp_demo";
 const superappDemoPin = process.env.SUPERAPP_DEMO_PIN || "1234";
 
@@ -126,9 +140,15 @@ async function getMemoryProfile(memoryProfileId) {
 
 async function buildProfilePayload(user) {
   const memoryProfile = await getMemoryProfile(user.memoryProfileId);
+  const [userRules, sessionSummaries] = await Promise.all([
+    userRulesStore.list(user.id),
+    sessionSummariesStore.list(user.id),
+  ]);
   return buildUserProfileView({
     user,
     memoryProfile,
+    userRules,
+    sessionSummaries,
   });
 }
 
@@ -157,6 +177,35 @@ async function proxyJson(method, pathname, payload) {
   };
 }
 
+async function proxyBinary(baseUrl, method, pathname, payload) {
+  const response = await fetch(`${baseUrl}${pathname}`, {
+    method,
+    headers: {
+      "content-type": "application/json",
+    },
+    body: payload ? JSON.stringify(payload) : undefined,
+  });
+
+  if (!response.ok) {
+    const rawText = await response.text();
+    let data;
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      data = { error: rawText || "Downstream AI service request failed." };
+    }
+    throw new Error(data.detail || data.error || "Downstream AI service request failed.");
+  }
+
+  return {
+    body: Buffer.from(await response.arrayBuffer()),
+    contentType: response.headers.get("content-type") || "application/octet-stream",
+    traceId: response.headers.get("x-trace-id") || "",
+    provider: response.headers.get("x-loopassist-tts-provider") || "",
+    speaker: response.headers.get("x-loopassist-tts-speaker") || "",
+  };
+}
+
 function stripSessionPayload(session = {}) {
   const nextSession = {
     ...session,
@@ -172,6 +221,61 @@ function buildDecompositionSnapshot(session = {}) {
     trainingPoints: session.trainingPoints || [],
     concepts: session.concepts || [],
   };
+}
+
+function summarizeCompletedSession(result = {}) {
+  const latestFeedback = result.latestFeedback || {};
+  const masteryMap = Array.isArray(result.masteryMap) ? result.masteryMap : [];
+  const practicedCheckpointIds = masteryMap.map((item) => item.conceptId || item.checkpointId).filter(Boolean);
+  const solidifiedCheckpointIds = masteryMap
+    .filter((item) => item.state === "solid")
+    .map((item) => item.conceptId || item.checkpointId)
+    .filter(Boolean);
+  const weakCheckpointIds = masteryMap
+    .filter((item) => item.state === "weak" || item.state === "partial" || item.state === "不可判")
+    .map((item) => item.conceptId || item.checkpointId)
+    .filter(Boolean);
+
+  let recommendedNextAction = "quick_review";
+  if (result.source?.metadata?.docPath && result.trainingAvailability === "unavailable") {
+    recommendedNextAction = "reference_lookup";
+  } else if (!weakCheckpointIds.length && solidifiedCheckpointIds.length) {
+    recommendedNextAction = "reference_lookup";
+  }
+
+  return {
+    sessionId: result.sessionId || "",
+    docPath: result.source?.metadata?.docPath || "",
+    endedAt: new Date().toISOString(),
+    practicedCheckpointIds,
+    solidifiedCheckpointIds,
+    weakCheckpointIds,
+    oneParagraphSummary: String(latestFeedback.explanation || latestFeedback.takeaway || "").trim(),
+    recommendedNextCheckpointId: weakCheckpointIds[0] || "",
+    recommendedNextAction,
+  };
+}
+
+async function persistSessionSummaryIfCompleted(result = {}) {
+  if (!result?.userId || !isCompletedDocumentSession(result)) {
+    return;
+  }
+  const summary = summarizeCompletedSession(result);
+  if (!summary.sessionId || !summary.docPath) {
+    return;
+  }
+  await sessionSummariesStore.upsert(result.userId, summary);
+}
+
+async function persistInteractionPreferenceRule(userId = "", interactionPreference = "") {
+  if (!userId) {
+    return;
+  }
+  const normalized = String(interactionPreference || "").trim();
+  if (!normalized) {
+    return;
+  }
+  await userRulesStore.upsert(userId, interactionPreferenceRule(normalized));
 }
 
 function isCompletedDocumentSession(session = {}) {
@@ -305,6 +409,7 @@ async function handleStartTarget(body) {
     throw new Error("userId is required.");
   }
   const user = await getUserProfile(body.userId);
+  await persistInteractionPreferenceRule(user.id, body.interactionPreference || "balanced");
   const memoryProfile = await getMemoryProfile(user.memoryProfileId);
   const activeDocument = body.docPath
     ? await readSourceDocument(body.docPath, { userId: user.id })
@@ -448,6 +553,7 @@ async function handleStartTarget(body) {
 
 async function handleAnswer(body) {
   const { data: result, traceId } = await proxyJson("POST", "/api/interview/answer", body);
+  await persistInteractionPreferenceRule(result.userId || body.userId || "", body.interactionPreference || "");
   const memoryProfileSnapshot = result.memoryProfileSnapshot;
   if (memoryProfileSnapshot?.id) {
     const currentMemoryProfile = await getMemoryProfile(memoryProfileSnapshot.id);
@@ -481,6 +587,7 @@ async function handleAnswer(body) {
     user.lastActiveAt = user.targets[result.targetBaseline.id].lastActivityAt;
     await userProfileStore.save(user);
   }
+  await persistSessionSummaryIfCompleted(result);
   return stripSessionPayload({
     ...result,
     traceId,
@@ -581,6 +688,28 @@ async function handleSkippedTraining(body) {
   user.documents = applyDocumentTrainingSkipped(user.documents || {}, {
     docPath: body.docPath,
     docTitle: body.docTitle || "",
+    timestamp,
+  });
+  user.lastActiveAt = timestamp;
+  await userProfileStore.save(user);
+  return buildProfilePayload(user);
+}
+
+async function handleRecommendationSnooze(body) {
+  if (!body.userId) {
+    throw new Error("userId is required.");
+  }
+  if (!body.docPath) {
+    throw new Error("docPath is required.");
+  }
+  const user = await getUserProfile(body.userId);
+  const timestamp = new Date().toISOString();
+  const hours = Math.max(1, Math.min(24, Number(body.hours || 12)));
+  const until = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+  user.documents = applyDocumentRecommendationSnooze(user.documents || {}, {
+    docPath: body.docPath,
+    docTitle: body.docTitle || "",
+    until,
     timestamp,
   });
   user.lastActiveAt = timestamp;
@@ -759,6 +888,7 @@ async function persistAnswerSideEffects(result) {
     user.lastActiveAt = user.targets[result.targetBaseline.id].lastActivityAt;
     await userProfileStore.save(user);
   }
+  await persistSessionSummaryIfCompleted(result);
 }
 
 async function handleFocusDomain(body) {
@@ -846,6 +976,52 @@ async function handleAnswerStream(body, response) {
   response.end();
 }
 
+async function handleLoopAssistStart(body) {
+  const scope = body.scope || {};
+  const seeds = selectLoopAssistSeeds(scope);
+  const { data, traceId } = await proxyJson("POST", "/api/loopassist/start", {
+    ...body,
+    scope,
+    seeds,
+  });
+  return {
+    ...data,
+    traceId,
+  };
+}
+
+async function handleLoopAssistStream(body, response) {
+  const upstream = await fetch(`${aiServiceUrl}/api/loopassist/answer-stream`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!upstream.ok || !upstream.body) {
+    const rawText = await upstream.text();
+    let data;
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      data = { error: rawText || "Downstream LoopAssist stream failed." };
+    }
+    throw new Error(data.detail || data.error || "Downstream LoopAssist stream failed.");
+  }
+
+  withStreamHeaders(response, 200);
+  const traceId = upstream.headers.get("x-trace-id") || "";
+  if (traceId) {
+    response.write(serializeSseEvent("trace", { traceId }));
+  }
+
+  for await (const chunk of upstream.body) {
+    response.write(chunk);
+  }
+  response.end();
+}
+
 const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url, "http://localhost");
@@ -858,6 +1034,50 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/health") {
       sendJson(response, 200, { ok: true, aiServiceUrl });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/loopassist/options") {
+      sendJson(response, 200, buildLoopAssistOptions());
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/loopassist/preview-scope") {
+      const body = await readJsonBody(request);
+      sendJson(response, 200, previewLoopAssistScope(body.scope || body));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/loopassist/start") {
+      sendJson(response, 200, await handleLoopAssistStart(await readJsonBody(request)));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/loopassist/answer") {
+      const { data, traceId } = await proxyJson("POST", "/api/loopassist/answer", await readJsonBody(request));
+      sendJson(response, 200, { ...data, traceId });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/loopassist/answer-stream") {
+      await handleLoopAssistStream(await readJsonBody(request), response);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/loopassist/review") {
+      const { data, traceId } = await proxyJson("POST", "/api/loopassist/review", await readJsonBody(request));
+      sendJson(response, 200, { ...data, traceId });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/loopassist/tts") {
+      const result = await proxyBinary(ttsServiceUrl, "POST", "/api/tts", await readJsonBody(request));
+      sendBuffer(response, 200, result.body, {
+        "content-type": result.contentType,
+        "x-trace-id": result.traceId,
+        "x-loopassist-tts-provider": result.provider,
+        "x-loopassist-tts-speaker": result.speaker,
+      });
       return;
     }
 
@@ -892,6 +1112,11 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/profile/skipped-training") {
       sendJson(response, 200, await handleSkippedTraining(await readJsonBody(request)));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/profile/recommendation-snooze") {
+      sendJson(response, 200, await handleRecommendationSnooze(await readJsonBody(request)));
       return;
     }
 

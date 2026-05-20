@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, postEventStream, postJson } from "../lib/api";
+import { buildReentryPlan, isReadingAction, isTrainingAction } from "../lib/reentry-actions";
 import { readHeading, renderMarkdownContent, slugifyHeading } from "../lib/render-markdown-content";
 import { getDocumentOutline, getReaderRenderer } from "../lib/document-reader-renderers";
 import { TrainingGenerationPanel } from "./training-generation-panel";
@@ -90,6 +91,20 @@ function splitTextBlocks(value) {
     .split(/\n{2,}/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function resolveInteractionPreferenceFromRules(rules = []) {
+  const preferred = (rules || []).find((rule) => rule.id === "preferred-interaction-style");
+  if (!preferred) {
+    return "";
+  }
+  if (String(preferred.text || "").includes("先解释")) {
+    return "explain-first";
+  }
+  if (String(preferred.text || "").includes("快问快答")) {
+    return "probe-heavy";
+  }
+  return "balanced";
 }
 
 function normalizeComparableText(value = "") {
@@ -276,8 +291,14 @@ function buildLearnDocumentHref(docPath = "", options = {}) {
   if (docPath) {
     params.set("doc", docPath);
   }
+  if (options.intent) {
+    params.set("intent", options.intent);
+  }
   if (options.autostart) {
     params.set("autostart", "1");
+  }
+  if (options.focusComposer) {
+    params.set("composer", "1");
   }
   return `/learn${params.toString() ? `?${params.toString()}` : ""}`;
 }
@@ -424,6 +445,111 @@ function buildReadingTrainingBanner({
     tone: "ready",
     clickable: false,
   };
+}
+
+function formatCheckpointProgressLabel(label = "") {
+  const value = String(label || "").trim();
+  if (!value) {
+    return "";
+  }
+  return value.replace(/\s*\/\s*/g, " / ");
+}
+
+function buildReadingReentrySummary(plan, checkpointProgressLabel = "") {
+  const primaryKind = plan?.primaryAction?.kind || "";
+  const progressText = formatCheckpointProgressLabel(checkpointProgressLabel);
+
+  if (primaryKind === "continue-training") {
+    return {
+      title: "继续上次训练",
+      description: progressText
+        ? `你上次练到训练点 ${progressText}，直接续上会更省力。`
+        : "你上次有一轮训练没完成，直接续上会更省力。",
+      note: "会恢复到上次中断的位置",
+      primaryLabel: "继续训练",
+      secondaryLabel: "先阅读",
+    };
+  }
+
+  if (primaryKind === "start-training") {
+    return {
+      title: "开始这轮训练",
+      description: "正文已经读完，趁上下文还热着练一轮最划算。",
+      note: "会直接进入当前文档训练",
+      primaryLabel: "开始训练",
+      secondaryLabel: "先阅读",
+    };
+  }
+
+  if (primaryKind === "restart-training") {
+    return {
+      title: "补上这轮训练",
+      description: "你上次按仅阅读收尾了；如果这篇现在变重要，直接开练会比重看更快。",
+      note: "会重新开始当前文档训练",
+      primaryLabel: "重新训练",
+      secondaryLabel: "先阅读",
+    };
+  }
+
+  if (primaryKind === "quick-review") {
+    return {
+      title: "来一轮快速复习",
+      description: "这篇你之前已经练过，先把薄弱点拉回来会更有效。",
+      note: "会优先回到当前最需要复习的点",
+      primaryLabel: "快速复习",
+      secondaryLabel: "先阅读",
+    };
+  }
+
+  return null;
+}
+
+function ReadingReentryCard({
+  plan,
+  checkpointProgressLabel = "",
+  disabled = false,
+  onPrimaryAction,
+  onDismiss,
+}) {
+  const summary = buildReadingReentrySummary(plan, checkpointProgressLabel);
+  if (!plan || !summary) {
+    return null;
+  }
+
+  return (
+    <section className="reading-reentry-card" data-testid="reading-reentry-card">
+      <div className="reading-reentry-copy">
+        <span className="reading-reentry-kicker">训练提醒</span>
+        <strong className="reading-reentry-title">{summary.title}</strong>
+        <p className="reading-reentry-reason">{summary.description}</p>
+        <p className="reading-reentry-status">{summary.note}</p>
+      </div>
+      <div className="reading-reentry-actions">
+        {plan.primaryAction?.passive ? (
+          <span className="reading-reentry-passive">{plan.primaryAction.label}</span>
+        ) : (
+          <button
+            type="button"
+            className="reading-reentry-primary"
+            data-testid="reading-reentry-primary"
+            disabled={disabled}
+            onClick={() => onPrimaryAction(plan.primaryAction)}
+          >
+            {summary.primaryLabel}
+          </button>
+        )}
+        <button
+          type="button"
+          className="reading-reentry-secondary-button"
+          data-testid="reading-reentry-dismiss"
+          disabled={disabled}
+          onClick={onDismiss}
+        >
+          {summary.secondaryLabel}
+        </button>
+      </div>
+    </section>
+  );
 }
 
 function buildTrainingCompletion(session = null, points = []) {
@@ -1531,8 +1657,7 @@ function NextQuestionCard({ question, answer, setAnswer, isAnswering, onSubmit, 
   );
 }
 
-function TrainingAssistantRail({ session, currentQuestion, stats, mastery, onAsk, sideQuestion, setSideQuestion, isAnswering, awaitingExplanation = false }) {
-  const prompts = ["这道题在考什么?", "原文哪一段讲到这个?", "跟上一题关联在哪?", "先看看正确答案"];
+function TrainingAssistantRail({ session, currentQuestion, stats, mastery }) {
   return (
     <aside className="ll-training-rail" data-testid="qa-panel">
       <TrainingOverviewCard session={session} currentQuestion={currentQuestion} mastery={mastery} />
@@ -1551,39 +1676,6 @@ function TrainingAssistantRail({ session, currentQuestion, stats, mastery, onAsk
           })}
         </div>
       </section>
-      <section className={`ll-rail-card${awaitingExplanation ? " pending" : ""}`}>
-        <h3>这道题想聊聊</h3>
-        {awaitingExplanation ? <p>讲解还在生成，等内容到位后再继续追问会更顺。</p> : null}
-        <div className="ll-rail-prompts">
-          {prompts.map((prompt) => (
-            <button key={prompt} type="button" disabled={awaitingExplanation} onClick={() => onAsk(prompt)}>
-              {prompt}
-            </button>
-          ))}
-        </div>
-      </section>
-      <form
-        className={`ll-rail-input${awaitingExplanation ? " pending" : ""}`}
-        onSubmit={(event) => {
-          event.preventDefault();
-          const value = sideQuestion.trim();
-          if (!value || awaitingExplanation) {
-            return;
-          }
-          onAsk(value);
-          setSideQuestion("");
-        }}
-      >
-        <input
-          value={sideQuestion}
-          onChange={(event) => setSideQuestion(event.target.value)}
-          placeholder={awaitingExplanation ? "讲解生成完成后可继续追问..." : "自由追问..."}
-          disabled={awaitingExplanation}
-        />
-        <button type="submit" disabled={awaitingExplanation || isAnswering || !sideQuestion.trim()} aria-label="发送追问">
-          <MiniIcon name="send" />
-        </button>
-      </form>
     </aside>
   );
 }
@@ -1597,13 +1689,10 @@ function TrainingWorkspace({
   stats,
   answer,
   setAnswer,
-  sideQuestion,
-  setSideQuestion,
   isAnswering,
   trainingWaitState,
   isPreparingTraining,
   onSubmit,
-  onAsk,
   onExplain,
   onRetryGeneration,
   onSkipExplanation,
@@ -1662,11 +1751,6 @@ function TrainingWorkspace({
           currentQuestion={currentQuestion}
           stats={stats}
           mastery={mastery}
-          onAsk={onAsk}
-          sideQuestion={sideQuestion}
-          setSideQuestion={setSideQuestion}
-          isAnswering={isAnswering}
-          awaitingExplanation={awaitingExplanation}
         />
       </section>
     </main>
@@ -2099,6 +2183,8 @@ export function LearnWorkspace() {
   const searchParams = useSearchParams();
   const focusParamEnabled = searchParams.get("focus") === "1";
   const autostartRef = useRef(false);
+  const entryIntentHandledRef = useRef("");
+  const resumePositionAppliedRef = useRef("");
   const conceptFocusRef = useRef("");
   const readingProgressRef = useRef("");
   const progressDocumentPathRef = useRef("");
@@ -2112,7 +2198,6 @@ export function LearnWorkspace() {
   const [interactionPreference, setInteractionPreference] = useState("balanced");
   const [session, setSession] = useState(null);
   const [answer, setAnswer] = useState("");
-  const [sideQuestion, setSideQuestion] = useState("");
   const [pendingSubmittedAnswer, setPendingSubmittedAnswer] = useState("");
   const [error, setError] = useState("");
   const [isStarting, setIsStarting] = useState(false);
@@ -2132,6 +2217,7 @@ export function LearnWorkspace() {
   const [focusMode, setFocusMode] = useState(focusParamEnabled);
   const [focusQaOpen, setFocusQaOpen] = useState(false);
   const [readerZoom, setReaderZoom] = useState(100);
+  const [dismissedReentrySignature, setDismissedReentrySignature] = useState("");
   const [panelLayout, setPanelLayout] = useState({
     mode: "auto",
     qaPercent: null,
@@ -2218,7 +2304,13 @@ export function LearnWorkspace() {
       return;
     }
     apiFetch(`/api/profile/${userId}`)
-      .then((data) => setProfile(data))
+      .then((data) => {
+        setProfile(data);
+        const preferred = resolveInteractionPreferenceFromRules(data.userRules || []);
+        if (preferred) {
+          setInteractionPreference(preferred);
+        }
+      })
       .catch(() => setStoredUserId(""));
   }, []);
 
@@ -2234,6 +2326,8 @@ export function LearnWorkspace() {
   const activeDocPath = searchParams.get("doc") || currentSource?.path || knowledgeDocuments[0]?.path || "";
   const documentTitle = knowledgeDoc?.title || currentSource?.title || "开始学习";
   const autostart = searchParams.get("autostart") === "1";
+  const entryIntent = searchParams.get("intent") || "";
+  const focusComposerOnLoad = searchParams.get("composer") === "1";
   const desiredConceptId = searchParams.get("concept") || "";
   const docConcepts = useMemo(
     () => (session?.trainingPoints || []).filter((point) =>
@@ -2319,6 +2413,53 @@ export function LearnWorkspace() {
     trainingReadingOnly,
     unavailableReason: activeDocumentProgressEntry?.trainingUnavailableReason || "",
   });
+  const reentryPlan = useMemo(
+    () => buildReentryPlan({
+      path: activeDocPath,
+      title: documentTitle,
+      progressPercentage: visibleReadProgressPercent,
+      readingPreview: activeDocumentProgressEntry?.readingPreview || "",
+      readingChapter: activeDocumentProgressEntry?.readingChapter || "",
+      trainingStarted,
+      trainingCompleted,
+      trainingSkipped,
+      trainingAvailability: activeDocumentProgressEntry?.trainingAvailability || "",
+      trainingCheckpointProgressLabel: activeDocumentProgressEntry?.trainingCheckpointProgressLabel || "",
+      trainingAnswerCount: activeDocumentProgressEntry?.trainingAnswerCount || 0,
+      assessedConceptCount: activeDocumentProgressEntry?.assessedConceptCount || 0,
+      masteryPercentage: activeDocumentProgressEntry?.masteryPercentage || 0,
+      lastActivityAt: activeDocumentProgressEntry?.lastActivityAt || "",
+      ignored: isDocumentIgnored,
+    }),
+    [
+      activeDocPath,
+      documentTitle,
+      visibleReadProgressPercent,
+      activeDocumentProgressEntry,
+      trainingStarted,
+      trainingCompleted,
+      trainingSkipped,
+      isDocumentIgnored,
+    ]
+  );
+  const weakestDocConceptId = useMemo(() => {
+    const recommendedSummary = (profile?.sessionSummaries || []).find((entry) => entry.docPath === activeDocPath);
+    if (recommendedSummary?.recommendedNextCheckpointId) {
+      return recommendedSummary.recommendedNextCheckpointId;
+    }
+    const allItems = (profile?.targets || []).flatMap((target) => target?.domains || []).flatMap((domain) => domain?.items || []);
+    const candidates = allItems
+      .filter((item) => item?.primaryDocPath === activeDocPath)
+      .sort((left, right) => {
+        const leftScore = Number(left?.progressPercentage || 0);
+        const rightScore = Number(right?.progressPercentage || 0);
+        if (leftScore !== rightScore) {
+          return leftScore - rightScore;
+        }
+        return Number(right?.evidenceCount || 0) - Number(left?.evidenceCount || 0);
+      });
+    return candidates[0]?.checkpointId || "";
+  }, [activeDocPath, profile?.sessionSummaries, profile?.targets]);
   const visibleSessionId = session?.sessionId || activeDocumentProgressEntry?.activeSessionId || "";
   const outlineAvailable = documentHeadings.length > 0 || knowledgeTree.length > 0;
   const isPreparingTraining = isStarting && sessionStartMode === "training";
@@ -2377,6 +2518,10 @@ export function LearnWorkspace() {
     session,
     stats: trainingStats,
   }), [error, isAnswering, isPreparingTraining, liveTrainingTurns, session, trainingStats]);
+  const reentrySignature = `${activeDocPath}:${reentryPlan.primaryAction?.kind || ""}:${activeDocumentProgressEntry?.trainingCheckpointProgressLabel || ""}`;
+  const shouldShowReadingReentry = activeWorkspaceMode === "reading"
+    && Boolean(buildReadingReentrySummary(reentryPlan, activeDocumentProgressEntry?.trainingCheckpointProgressLabel || ""))
+    && dismissedReentrySignature !== reentrySignature;
 
   useEffect(() => {
     if (progressDocumentPathRef.current !== activeDocPath) {
@@ -2402,12 +2547,12 @@ export function LearnWorkspace() {
   }
 
   useEffect(() => {
-    if (!autostart || autostartRef.current || !profile?.user?.id || session) {
+    if (!autostart || entryIntent || autostartRef.current || !profile?.user?.id || session) {
       return;
     }
     autostartRef.current = true;
     void startSession({ mode: "reading" });
-  }, [autostart, profile, session]);
+  }, [autostart, entryIntent, profile, session]);
 
   useEffect(() => {
     if (!session?.sessionId || !desiredConceptId || session.currentTrainingPointId === desiredConceptId || conceptFocusRef.current === desiredConceptId) {
@@ -2416,6 +2561,129 @@ export function LearnWorkspace() {
     conceptFocusRef.current = desiredConceptId;
     void focusConcept(desiredConceptId);
   }, [desiredConceptId, session]);
+
+  useEffect(() => {
+    if (!focusComposerOnLoad) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      composerInputRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusComposerOnLoad, activeDocPath]);
+
+  useEffect(() => {
+    if (!entryIntent || !profile?.user?.id || !activeDocPath) {
+      return;
+    }
+    const signature = `${activeDocPath}:${entryIntent}`;
+    if (entryIntentHandledRef.current === signature) {
+      return;
+    }
+    entryIntentHandledRef.current = signature;
+
+    let cancelled = false;
+
+    async function handleEntryIntent() {
+      if (entryIntent === "ask-document") {
+        if (cancelled) {
+          return;
+        }
+        focusReadingComposer();
+        clearEntryRoutingParams();
+        return;
+      }
+
+      if (entryIntent === "restart-training") {
+        if (cancelled) {
+          return;
+        }
+        await restartTraining();
+        if (!cancelled) {
+          clearEntryRoutingParams();
+        }
+        return;
+      }
+
+      if (entryIntent === "quick-review") {
+        if (cancelled) {
+          return;
+        }
+        await reviewWeakestConcept();
+        if (!cancelled) {
+          clearEntryRoutingParams();
+        }
+        return;
+      }
+
+      if (entryIntent === "continue-training" || entryIntent === "start-training") {
+        if (cancelled) {
+          return;
+        }
+        await unlockTraining();
+        if (!cancelled) {
+          clearEntryRoutingParams();
+        }
+        return;
+      }
+
+      if (entryIntent === "continue-reading" || entryIntent === "open-document") {
+        if (cancelled) {
+          return;
+        }
+        setWorkspaceMode("reading");
+        window.setTimeout(() => {
+          if (!cancelled) {
+            restoreReaderScrollFromProgress();
+          }
+        }, 150);
+        window.setTimeout(() => {
+          if (!cancelled) {
+            clearEntryRoutingParams();
+          }
+        }, 320);
+      }
+    }
+
+    void handleEntryIntent();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeDocPath, entryIntent, profile?.user?.id]);
+
+  useEffect(() => {
+    const readerBody = readerBodyRef.current;
+    if (!readerBody || !knowledgeDoc?.path || storedReadProgressPercent <= 0) {
+      return;
+    }
+    const signature = `${activeDocPath}:${storedReadProgressPercent}:${readerSourceView}`;
+    if (resumePositionAppliedRef.current === signature) {
+      return;
+    }
+    let frame = 0;
+    let attempts = 0;
+
+    function restoreScrollPosition() {
+      attempts += 1;
+      const scrollableHeight = readerBody.scrollHeight - readerBody.clientHeight;
+      if (scrollableHeight > 8) {
+        const targetTop = (storedReadProgressPercent / 100) * scrollableHeight;
+        readerBody.scrollTop = targetTop;
+        const reachedTarget = Math.abs(readerBody.scrollTop - targetTop) < 2 || readerBody.scrollTop > 0;
+        if (reachedTarget) {
+          resumePositionAppliedRef.current = signature;
+          return;
+        }
+      }
+      if (attempts < 24) {
+        frame = window.requestAnimationFrame(restoreScrollPosition);
+      }
+    }
+
+    frame = window.requestAnimationFrame(restoreScrollPosition);
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeDocPath, knowledgeDoc?.path, readerSourceView, storedReadProgressPercent]);
 
   useEffect(() => {
     if (!readingStreamingTurn && !liveTrainingTurns.length) {
@@ -2575,7 +2843,7 @@ export function LearnWorkspace() {
       : docConcepts[0] || null;
     const nextSignature = JSON.stringify({
       userId: profile.user.id,
-      domainId: conceptForDoc?.abilityDomainId || conceptForDoc?.domainId || "",
+      domainId: conceptForDoc?.domainId || conceptForDoc?.abilityDomainId || "",
       conceptId: conceptForDoc?.id || "",
       docPath: activeDocPath,
       docTitle: knowledgeDoc?.title || "",
@@ -2716,6 +2984,10 @@ export function LearnWorkspace() {
     }
     const data = await apiFetch(`/api/profile/${profile.user.id}`);
     setProfile(data);
+    const preferred = resolveInteractionPreferenceFromRules(data.userRules || []);
+    if (preferred) {
+      setInteractionPreference(preferred);
+    }
   }
 
   async function toggleIgnoredDocument() {
@@ -2878,16 +3150,18 @@ export function LearnWorkspace() {
       appendReadingSystemNote(activeDocumentProgressEntry.trainingUnavailableReason || "当前文档暂时无法生成训练点，已保留为阅读材料。");
       return;
     }
+    setTrainingUnlocked(true);
+    setWorkspaceMode("training");
     let nextSession = sessionBelongsToDocument(session, activeDocPath) ? session : null;
     if (!nextSession) {
       nextSession = await startSession({ mode: "training" });
     }
     if (!nextSession) {
+      setTrainingUnlocked(false);
+      setWorkspaceMode("reading");
       return;
     }
     setLocallySkippedTrainingPaths((items) => items.filter((item) => item !== activeDocPath));
-    setTrainingUnlocked(true);
-    setWorkspaceMode("training");
   }
 
   function handleTrainingModeClick() {
@@ -2904,6 +3178,100 @@ export function LearnWorkspace() {
       return;
     }
     void unlockTraining();
+  }
+
+  function focusReadingComposer() {
+    setWorkspaceMode("reading");
+    window.requestAnimationFrame(() => {
+      composerInputRef.current?.focus();
+    });
+  }
+
+  function clearEntryRoutingParams() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("intent");
+    params.delete("composer");
+    params.delete("autostart");
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `/learn?${nextQuery}` : "/learn", { scroll: false });
+  }
+
+  function restoreReaderScrollFromProgress() {
+    if (storedReadProgressPercent <= 0) {
+      return;
+    }
+    const readerBody = readerBodyRef.current;
+    const bodyScrollableHeight = readerBody
+      ? (readerBody.scrollHeight - readerBody.clientHeight)
+      : 0;
+
+    if (readerBody && bodyScrollableHeight > 8) {
+      readerBody.scrollTop = (storedReadProgressPercent / 100) * bodyScrollableHeight;
+      return;
+    }
+
+    const pageScrollableHeight = document.documentElement.scrollHeight - window.innerHeight;
+    if (pageScrollableHeight > 8) {
+      window.scrollTo({
+        top: (storedReadProgressPercent / 100) * pageScrollableHeight,
+        behavior: "auto",
+      });
+    }
+  }
+
+  async function reviewWeakestConcept() {
+    setTrainingUnlocked(true);
+    setWorkspaceMode("training");
+    setSummaryDismissed(true);
+    setAnswer("");
+    const activeSession = await ensureSessionForReading();
+    if (!activeSession) {
+      return;
+    }
+    if (weakestDocConceptId) {
+      await focusConcept(weakestDocConceptId, activeSession.sessionId);
+      return;
+    }
+    await unlockTraining();
+  }
+
+  async function performReentryAction(action) {
+    if (!action || isStarting || isAnswering) {
+      return;
+    }
+
+    if (action.kind === "ask-document") {
+      focusReadingComposer();
+      return;
+    }
+
+    if (action.kind === "restart-training") {
+      await restartTraining();
+      return;
+    }
+
+    if (action.kind === "quick-review") {
+      await reviewWeakestConcept();
+      return;
+    }
+
+    if (action.kind === "weak-point-review") {
+      await reviewWeakPoint();
+      return;
+    }
+
+    if (isTrainingAction(action)) {
+      await unlockTraining();
+      return;
+    }
+
+    if (isReadingAction(action)) {
+      setWorkspaceMode("reading");
+    }
+  }
+
+  function dismissReadingReentry() {
+    setDismissedReentrySignature(reentrySignature);
   }
 
   async function handleReadingTrainingBannerClick() {
@@ -3251,20 +3619,22 @@ export function LearnWorkspace() {
     submitAnswer();
   }
 
-  async function focusConcept(conceptId) {
-    if (!session?.sessionId) {
+  async function focusConcept(conceptId, sessionId = session?.sessionId) {
+    if (!sessionId) {
       return;
     }
     try {
       setError("");
       setOutlineOpen(false);
       const nextSession = await postJson("/api/interview/focus-concept", {
-        sessionId: session.sessionId,
+        sessionId,
         conceptId,
       });
       setSession(nextSession);
+      return nextSession;
     } catch (nextError) {
       setError(nextError.message);
+      return null;
     }
   }
 
@@ -3487,14 +3857,11 @@ export function LearnWorkspace() {
         stats={trainingStats}
         answer={answer}
         setAnswer={setAnswer}
-        sideQuestion={sideQuestion}
-        setSideQuestion={setSideQuestion}
         isAnswering={isAnswering}
         trainingWaitState={trainingWaitState}
         isPreparingTraining={isPreparingTraining}
         currentQuestionHasTeachExplanation={currentQuestionHasTeachExplanation}
         onSubmit={() => submitAnswer()}
-        onAsk={submitTrainingFollowUp}
         onExplain={() => {
           void submitTrainingFollowUp("先看看正确答案");
         }}
@@ -3785,16 +4152,14 @@ export function LearnWorkspace() {
 
           <div className="qa-scroll" ref={qaScrollRef}>
             <section className="chat-stack">
-              {activeWorkspaceMode === "reading" ? (
-                <button
-                  type="button"
-                  className={`reading-training-banner tone-${readingTrainingBanner.tone}`}
-                  onClick={readingTrainingBanner.clickable ? handleReadingTrainingBannerClick : undefined}
-                  disabled={!readingTrainingBanner.clickable}
-                >
-                  <span className="reading-training-dot" />
-                  {readingTrainingBanner.label}
-                </button>
+              {shouldShowReadingReentry ? (
+                <ReadingReentryCard
+                  plan={reentryPlan}
+                  checkpointProgressLabel={activeDocumentProgressEntry?.trainingCheckpointProgressLabel || ""}
+                  disabled={isStarting || isAnswering}
+                  onPrimaryAction={performReentryAction}
+                  onDismiss={dismissReadingReentry}
+                />
               ) : null}
               {activeWorkspaceMode === "reading" ? (
                 <article className={readingCompanionHasHistory ? "reading-companion-card compact" : "reading-companion-card"}>

@@ -80,7 +80,7 @@ def make_payload(*, target_progress=None) -> SimpleNamespace:
         },
         interactionPreference="balanced",
         targetBaseline={"id": "baseline-1", "title": "Java Backend"},
-        memoryProfile={"id": "memory-1", "abilityItems": {}},
+        memoryProfile={"id": "memory-1", "checkpointMastery": {}},
         targetProgress=target_progress
         or {
             "readingProgress": {

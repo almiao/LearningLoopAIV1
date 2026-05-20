@@ -258,7 +258,9 @@ def build_context_packet(
     current_checkpoint = build_current_checkpoint_context(session, concept)
     effective_raw_evidence_point = raw_evidence_point or _create_raw_evidence_point(session, concept, answer)
     anchor_identity = build_anchor_identity(concept)
-    memory_anchor = ((session.get("memoryProfile") or {}).get("abilityItems") or {}).get(concept.get("id"))
+    memory_profile = session.get("memoryProfile") or {}
+    checkpoint_mastery = memory_profile.get("checkpointMastery") or memory_profile.get("abilityItems") or {}
+    memory_anchor = checkpoint_mastery.get(concept.get("id"))
     stable_scope = _describe_scope(session, concept)
     previous_runtime_map = ((session.get("runtimeMaps") or {}).get(concept.get("id"))) or None
     anchor_turns = pick_recent_anchor_turns(session.get("turns") or [], concept.get("id", ""))
@@ -323,8 +325,8 @@ def build_context_packet(
             "type": stable_scope["type"],
             "id": stable_scope["id"],
             "current_anchor_id": concept.get("id", ""),
-            "current_domain_id": concept.get("abilityDomainId") or concept.get("domainId") or "general",
-            "current_domain_title": concept.get("abilityDomainTitle") or concept.get("domainTitle") or "通用能力",
+            "current_domain_id": concept.get("domainId") or concept.get("abilityDomainId") or "general",
+            "current_domain_title": concept.get("domainTitle") or concept.get("abilityDomainTitle") or "通用分组",
         },
         "anchor": {
             "canonical_id": anchor_identity["canonicalId"],

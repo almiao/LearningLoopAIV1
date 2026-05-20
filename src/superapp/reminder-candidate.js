@@ -21,6 +21,14 @@ function hoursSince(value = "") {
   return Math.max(0, (Date.now() - date.getTime()) / (1000 * 60 * 60));
 }
 
+function isPastDue(value = "") {
+  const date = new Date(value || "");
+  if (!Number.isFinite(date.getTime())) {
+    return false;
+  }
+  return date.getTime() <= Date.now();
+}
+
 function buildConceptLookup(pack) {
   const decomposition = createBaselinePackDecomposition(pack);
   return {
@@ -44,6 +52,9 @@ function deriveReminderCategory({ memoryItem, targetRecord }) {
   const evidenceCount = memoryItem?.evidenceCount || 0;
   const state = memoryItem?.state || "不可判";
   const lastActivityHours = hoursSince(targetRecord?.lastActivityAt);
+  if (memoryItem?.nextReviewAt && isPastDue(memoryItem.nextReviewAt)) {
+    return "forgetting_point_review";
+  }
 
   if (evidenceCount > 0 && state !== "solid" && lastActivityHours <= 36) {
     return "yesterday_gap_followup";
@@ -97,10 +108,11 @@ export function buildReminderCandidate({ user, memoryProfile }) {
   const targetRecord = resolveTargetRecord(user);
   const pack = targetRecord ? getBaselinePackById(targetRecord.targetBaselineId) : getBaselinePackById(defaultBaselinePackId);
   const { trainingPoints } = buildConceptLookup(pack);
+  const checkpointMastery = memoryProfile?.checkpointMastery || memoryProfile?.abilityItems || {};
 
   const ranked = trainingPoints
     .flatMap((point) => (point.checkpoints || []).map((checkpoint) => {
-      const memoryItem = memoryProfile?.abilityItems?.[checkpoint.id] || memoryProfile?.abilityItems?.[point.id] || null;
+      const memoryItem = checkpointMastery?.[checkpoint.id] || checkpointMastery?.[point.id] || null;
       const category = deriveReminderCategory({ memoryItem, targetRecord });
       const evidenceCount = memoryItem?.evidenceCount || 0;
       const state = memoryItem?.state || "不可判";

@@ -88,7 +88,7 @@ Response:
   "currentProbe": "next question",
   "latestFeedback": {},
   "targetMatch": {},
-  "abilityDomains": [],
+  "domains": [],
   "nextSteps": []
 }
 ```

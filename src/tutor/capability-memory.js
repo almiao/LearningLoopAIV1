@@ -6,6 +6,7 @@ import {
   defaultScoreForState,
   scoreToState,
 } from "../mastery/mastery-scoring.js";
+import { scheduleCheckpointReview } from "./review-scheduling.js";
 
 function rank(state) {
   return rankState(state);
@@ -25,7 +26,7 @@ function createDefaultJudge() {
 
 function createEvent({
   type,
-  abilityItemId,
+  checkpointId,
   title,
   summary,
   assessmentHandle = "",
@@ -34,7 +35,7 @@ function createEvent({
 }) {
   const normalized = {
     type,
-    abilityItemId,
+    checkpointId,
     title,
     summary,
     message: summary,
@@ -47,7 +48,7 @@ function createEvent({
 }
 
 function getPreviousMemory(memoryProfile, conceptId) {
-  return memoryProfile?.abilityItems?.[conceptId] || null;
+  return getCheckpointMasteryBucket(memoryProfile)?.[conceptId] || null;
 }
 
 function getEvidenceCount(ledger, conceptId) {
@@ -58,7 +59,29 @@ export function createMemoryProfile(id = crypto.randomUUID()) {
   return {
     id,
     sessionsStarted: 0,
-    abilityItems: {}
+    checkpointMastery: {}
+  };
+}
+
+export function getCheckpointMasteryBucket(memoryProfile = {}) {
+  if (memoryProfile?.checkpointMastery && typeof memoryProfile.checkpointMastery === "object" && !Array.isArray(memoryProfile.checkpointMastery)) {
+    return memoryProfile.checkpointMastery;
+  }
+  if (memoryProfile?.abilityItems && typeof memoryProfile.abilityItems === "object" && !Array.isArray(memoryProfile.abilityItems)) {
+    return memoryProfile.abilityItems;
+  }
+  return {};
+}
+
+export function normalizeMemoryProfileShape(memoryProfile = null) {
+  if (!memoryProfile || typeof memoryProfile !== "object" || Array.isArray(memoryProfile)) {
+    return createMemoryProfile();
+  }
+  return {
+    ...memoryProfile,
+    checkpointMastery: {
+      ...getCheckpointMasteryBucket(memoryProfile),
+    },
   };
 }
 
@@ -122,7 +145,7 @@ export function createSessionStartMemoryEvents({
   return [
     createEvent({
       type: "self_test_reentry_context",
-      abilityItemId: weakItems[0].id,
+      checkpointId: weakItems[0].id,
       title: "记忆已接入",
       summary: `开始新一轮 ${targetBaseline.title} 自测：系统先带你回到 ${weakItems
         .map((item) => `“${item.title}”`)
@@ -148,7 +171,7 @@ export function buildVisibleMemoryEvents({
   const events = [
     createEvent({
       type: "attempt_recorded",
-      abilityItemId: concept.id,
+      checkpointId: concept.id,
       title: concept.title,
       summary: `已记录你在“${concept.title}”上的一次作答证据。`,
       assessmentHandle,
@@ -175,7 +198,7 @@ export function buildVisibleMemoryEvents({
     events.push(
       createEvent({
         type: "improvement_detected",
-        abilityItemId: concept.id,
+        checkpointId: concept.id,
         title: concept.title,
         summary: `“${concept.title}”这轮更稳了，系统会把这次提升记进长期记忆。`,
         assessmentHandle,
@@ -189,7 +212,7 @@ export function buildVisibleMemoryEvents({
     events.push(
       createEvent({
         type: "contradiction_detected",
-        abilityItemId: concept.id,
+        checkpointId: concept.id,
         title: concept.title,
         summary: `“${concept.title}”出现了和旧判断不一致的新证据，匹配度会先保守回落。`,
         assessmentHandle,
@@ -203,7 +226,7 @@ export function buildVisibleMemoryEvents({
     events.push(
       createEvent({
         type: "weakness_confirmed",
-        abilityItemId: concept.id,
+        checkpointId: concept.id,
         title: concept.title,
         summary: `系统确认“${concept.title}”目前还是弱点，后续会继续优先补这个点。`,
         assessmentHandle,
@@ -217,7 +240,7 @@ export function buildVisibleMemoryEvents({
     events.push(
       createEvent({
         type: "revisit_queued",
-        abilityItemId: concept.id,
+        checkpointId: concept.id,
         title: concept.title,
         summary: `“${concept.title}”已加入后续回访队列。`,
         assessmentHandle,
@@ -247,6 +270,12 @@ export function updateMemoryProfile(memoryProfile, {
     return;
   }
 
+  if (!memoryProfile.checkpointMastery || typeof memoryProfile.checkpointMastery !== "object" || Array.isArray(memoryProfile.checkpointMastery)) {
+    memoryProfile.checkpointMastery = {
+      ...getCheckpointMasteryBucket(memoryProfile),
+    };
+  }
+
   const previous = getPreviousMemory(memoryProfile, concept.id);
   const snapshot = {
     signal,
@@ -267,11 +296,17 @@ export function updateMemoryProfile(memoryProfile, {
       ? [...(previous?.recentConflictingEvidence || []).slice(-2), snapshot]
       : previous?.recentConflictingEvidence || [];
 
-  memoryProfile.abilityItems[concept.id] = {
-    abilityItemId: concept.id,
+  const reviewSchedule = scheduleCheckpointReview(previous, {
+    nextState: judge.state === "不可判" ? "unknown" : judge.state,
+    signal,
+    timestamp: snapshot.at,
+  });
+
+  memoryProfile.checkpointMastery[concept.id] = {
+    checkpointId: concept.id,
     title: concept.title,
-    abilityDomainId: concept.abilityDomainId || concept.domainId || "general",
-    abilityDomainTitle: concept.abilityDomainTitle || concept.domainTitle || "通用能力",
+    domainId: concept.domainId || concept.abilityDomainId || "general",
+    domainTitle: concept.domainTitle || concept.abilityDomainTitle || "通用分组",
     state: judge.state,
     score: judge.score || defaultScoreForState(judge.state),
     reasons: judge.reasons,
@@ -285,16 +320,19 @@ export function updateMemoryProfile(memoryProfile, {
     remediationMaterials: concept.remediationMaterials || [],
     questionFamily: concept.questionFamily || "",
     provenanceLabel: concept.provenanceLabel || "",
-    projectedTargets: [...new Set([...(previous?.projectedTargets || []), ...projectedTargets])].slice(0, 6)
+    projectedTargets: [...new Set([...(previous?.projectedTargets || []), ...projectedTargets])].slice(0, 6),
+    sourceDocPath: evidenceReference || previous?.sourceDocPath || "",
+    sourceDocPaths: [...new Set([...(previous?.sourceDocPaths || []), evidenceReference].filter(Boolean))],
+    ...reviewSchedule,
   };
 }
 
-export function buildAbilityDomains(concepts, conceptStates, ledger = {}) {
+export function buildDomains(concepts, conceptStates, ledger = {}) {
   const domains = new Map();
 
   for (const concept of concepts) {
-    const domainId = concept.abilityDomainId || concept.domainId || "general";
-    const domainTitle = concept.abilityDomainTitle || concept.domainTitle || "通用能力";
+    const domainId = concept.domainId || concept.abilityDomainId || "general";
+    const domainTitle = concept.domainTitle || concept.abilityDomainTitle || "通用分组";
     if (!domains.has(domainId)) {
       domains.set(domainId, {
         id: domainId,
@@ -304,7 +342,7 @@ export function buildAbilityDomains(concepts, conceptStates, ledger = {}) {
     }
 
     domains.get(domainId).items.push({
-      abilityItemId: concept.id,
+      checkpointId: concept.id,
       title: concept.title,
       state: conceptStates[concept.id]?.judge?.state || "weak",
       score: conceptStates[concept.id]?.judge?.score || 0,
@@ -364,9 +402,8 @@ export function buildRemediationPlan(concepts, conceptStates) {
     .slice(0, 3)
     .map(({ concept, state }, index) => ({
       order: index + 1,
-      abilityItemId: concept.id,
-      abilityDomainId: concept.abilityDomainId || concept.domainId || "",
-      domainId: concept.abilityDomainId || concept.domainId || "",
+      checkpointId: concept.id,
+      domainId: concept.domainId || concept.abilityDomainId || "",
       title: concept.title,
       state,
       recommendation:

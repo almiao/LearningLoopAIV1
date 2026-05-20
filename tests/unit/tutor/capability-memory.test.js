@@ -30,7 +30,7 @@ test("target match estimate stays bounded and explanation-backed", () => {
 test("visible memory events emit improvement and weakness states from judge transitions", () => {
   const concept = {
     id: "aqs-acquire-release",
-    abilityItemId: "aqs-acquire-release",
+    checkpointId: "aqs-acquire-release",
     title: "AQS acquire/release 语义"
   };
 

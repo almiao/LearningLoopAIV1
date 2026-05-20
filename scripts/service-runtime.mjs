@@ -19,7 +19,7 @@ export const localNodeRuntimeDir = path.join(rootDir, ".tools", "node-runtime");
 export const localLivekitRuntimeDir = path.join(rootDir, ".tools", "livekit-runtime");
 
 const envFiles = [".env", ".env.local"].map((file) => path.join(rootDir, file));
-const trackedServices = ["ai-service", "bff", "superapp-service", "frontend"];
+const trackedServices = ["ai-service", "tts-worker", "bff", "superapp-service", "frontend"];
 
 export const isWindows = process.platform === "win32";
 export const npmCommand = isWindows ? "npm.cmd" : "npm";

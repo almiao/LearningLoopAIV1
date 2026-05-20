@@ -84,6 +84,20 @@ function getTrainingPointProgress(points = [], currentPointId = "") {
   };
 }
 
+function resolveInteractionPreferenceFromRules(rules = []) {
+  const preferred = (rules || []).find((rule) => rule.id === "preferred-interaction-style");
+  if (!preferred) {
+    return "";
+  }
+  if (String(preferred.text || "").includes("先解释")) {
+    return "explain-first";
+  }
+  if (String(preferred.text || "").includes("快问快答")) {
+    return "probe-heavy";
+  }
+  return "balanced";
+}
+
 export function AppShell() {
   const [handle, setHandle] = useState("");
   const [pin, setPin] = useState("");
@@ -112,7 +126,13 @@ export function AppShell() {
       return;
     }
     apiFetch(`/api/profile/${userId}`)
-      .then((data) => setProfile(data))
+      .then((data) => {
+        setProfile(data);
+        const preferred = resolveInteractionPreferenceFromRules(data.userRules || []);
+        if (preferred) {
+          setInteractionPreference(preferred);
+        }
+      })
       .catch(() => setStoredUserId(""));
   }, []);
 
@@ -122,6 +142,10 @@ export function AppShell() {
     }
     const data = await apiFetch(`/api/profile/${profile.user.id}`);
     setProfile(data);
+    const preferred = resolveInteractionPreferenceFromRules(data.userRules || []);
+    if (preferred) {
+      setInteractionPreference(preferred);
+    }
   }
 
   async function onLogin(event) {
@@ -285,7 +309,7 @@ export function AppShell() {
             {[
               ["目标数", profile.summary.totalTargets],
               ["累计会话", profile.summary.sessionsStarted],
-              ["已评估项", profile.summary.assessedAbilityItems],
+              ["已建立记录的知识点", profile.summary.assessedCheckpoints],
               ["Solid", profile.summary.solidItems],
               ["Partial", profile.summary.partialItems],
               ["Weak", profile.summary.weakItems]

@@ -28,6 +28,33 @@ function progressTone(progress) {
   return "low";
 }
 
+function formatConfidence(value = 0) {
+  const numericValue = Number(value || 0);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return "";
+  }
+  return `${Math.round(numericValue * 100)}%`;
+}
+
+function formatReviewWindow(nextReviewAt = "") {
+  if (!nextReviewAt) {
+    return "";
+  }
+  const date = new Date(nextReviewAt);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const diffMs = date.getTime() - Date.now();
+  if (diffMs <= 0) {
+    return "复习时间已到";
+  }
+  const diffDays = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
+  if (diffDays <= 1) {
+    return "建议明天前复习";
+  }
+  return `${diffDays} 天内适合复习`;
+}
+
 export function ProfileDashboard() {
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState("");
@@ -67,6 +94,8 @@ export function ProfileDashboard() {
     .slice()
     .sort((left, right) => (right.evidenceCount || 0) - (left.evidenceCount || 0))
     .slice(0, 4);
+  const userRules = profile?.userRules || [];
+  const sessionSummaries = profile?.sessionSummaries || [];
   const documentItems = useMemo(() => {
     return Object.values(profile?.documentProgress?.docs || {})
       .sort((left, right) => String(right.lastActivityAt || "").localeCompare(String(left.lastActivityAt || "")));
@@ -103,7 +132,7 @@ export function ProfileDashboard() {
         </div>
         <div className="memory-status-pill">
           <span className="status-dot" />
-          <span>记忆模式已开启</span>
+          <span>学习记录已同步</span>
         </div>
       </section>
 
@@ -180,14 +209,14 @@ export function ProfileDashboard() {
               {weakItems.length ? (
                 <ul>
                   {weakItems.map((item) => (
-                    <li key={item.abilityItemId}>
+                    <li key={item.checkpointId}>
                       <strong>{item.title}</strong>
                       <span>{item.domainTitle} · {formatState(item.state)}</span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p>已经有了一批稳定证据，下一轮可以继续扩展更广的能力域。</p>
+                <p>已经有了一批稳定证据，下一轮可以继续扩展更广的知识分组。</p>
               )}
             </article>
 
@@ -196,7 +225,7 @@ export function ProfileDashboard() {
               {recentItems.length ? (
                 <ul>
                   {recentItems.map((item) => (
-                    <li key={item.abilityItemId}>
+                    <li key={item.checkpointId}>
                       <strong>{item.title}</strong>
                       <span>{item.evidenceCount} 条证据 · 训练记忆</span>
                     </li>
@@ -220,51 +249,76 @@ export function ProfileDashboard() {
               <strong>记忆摘要</strong>
             </div>
             <p>
-              用户当前已建立 {profile.summary.assessedAbilityItems} 项可用证据，其中稳定 {profile.summary.solidItems} 项、
+              用户当前已建立 {profile.summary.assessedCheckpoints} 个知识点记录，其中稳定 {profile.summary.solidItems} 项、
               进行中 {profile.summary.partialItems} 项、待补强 {profile.summary.weakItems} 项。
             </p>
           </article>
 
           <article className="memory-card">
             <div className="memory-card-head">
-              <strong>本次沉淀的关键记忆</strong>
+              <strong>最近知识点记录</strong>
             </div>
             <div className="memory-list">
               {recentItems.length ? recentItems.map((item) => (
-                <div className="memory-list-item" key={item.abilityItemId}>
+                <div className="memory-list-item" key={item.checkpointId}>
                   <span className="memory-bullet success" />
                   <div>
                     <strong>{item.title}</strong>
                     <p>{item.domainTitle} · {item.evidenceCount} 条证据</p>
+                    {item.derivedPrinciple ? <p>记住的核心：{item.derivedPrinciple}</p> : null}
+                    {item.nextReviewAt || item.recallConfidence ? (
+                      <p>
+                        {[formatReviewWindow(item.nextReviewAt), item.recallConfidence ? `当前把握 ${formatConfidence(item.recallConfidence)}` : ""]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
-              )) : <p>进入学习后，新的能力证据会沉淀到这里。</p>}
+              )) : <p>进入学习后，新的知识点记录会沉淀到这里。</p>}
             </div>
           </article>
 
           <article className="memory-card">
             <div className="memory-card-head">
-              <strong>长期偏好</strong>
-            </div>
-            <p>
-              当前更适合沿着同一学习目标持续推进，先收敛关键概念，再根据证据把薄弱点转成明确下一步。
-            </p>
-          </article>
-
-          <article className="memory-card">
-            <div className="memory-card-head">
-              <strong>待确认记忆</strong>
+              <strong>学习偏好与约束</strong>
             </div>
             <div className="memory-list">
-              {weakItems.length ? weakItems.map((item) => (
-                <div className="memory-list-item" key={item.abilityItemId}>
+              {userRules.length ? userRules.slice(0, 4).map((rule) => (
+                <div className="memory-list-item" key={rule.id}>
+                  <span className="memory-bullet success" />
+                  <div>
+                    <strong>{rule.kind === "constraint" ? "约束" : "偏好"}</strong>
+                    <p>{rule.text}</p>
+                  </div>
+                </div>
+              )) : <p>还没有稳定的学习偏好记录。随着你调整互动风格，这里会逐渐形成可复用规则。</p>}
+            </div>
+          </article>
+
+          <article className="memory-card">
+            <div className="memory-card-head">
+              <strong>最近一轮总结</strong>
+            </div>
+            <div className="memory-list">
+              {sessionSummaries.length ? sessionSummaries.slice(0, 3).map((summary) => (
+                <div className="memory-list-item" key={summary.sessionId}>
+                  <span className="memory-bullet success" />
+                  <div>
+                    <strong>{summary.docPath}</strong>
+                    <p>{summary.oneParagraphSummary || "本轮已收口，等你下次继续。"}</p>
+                    {summary.recommendedNextAction ? <p>{`下次默认动作：${summary.recommendedNextAction}`}</p> : null}
+                  </div>
+                </div>
+              )) : weakItems.length ? weakItems.map((item) => (
+                <div className="memory-list-item" key={item.checkpointId}>
                   <span className="memory-bullet warning" />
                   <div>
                     <strong>{item.title}</strong>
                     <p>{item.domainTitle} · {formatState(item.state)}</p>
                   </div>
                 </div>
-              )) : <p>当前没有待确认的薄弱项，可以继续扩大覆盖范围。</p>}
+              )) : <p>当前没有待复习知识点，可以继续扩大覆盖范围。</p>}
             </div>
             <div className="memory-actions">
               <Link className="secondary-pill" href="/learn">继续学习</Link>

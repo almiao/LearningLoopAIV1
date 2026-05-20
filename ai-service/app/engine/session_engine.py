@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
@@ -39,6 +39,60 @@ MAX_FOLLOWUPS_PER_TRAINING_POINT = 1
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def get_checkpoint_mastery(memory_profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    profile = memory_profile or {}
+    bucket = profile.get("checkpointMastery")
+    if isinstance(bucket, dict):
+        return bucket
+    legacy = profile.get("abilityItems")
+    if isinstance(legacy, dict):
+        return legacy
+    return {}
+
+
+def ensure_checkpoint_mastery(memory_profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    profile = memory_profile if isinstance(memory_profile, dict) else {}
+    bucket = get_checkpoint_mastery(profile)
+    profile["checkpointMastery"] = dict(bucket)
+    return profile["checkpointMastery"]
+
+
+def schedule_checkpoint_review(previous: Dict[str, Any], *, next_state: str, signal: str, timestamp: str) -> Dict[str, Any]:
+    reviewed_at = datetime.fromisoformat(timestamp.replace("Z", "+00:00")) if timestamp else datetime.now(timezone.utc)
+    previous_stability = float(previous.get("stability") or 0)
+    previous_confidence = float(previous.get("recallConfidence") or 0)
+
+    if next_state == "weak":
+        stability = min(0.8, max(0.2, previous_stability * 0.6 or 0.35))
+        recall_confidence = min(0.65, max(0.2, previous_confidence * 0.65 or 0.35))
+        interval_days = 1
+    elif next_state == "partial":
+        stability = min(1.6, max(0.35, max(previous_stability, 0.45) + (0.08 if signal == "positive" else 0.03)))
+        recall_confidence = min(0.82, max(0.45, max(previous_confidence, 0.55) + (0.08 if signal == "positive" else 0.02)))
+        interval_days = 3
+    elif next_state == "solid":
+        stability = min(3.2, max(0.8, max(previous_stability, 0.9) + 0.2))
+        recall_confidence = min(0.98, max(0.75, max(previous_confidence, 0.8) + 0.08))
+        interval_days = 10
+    else:
+        stability = min(1.2, max(0.2, previous_stability or 0.4))
+        recall_confidence = min(0.75, max(0.2, previous_confidence or 0.4))
+        interval_days = 2
+
+    if signal == "negative":
+        interval_days = max(1, interval_days - 1)
+    if previous.get("recentConflictingEvidence") and next_state != "solid":
+        interval_days = 1
+
+    next_review_at = reviewed_at + timedelta(days=interval_days)
+    return {
+        "lastReviewedAt": reviewed_at.isoformat(),
+        "nextReviewAt": next_review_at.isoformat(),
+        "stability": stability,
+        "recallConfidence": recall_confidence,
+    }
 
 
 def get_tutor_intelligence():
@@ -376,14 +430,14 @@ def count_training_checkpoints(training_points: List[Dict[str, Any]]) -> int:
 
 
 def summarize_current_mastery(training_points: List[Dict[str, Any]], memory_profile: Optional[Dict[str, Any]] = None) -> str:
-    ability_items = (memory_profile or {}).get("abilityItems") or {}
+    checkpoint_mastery = get_checkpoint_mastery(memory_profile)
     scored_items = []
     for point in training_points:
         checkpoint_ids = [checkpoint.get("id", "") for checkpoint in point.get("checkpoints") or []]
         if not checkpoint_ids:
             checkpoint_ids = [point.get("id", "")]
         for checkpoint_id in checkpoint_ids:
-            item = ability_items.get(checkpoint_id) or {}
+            item = checkpoint_mastery.get(checkpoint_id) or {}
             if int(item.get("evidenceCount") or 0) > 0:
                 scored_items.append(item)
 
@@ -451,7 +505,7 @@ def static_probe_for_concept(concept: Dict[str, Any], session: Optional[Dict[str
         return concept["interviewAnchor"]["prompt"]
 
     concept_state = ((session or {}).get("conceptStates") or {}).get(concept.get("id", ""), {})
-    memory_anchor = ((session or {}).get("memoryProfile") or {}).get("abilityItems", {}).get(concept.get("id", ""), {})
+    memory_anchor = get_checkpoint_mastery((session or {}).get("memoryProfile") or {}).get(concept.get("id", ""), {})
     attempts = concept_state.get("attempts", 0)
     has_prior_interaction = (
         attempts > 0
@@ -583,7 +637,7 @@ def build_target_match(session: Dict[str, Any]) -> Dict[str, Any]:
     reading_docs = ((session.get("targetProgress") or {}).get("readingProgress") or {}).get("docs") or {}
     scored_items = []
     for concept in session["concepts"]:
-        item = session["memoryProfile"]["abilityItems"].get(concept["id"], {})
+        item = get_checkpoint_mastery(session["memoryProfile"]).get(concept["id"], {})
         source = ((concept.get("sourceRefs") or [{}])[0]).get("path", "")
         scored_items.append(
             {
@@ -604,16 +658,16 @@ def build_target_match(session: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_ability_domains(session: Dict[str, Any]) -> List[Dict[str, Any]]:
+def build_domains(session: Dict[str, Any]) -> List[Dict[str, Any]]:
     domains: Dict[str, Dict[str, Any]] = {}
     for concept in session["concepts"]:
-        domain_id = concept.get("abilityDomainId") or concept.get("domainId") or "general"
-        domain_title = concept.get("abilityDomainTitle") or concept.get("domainTitle") or "通用能力"
+        domain_id = concept.get("domainId") or concept.get("abilityDomainId") or "general"
+        domain_title = concept.get("domainTitle") or concept.get("abilityDomainTitle") or "通用分组"
         domains.setdefault(domain_id, {"id": domain_id, "title": domain_title, "items": []})
-        item = session["memoryProfile"]["abilityItems"].get(concept["id"], {})
+        item = get_checkpoint_mastery(session["memoryProfile"]).get(concept["id"], {})
         domains[domain_id]["items"].append(
             {
-                "abilityItemId": concept["id"],
+                "checkpointId": concept["id"],
                 "title": concept["title"],
                 "state": item.get("state", "不可判"),
                 "score": item.get("score", 0),
@@ -626,15 +680,14 @@ def build_ability_domains(session: Dict[str, Any]) -> List[Dict[str, Any]]:
 def build_next_steps(session: Dict[str, Any]) -> List[Dict[str, Any]]:
     candidates = []
     for concept in session["concepts"]:
-        item = session["memoryProfile"]["abilityItems"].get(concept["id"], {})
+        item = get_checkpoint_mastery(session["memoryProfile"]).get(concept["id"], {})
         state = item.get("state", "weak")
         if state in {"weak", "partial", "不可判"}:
             candidates.append(
                 {
                     "order": len(candidates) + 1,
-                    "abilityItemId": concept["id"],
-                    "abilityDomainId": concept.get("abilityDomainId") or concept.get("domainId") or "",
-                    "domainId": concept.get("abilityDomainId") or concept.get("domainId") or "",
+                    "checkpointId": concept["id"],
+                    "domainId": concept.get("domainId") or concept.get("abilityDomainId") or "",
                     "title": concept["title"],
                     "state": state,
                     "recommendation": concept.get("remediationHint") or f"先补齐 {concept['title']} 的关键机制。",
@@ -648,15 +701,15 @@ def build_next_steps(session: Dict[str, Any]) -> List[Dict[str, Any]]:
 def build_mastery_map(session: Dict[str, Any]) -> List[Dict[str, Any]]:
     items = []
     for concept in session["concepts"]:
-        memory = session["memoryProfile"]["abilityItems"].get(concept["id"], {})
+        memory = get_checkpoint_mastery(session["memoryProfile"]).get(concept["id"], {})
         items.append(
             {
-                "conceptId": concept["id"],
+                "checkpointId": concept["id"],
                 "title": concept["title"],
                 "state": memory.get("state", "不可判"),
                 "score": memory.get("score", 0),
                 "reasons": memory.get("reasons", ["当前还没有足够证据"]),
-                "domainId": concept.get("abilityDomainId") or concept.get("domainId") or "",
+                "domainId": concept.get("domainId") or concept.get("abilityDomainId") or "",
                 "provenanceLabel": concept.get("provenanceLabel", ""),
                 "evidence": memory.get("evidence", []),
             }
@@ -697,12 +750,12 @@ def project_session(session: Dict[str, Any], latest_feedback: Optional[Dict[str,
         "memoryMode": "profile-scoped",
         "workspaceScope": session["workspaceScope"],
         "currentRuntimeMap": session["runtimeMaps"].get(current_concept_id),
-        "currentMemoryAnchor": session["memoryProfile"]["abilityItems"].get(current_concept_id),
+        "currentMemoryAnchor": get_checkpoint_mastery(session["memoryProfile"]).get(current_concept_id),
         "latestControlVerdict": session.get("latestControlVerdict"),
         "targetBaseline": session["targetBaseline"],
         "memoryProfileId": session["memoryProfile"]["id"],
         "targetMatch": build_target_match(session),
-        "abilityDomains": build_ability_domains(session),
+        "domains": build_domains(session),
         "memoryEvents": session["memoryEvents"],
         "latestMemoryEvents": session.get("latestMemoryEvents", []),
         "interactionLog": session.get("interactionLog", []),
@@ -824,7 +877,7 @@ def build_assessment_handle(session: Dict[str, Any], concept: Dict[str, Any]) ->
 def create_memory_event(event_type: str, concept: Dict[str, Any], summary: str, timestamp: Optional[str] = None, assessment_handle: str = "", evidence_reference: str = "") -> Dict[str, Any]:
     return {
         "type": event_type,
-        "abilityItemId": concept["id"],
+        "checkpointId": concept["id"],
         "title": concept["title"],
         "summary": summary,
         "message": summary,
@@ -1094,7 +1147,7 @@ def build_scope_completion_message(session: Dict[str, Any], latest_feedback: Dic
     memory_items = [
         (
             concept,
-            (session.get("memoryProfile") or {}).get("abilityItems", {}).get(concept.get("id", ""), {}),
+            get_checkpoint_mastery((session.get("memoryProfile") or {})).get(concept.get("id", ""), {}),
         )
         for concept in scoped_concepts
     ]
@@ -1226,7 +1279,8 @@ def apply_writeback_suggestion(*, session: Dict[str, Any], concept: Dict[str, An
     if not suggestion or suggestion.get("mode") == "noop" or suggestion.get("should_write") is False:
         return {"applied": False, "reason": "noop"}
 
-    previous = deepcopy(session["memoryProfile"]["abilityItems"].get(concept["id"], {}))
+    mastery_bucket = ensure_checkpoint_mastery(session["memoryProfile"])
+    previous = deepcopy(mastery_bucket.get(concept["id"], {}))
     assessment_handle = build_assessment_handle(session, concept)
     source_metadata = (session.get("source") or {}).get("metadata") or {}
     source_doc_path = str(source_metadata.get("docPath") or "").strip()
@@ -1250,11 +1304,11 @@ def apply_writeback_suggestion(*, session: Dict[str, Any], concept: Dict[str, An
     next_state = anchor_patch.get("state") or ((tutor_move.get("runtimeMap") or {}).get("anchor_assessment") or {}).get("state") or previous.get("state") or "不可判"
     next_score = int(anchor_patch.get("score") or (tutor_move.get("judge") or {}).get("score") or previous.get("score") or 0)
 
-    session["memoryProfile"]["abilityItems"][concept["id"]] = {
-        "abilityItemId": concept["id"],
+    mastery_bucket[concept["id"]] = {
+        "checkpointId": concept["id"],
         "title": concept["title"],
-        "abilityDomainId": concept.get("abilityDomainId") or concept.get("domainId") or "general",
-        "abilityDomainTitle": concept.get("abilityDomainTitle") or concept.get("domainTitle") or "通用能力",
+        "domainId": concept.get("domainId") or concept.get("abilityDomainId") or "general",
+        "domainTitle": concept.get("domainTitle") or concept.get("abilityDomainTitle") or "通用分组",
         "state": next_state,
         "score": next_score,
         "reasons": ((tutor_move.get("runtimeMap") or {}).get("anchor_assessment") or {}).get("reasons") or previous.get("reasons") or [],
@@ -1272,6 +1326,7 @@ def apply_writeback_suggestion(*, session: Dict[str, Any], concept: Dict[str, An
         "sourceDocPath": source_doc_path,
         "sourceDocPaths": [source_doc_path] if source_doc_path else [],
         "sourceDocTitle": source_doc_title,
+        **schedule_checkpoint_review(previous, next_state=next_state if next_state != "不可判" else "unknown", signal=snapshot["signal"], timestamp=snapshot["at"]),
     }
     return {"applied": True, "assessmentHandle": assessment_handle}
 
@@ -1336,7 +1391,7 @@ def create_session(payload: Any) -> Dict[str, Any]:
     concepts = _attach_source_reference(deepcopy(decomposition["concepts"]), payload.source)
     concept_states = {}
     for concept in concepts:
-        remembered = payload.memoryProfile.get("abilityItems", {}).get(concept["id"], {})
+        remembered = get_checkpoint_mastery(payload.memoryProfile).get(concept["id"], {})
         concept_states[concept["id"]] = {
             "attempts": 0,
             "completed": False,
@@ -1385,7 +1440,10 @@ def create_session(payload: Any) -> Dict[str, Any]:
         "workspaceScope": {"type": "pack", "id": payload.targetBaseline["id"]},
         "targetBaseline": deepcopy(payload.targetBaseline),
         "targetProgress": deepcopy(getattr(payload, "targetProgress", {}) or {}),
-        "memoryProfile": deepcopy(payload.memoryProfile),
+        "memoryProfile": {
+            **deepcopy(payload.memoryProfile),
+            "checkpointMastery": deepcopy(get_checkpoint_mastery(payload.memoryProfile)),
+        },
         "memoryEvents": [],
         "latestMemoryEvents": [],
         "runtimeMaps": {concept["id"]: create_empty_runtime_map(concept["id"]) for concept in concepts},
@@ -1647,7 +1705,7 @@ def handle_teach_control(
         "writebackSuggestion": tutor_move.get("writebackSuggestion"),
         "controlVerdict": None,
         "turnResolution": turn_resolution,
-        "memoryAnchor": session["memoryProfile"]["abilityItems"].get(concept["id"]),
+        "memoryAnchor": get_checkpoint_mastery(session["memoryProfile"]).get(concept["id"]),
         "remediationMaterial": (concept.get("remediationMaterials") or [None])[0],
         "learningSources": concept.get("sourceRefs") or [],
     }
@@ -1735,7 +1793,7 @@ def handle_advance_control(*, session: Dict[str, Any], concept: Dict[str, Any]) 
             "finalCheckpointStatement": next_concept.get("checkpointStatement", next_concept["title"]) if next_concept else concept.get("checkpointStatement", concept["title"]),
             "finalQuestionMeta": session["currentQuestionMeta"],
         },
-        "memoryAnchor": session["memoryProfile"]["abilityItems"].get(concept["id"]),
+        "memoryAnchor": get_checkpoint_mastery(session["memoryProfile"]).get(concept["id"]),
         "remediationMaterial": (concept.get("remediationMaterials") or [None])[0],
         "learningSources": concept.get("sourceRefs") or [],
     }
@@ -2136,7 +2194,7 @@ def answer_session(
             "writebackSuggestion": tutor_move.get("writebackSuggestion"),
             "controlVerdict": control_verdict,
             "turnResolution": turn_resolution,
-            "memoryAnchor": session["memoryProfile"]["abilityItems"].get(concept["id"]),
+            "memoryAnchor": get_checkpoint_mastery(session["memoryProfile"]).get(concept["id"]),
             "remediationMaterial": (concept.get("remediationMaterials") or [None])[0],
             "learningSources": concept.get("sourceRefs") or [],
         }

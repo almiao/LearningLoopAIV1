@@ -36,6 +36,8 @@ const pythonFiles = [
   "ai-service/app/interview_assist/__init__.py",
   "ai-service/app/interview_assist/service.py",
   "ai-service/app/interview_assist/aliyun_realtime_asr.py",
+  "ai-service/app/loopassist/__init__.py",
+  "ai-service/app/loopassist/service.py",
   "ai-service/tests/test_tutor_provider_config.py",
 ];
 
@@ -46,6 +48,7 @@ const nodeCheckFiles = [
   "scripts/start-services.mjs",
   "scripts/stop-services.mjs",
   "scripts/project-tools.mjs",
+  "scripts/import-nowcoder-loopassist-corpus.mjs",
 ];
 
 const testFiles = [
@@ -55,9 +58,13 @@ const testFiles = [
   "tests/integration/ai-service/automated-eval-module.test.js",
   "tests/integration/user/profile-flow.test.js",
   "tests/integration/interview-assist/flow.test.js",
+  "tests/integration/interview-assist/loopassist-flow.test.js",
   "tests/unit/knowledge/legacy-material-migrator.test.js",
   "tests/unit/split-entrypoints.test.js",
   "tests/unit/interview-assist-contract.test.js",
+  "tests/unit/loopassist-contract.test.js",
+  "tests/unit/loopassist-corpus.test.js",
+  "tests/unit/reentry-actions.test.js",
   "tests/unit/superapp/reminder-candidate.test.js",
 ];
 

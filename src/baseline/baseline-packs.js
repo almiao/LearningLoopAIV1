@@ -967,11 +967,10 @@ const baselinePacks = [
 function flattenPack(pack) {
   return {
     ...pack,
-    abilityItems: pack.domains.flatMap((domain) =>
+    checkpoints: pack.domains.flatMap((domain) =>
       domain.items.map((item) => ({
         ...item,
         diagnosticQuestion: normalizeDiagnosticQuestion(item.diagnosticQuestion),
-        abilityItemId: item.id,
         domainId: domain.id,
         domainTitle: domain.title,
         packId: pack.id,
@@ -1026,7 +1025,7 @@ export function createBaselinePackDecomposition(pack) {
       framing: `${pack.packSummary} 当前先从 ${pack.domains
         .slice(0, 3)
         .map((domain) => domain.title)
-        .join("、")} 这些能力域切入。`,
+        .join("、")} 这些知识分组切入。`,
       overviewDomains: pack.domains.map((domain) => ({
         id: domain.id,
         title: domain.title,
@@ -1036,11 +1035,11 @@ export function createBaselinePackDecomposition(pack) {
       })),
       sourceClusters
     },
-    concepts: pack.abilityItems.map((item) => ({
+    concepts: pack.checkpoints.map((item) => ({
       ...item,
       diagnosticQuestion: normalizeDiagnosticQuestion(item.diagnosticQuestion),
-      abilityDomainId: item.domainId,
-      abilityDomainTitle: item.domainTitle || domainLookup[item.domainId] || "通用能力",
+      domainId: item.domainId,
+      domainTitle: item.domainTitle || domainLookup[item.domainId] || "通用分组",
       provenanceLabel: item.provenance?.label || "系统生成诊断题",
       interviewQuestion:
         item.provenance?.type === "interview-report"

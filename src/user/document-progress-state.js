@@ -38,12 +38,14 @@ function progressLabel(progressPercentage = 0) {
 function ensureDocumentsState(documents = {}) {
   const safeDocs = isPlainObject(documents.docs) ? documents.docs : {};
   const safeIgnoredDocs = isPlainObject(documents.ignoredDocs) ? documents.ignoredDocs : {};
+  const safeSnoozedRecommendations = isPlainObject(documents.snoozedRecommendations) ? documents.snoozedRecommendations : {};
   return {
     currentDocPath: documents.currentDocPath || "",
     currentDocTitle: documents.currentDocTitle || "",
     lastUpdatedAt: documents.lastUpdatedAt || "",
     docs: safeDocs,
     ignoredDocs: safeIgnoredDocs,
+    snoozedRecommendations: safeSnoozedRecommendations,
   };
 }
 
@@ -237,6 +239,9 @@ export function applyDocumentReadingEvent(documents = {}, {
       ...state.docs,
       [normalizedDocPath]: nextEntry,
     },
+    snoozedRecommendations: Object.fromEntries(
+      Object.entries(state.snoozedRecommendations || {}).filter(([key]) => key !== normalizedDocPath)
+    ),
   };
 }
 
@@ -272,6 +277,9 @@ export function applyDocumentTrainingStarted(documents = {}, {
       ...state.docs,
       [normalizedDocPath]: nextEntry,
     },
+    snoozedRecommendations: Object.fromEntries(
+      Object.entries(state.snoozedRecommendations || {}).filter(([key]) => key !== normalizedDocPath)
+    ),
   };
 }
 
@@ -307,6 +315,9 @@ export function applyDocumentTrainingAnswered(documents = {}, {
       ...state.docs,
       [normalizedDocPath]: nextEntry,
     },
+    snoozedRecommendations: Object.fromEntries(
+      Object.entries(state.snoozedRecommendations || {}).filter(([key]) => key !== normalizedDocPath)
+    ),
   };
 }
 
@@ -356,6 +367,9 @@ export function applyDocumentTrainingSession(documents = {}, {
       ...state.docs,
       [normalizedDocPath]: nextEntry,
     },
+    snoozedRecommendations: Object.fromEntries(
+      Object.entries(state.snoozedRecommendations || {}).filter(([key]) => key !== normalizedDocPath)
+    ),
   };
 }
 
@@ -390,6 +404,9 @@ export function applyDocumentTrainingSkipped(documents = {}, {
       ...state.docs,
       [normalizedDocPath]: nextEntry,
     },
+    snoozedRecommendations: Object.fromEntries(
+      Object.entries(state.snoozedRecommendations || {}).filter(([key]) => key !== normalizedDocPath)
+    ),
   };
 }
 
@@ -431,6 +448,9 @@ export function applyDocumentTrainingUnavailable(documents = {}, {
       ...state.docs,
       [normalizedDocPath]: nextEntry,
     },
+    snoozedRecommendations: Object.fromEntries(
+      Object.entries(state.snoozedRecommendations || {}).filter(([key]) => key !== normalizedDocPath)
+    ),
   };
 }
 
@@ -464,6 +484,9 @@ export function applyDocumentIgnored(documents = {}, {
       ...state.ignoredDocs,
       [normalizedDocPath]: nextIgnoredEntry,
     },
+    snoozedRecommendations: Object.fromEntries(
+      Object.entries(state.snoozedRecommendations || {}).filter(([key]) => key !== normalizedDocPath)
+    ),
   };
 }
 
@@ -486,6 +509,53 @@ export function applyDocumentUnignored(documents = {}, {
     ...state,
     lastUpdatedAt: timestamp,
     ignoredDocs: remainingIgnoredDocs,
+  };
+}
+
+export function applyDocumentRecommendationSnooze(documents = {}, {
+  docPath = "",
+  docTitle = "",
+  until = "",
+  timestamp = new Date().toISOString(),
+} = {}) {
+  const normalizedDocPath = normalizeReadingDocPath(docPath);
+  if (!normalizedDocPath || !until) {
+    return documents;
+  }
+
+  const state = ensureDocumentsState(documents);
+  return {
+    ...state,
+    lastUpdatedAt: timestamp,
+    snoozedRecommendations: {
+      ...state.snoozedRecommendations,
+      [normalizedDocPath]: {
+        docPath: normalizedDocPath,
+        docTitle: docTitle || state.docs?.[normalizedDocPath]?.docTitle || "",
+        snoozedAt: timestamp,
+        snoozedUntil: until,
+      },
+    },
+  };
+}
+
+export function clearDocumentRecommendationSnooze(documents = {}, {
+  docPath = "",
+  timestamp = new Date().toISOString(),
+} = {}) {
+  const normalizedDocPath = normalizeReadingDocPath(docPath);
+  if (!normalizedDocPath) {
+    return documents;
+  }
+  const state = ensureDocumentsState(documents);
+  const {
+    [normalizedDocPath]: _removed,
+    ...remainingSnoozedRecommendations
+  } = state.snoozedRecommendations || {};
+  return {
+    ...state,
+    lastUpdatedAt: timestamp,
+    snoozedRecommendations: remainingSnoozedRecommendations,
   };
 }
 
@@ -515,6 +585,14 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
       .map((docPath) => normalizeReadingDocPath(docPath))
       .filter(Boolean)
   );
+  const snoozedRecommendationByPath = Object.fromEntries(
+    Object.entries(storedDocuments.snoozedRecommendations || {})
+      .filter(([, entry]) => {
+        const until = new Date(entry?.snoozedUntil || "");
+        return Number.isFinite(until.getTime()) && until.getTime() > Date.now();
+      })
+  );
+  const snoozedRecommendationDocPaths = Object.keys(snoozedRecommendationByPath);
   for (const [docPath, stored] of Object.entries(storedDocuments.docs || {})) {
     const normalizedDocPath = normalizeReadingDocPath(docPath);
     if (!normalizedDocPath) {
@@ -527,8 +605,9 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
     }));
   }
 
+  const checkpointMastery = memoryProfile?.checkpointMastery || memoryProfile?.abilityItems || {};
   const memoryByDocPath = new Map();
-  for (const memoryItem of Object.values(memoryProfile.abilityItems || {})) {
+  for (const memoryItem of Object.values(checkpointMastery)) {
     const docPaths = getMemoryDocPaths(memoryItem);
     for (const docPath of docPaths) {
       if (ignoredDocPaths.has(docPath)) {
@@ -541,6 +620,8 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
           progressValues: [],
           evidenceCount: 0,
           lastEvidenceAt: "",
+          nextReviewAt: "",
+          maxRecallConfidence: 0,
         });
       }
       const readingEntry = docsByPath.get(docPath) || {};
@@ -555,6 +636,14 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
         memoryItem,
       }));
       memoryEntry.lastEvidenceAt = maxIsoTimestamp(memoryEntry.lastEvidenceAt, memoryItem.lastUpdatedAt || "");
+      memoryEntry.nextReviewAt = maxIsoTimestamp(
+        memoryEntry.nextReviewAt,
+        memoryItem.nextReviewAt || ""
+      );
+      memoryEntry.maxRecallConfidence = Math.max(
+        Number(memoryEntry.maxRecallConfidence || 0),
+        Number(memoryItem.recallConfidence || 0)
+      );
     }
   }
 
@@ -572,12 +661,14 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
     [...new Set([
       ...docsByPath.keys(),
       ...memoryByDocPath.keys(),
+      ...snoozedRecommendationDocPaths,
     ])]
       .filter((docPath) => !ignoredDocPaths.has(docPath))
       .sort((left, right) => left.localeCompare(right))
       .map((docPath) => {
         const readingEntry = docsByPath.get(docPath) || {};
         const memoryEntry = memoryByDocPath.get(docPath) || {};
+        const snoozedRecommendation = snoozedRecommendationByPath[docPath] || {};
         const progressPercentage = Number(readingEntry.progressPercentage || 0);
         const masteryPercentage = average(memoryEntry.progressValues || []);
         const trainingStarted = Boolean(
@@ -604,7 +695,7 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
         );
         const entry = {
           docPath,
-          docTitle: readingEntry.docTitle || "",
+          docTitle: readingEntry.docTitle || snoozedRecommendation.docTitle || "",
           activeSessionId: readingEntry.activeSessionId || "",
           progressPercentage,
           readingStatus: readingEntry.status || (progressPercentage > 0 ? "opened" : "unread"),
@@ -624,6 +715,8 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
           totalConceptCount: Number(memoryEntry.totalConceptCount || 0),
           evidenceCount: Number(memoryEntry.evidenceCount || 0),
           masteryPercentage,
+          nextReviewAt: memoryEntry.nextReviewAt || "",
+          recallConfidence: Number(memoryEntry.maxRecallConfidence || 0),
           masteryLabel,
           trainingCheckpointProgressLabel: buildTrainingCheckpointProgressLabel(readingEntry),
           trainingAvailability: readingEntry.trainingAvailability || "",
@@ -635,6 +728,7 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
             memoryEntry.lastEvidenceAt || ""
           ),
           isCurrent: currentDocPath === docPath,
+          snoozedRecommendationUntil: snoozedRecommendation.snoozedUntil || "",
         };
         entry.learningStatusLabel = buildLearningStatusLabel(entry);
         return [docPath, entry];
@@ -647,6 +741,8 @@ export function buildDocumentProgressView({ user = {}, memoryProfile = {} } = {}
     currentDocTitle,
     ignoredDocPaths: [...ignoredDocPaths],
     ignoredDocs: storedDocuments.ignoredDocs,
+    snoozedRecommendationDocPaths,
+    snoozedRecommendations: snoozedRecommendationByPath,
     recentDocs: buildRecentDocumentHistory(documentEntries, currentDocPath),
     docs: documentEntries,
     stats: {

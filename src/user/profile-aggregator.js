@@ -117,7 +117,7 @@ function getConceptOrder(concept, fallbackOrder = Number.MAX_SAFE_INTEGER) {
   return orders.length ? Math.min(...orders) : fallbackOrder;
 }
 
-function buildAbilityItemView(point, memoryItem = null, readingProgress = null) {
+function buildCheckpointMasteryView(point, memoryItem = null, readingProgress = null) {
   const evidenceCount = memoryItem?.evidenceCount || 0;
   const state = memoryItem?.state || "不可判";
   const sources = normalizeSources(getSourceRefs(point));
@@ -128,7 +128,7 @@ function buildAbilityItemView(point, memoryItem = null, readingProgress = null) 
     readingProgress,
   });
   return {
-    abilityItemId: point.id,
+    checkpointId: point.id,
     title: point.title,
     state,
     score: memoryItem?.score || defaultScoreForState(state),
@@ -140,6 +140,10 @@ function buildAbilityItemView(point, memoryItem = null, readingProgress = null) 
     questionStatusLabel: evidenceCount > 0 ? stateLabel(state) : (hasReadingProgress ? "已阅读" : ""),
     provenanceLabel: point.provenanceLabel || "",
     derivedPrinciple: memoryItem?.derivedPrinciple || "",
+    lastReviewedAt: memoryItem?.lastReviewedAt || "",
+    nextReviewAt: memoryItem?.nextReviewAt || "",
+    stability: Number(memoryItem?.stability || 0),
+    recallConfidence: Number(memoryItem?.recallConfidence || 0),
     primaryDocPath: primarySource?.path || "",
     primaryDocTitle: primarySource?.title || "",
     sourceRefs: sources,
@@ -156,9 +160,9 @@ function summarizeCheckpointState(memoryItem = null) {
 
 function aggregatePointMemory(point, memoryProfile) {
   const checkpointMemory = (point.checkpoints || []).map((checkpoint) => (
-    memoryProfile?.abilityItems?.[checkpoint.id] || null
+    memoryProfile?.checkpointMastery?.[checkpoint.id] || memoryProfile?.abilityItems?.[checkpoint.id] || null
   ));
-  const legacyPointMemory = memoryProfile?.abilityItems?.[point.id] || null;
+  const legacyPointMemory = memoryProfile?.checkpointMastery?.[point.id] || memoryProfile?.abilityItems?.[point.id] || null;
   const evidenceCount = checkpointMemory.reduce((sum, item) => sum + (item?.evidenceCount || 0), 0) || (legacyPointMemory?.evidenceCount || 0);
   const stateValues = checkpointMemory.map((item) => summarizeCheckpointState(item));
   const derivedPrinciples = checkpointMemory.map((item) => item?.derivedPrinciple || "").filter(Boolean);
@@ -191,6 +195,10 @@ function aggregatePointMemory(point, memoryProfile) {
     lastUpdatedAt,
     assessedCheckpointCount,
     totalCheckpointCount: (point.checkpoints || []).length,
+    lastReviewedAt: legacyPointMemory?.lastReviewedAt || "",
+    nextReviewAt: legacyPointMemory?.nextReviewAt || "",
+    stability: Number(legacyPointMemory?.stability || average(checkpointMemory.map((item) => Number(item?.stability || 0)).filter((value) => value > 0)) || 0),
+    recallConfidence: Number(legacyPointMemory?.recallConfidence || average(checkpointMemory.map((item) => Number(item?.recallConfidence || 0)).filter((value) => value > 0)) || 0),
   };
 }
 
@@ -202,7 +210,7 @@ function buildTargetView(targetRecord, memoryProfile) {
   const readingDocMap = readingProgress.docs || {};
   const itemViews = trainingPoints.map((point) => {
     const primaryDocPath = normalizeSources(getSourceRefs(point))[0]?.path || "";
-    return buildAbilityItemView(
+    return buildCheckpointMasteryView(
       point,
       aggregatePointMemory(point, memoryProfile),
       primaryDocPath ? readingDocMap[primaryDocPath] || null : null,
@@ -252,9 +260,9 @@ function buildTargetView(targetRecord, memoryProfile) {
   const domainMap = new Map();
 
   for (const item of itemViews) {
-    const point = trainingPoints.find((entry) => entry.id === item.abilityItemId);
-    const domainId = point?.abilityDomainId || "general";
-    const domainTitle = point?.abilityDomainTitle || "通用能力";
+    const point = trainingPoints.find((entry) => entry.id === item.checkpointId);
+    const domainId = point?.domainId || "general";
+    const domainTitle = point?.domainTitle || "通用分组";
     if (!domainMap.has(domainId)) {
       domainMap.set(domainId, {
         id: domainId,
@@ -275,7 +283,7 @@ function buildTargetView(targetRecord, memoryProfile) {
         displayOrder: Number.isFinite(item.sourceOrder) ? item.sourceOrder : index,
         started:
           item.evidenceCount > 0 ||
-          visitedConceptIds.has(item.abilityItemId) ||
+          visitedConceptIds.has(item.checkpointId) ||
           (item.primaryDocPath ? visitedDocPaths.has(item.primaryDocPath) : false),
       }))
       .sort((left, right) => {
@@ -286,15 +294,15 @@ function buildTargetView(targetRecord, memoryProfile) {
       });
 
     const currentItem =
-      orderedItems.find((item) => item.abilityItemId === domainProgress.currentConceptId) ||
+      orderedItems.find((item) => item.checkpointId === domainProgress.currentConceptId) ||
       orderedItems.find((item) => !item.started) ||
       orderedItems[0] ||
       null;
     const currentIndex = currentItem
-      ? Math.max(0, orderedItems.findIndex((item) => item.abilityItemId === currentItem.abilityItemId))
+      ? Math.max(0, orderedItems.findIndex((item) => item.checkpointId === currentItem.checkpointId))
       : 0;
     const latestItem =
-      orderedItems.find((item) => item.abilityItemId === domainProgress.currentConceptId) ||
+      orderedItems.find((item) => item.checkpointId === domainProgress.currentConceptId) ||
       [...orderedItems]
         .filter((item) => item.started)
         .sort((left, right) => String(right.lastUpdatedAt || "").localeCompare(String(left.lastUpdatedAt || "")))[0] ||
@@ -307,12 +315,12 @@ function buildTargetView(targetRecord, memoryProfile) {
       masteryScore: average(orderedItems.map((item) => item.masteryScore)),
       assessedItemCount: orderedItems.filter((item) => item.evidenceCount > 0).length,
       totalItemCount: orderedItems.length,
-      currentAbilityItemId: currentItem?.abilityItemId || "",
+      currentCheckpointId: currentItem?.checkpointId || "",
       currentDocPath: domainProgress.currentDocPath || currentItem?.primaryDocPath || "",
       currentDocTitle: domainProgress.currentDocTitle || currentItem?.primaryDocTitle || "",
       latestTitle: latestItem?.title || "",
       previewItems: orderedItems.slice(currentIndex, currentIndex + 3).map((item) => ({
-        abilityItemId: item.abilityItemId,
+        checkpointId: item.checkpointId,
         title: item.title,
         questionStatusLabel: item.questionStatusLabel,
         started: item.started,
@@ -341,7 +349,7 @@ function buildTargetView(targetRecord, memoryProfile) {
     assessedItemCount: itemViews.filter((item) => item.evidenceCount > 0).length,
     totalItemCount: itemViews.length,
     currentDomainId: currentDomain?.id || "",
-    currentAbilityItemId: "",
+    currentCheckpointId: "",
     currentDocPath: readingProgress.currentDocPath || currentDomain?.currentDocPath || "",
     currentDocTitle: readingProgress.currentDocTitle || currentDomain?.currentDocTitle || "",
     readingProgress,
@@ -351,7 +359,7 @@ function buildTargetView(targetRecord, memoryProfile) {
   };
 }
 
-export function buildUserProfileView({ user, memoryProfile }) {
+export function buildUserProfileView({ user, memoryProfile, userRules = [], sessionSummaries = [] }) {
   const targets = Object.values(user.targets || {})
     .map((target) => buildTargetView(target, memoryProfile))
     .sort((left, right) => String(right.lastActivityAt || "").localeCompare(String(left.lastActivityAt || "")));
@@ -371,12 +379,14 @@ export function buildUserProfileView({ user, memoryProfile }) {
     summary: {
       totalTargets: targets.length,
       sessionsStarted: memoryProfile?.sessionsStarted || 0,
-      assessedAbilityItems: targetItems.filter((item) => (item.evidenceCount || 0) > 0).length,
+      assessedCheckpoints: targetItems.filter((item) => (item.evidenceCount || 0) > 0).length,
       solidItems: summarizedStates.filter((state) => state === "solid").length,
       partialItems: summarizedStates.filter((state) => state === "partial").length,
       weakItems: summarizedStates.filter((state) => state === "weak").length
     },
     documentProgress,
+    userRules,
+    sessionSummaries,
     targets
   };
 }

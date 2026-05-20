@@ -14,7 +14,7 @@ test("buildReminderCandidate prefers recent weak concepts as yesterday-gap follo
     },
   };
   const memoryProfile = {
-    abilityItems: {
+    checkpointMastery: {
       "aqs-acquire-release": {
         state: "weak",
         evidenceCount: 1,
@@ -41,7 +41,7 @@ test("buildReminderCandidate falls back to interrupted-learning recovery without
     },
   };
   const memoryProfile = {
-    abilityItems: {},
+    checkpointMastery: {},
   };
 
   const candidate = buildReminderCandidate({ user, memoryProfile });

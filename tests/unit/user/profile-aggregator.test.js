@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { buildUserProfileView } from "../../../src/user/profile-aggregator.js";
 import {
   applyDocumentIgnored,
+  applyDocumentRecommendationSnooze,
   applyDocumentUnignored,
   applyDocumentTrainingSkipped,
 } from "../../../src/user/document-progress-state.js";
@@ -46,7 +47,7 @@ test("profile view gives reading-only documents a visible mastery score", () => 
 
   const profile = buildUserProfileView({
     user: makeUser(targetRecord),
-    memoryProfile: { id: "mem-1", sessionsStarted: 0, abilityItems: {} },
+    memoryProfile: { id: "mem-1", sessionsStarted: 0, checkpointMastery: {} },
   });
 
   const target = profile.targets[0];
@@ -79,7 +80,7 @@ test("training evidence raises mastery above reading-only progress", () => {
 
   const readingOnly = buildUserProfileView({
     user: makeUser(targetRecord),
-    memoryProfile: { id: "mem-1", sessionsStarted: 0, abilityItems: {} },
+    memoryProfile: { id: "mem-1", sessionsStarted: 0, checkpointMastery: {} },
   });
 
   const withTraining = buildUserProfileView({
@@ -87,9 +88,9 @@ test("training evidence raises mastery above reading-only progress", () => {
     memoryProfile: {
       id: "mem-1",
       sessionsStarted: 1,
-      abilityItems: {
+      checkpointMastery: {
         "spring-transaction-boundary-cp-1": {
-          abilityItemId: "spring-transaction-boundary-cp-1",
+          checkpointId: "spring-transaction-boundary-cp-1",
           title: "Spring 事务边界与失效场景",
           state: "solid",
           score: 92,
@@ -113,10 +114,10 @@ test("training evidence raises mastery above reading-only progress", () => {
     ?.docs.find((doc) => doc.path === "docs/system-design/framework/spring/spring-transaction.md");
   const readingOnlyPoint = readingOnly.targets[0].domains
     .find((domain) => domain.id === "spring-runtime")
-    ?.items.find((item) => item.abilityItemId === "spring-transaction-boundary");
+    ?.items.find((item) => item.checkpointId === "spring-transaction-boundary");
   const trainedPoint = withTraining.targets[0].domains
     .find((domain) => domain.id === "spring-runtime")
-    ?.items.find((item) => item.abilityItemId === "spring-transaction-boundary");
+    ?.items.find((item) => item.checkpointId === "spring-transaction-boundary");
 
   assert.ok(readingOnlyDoc);
   assert.ok(trainedDoc);
@@ -159,7 +160,7 @@ test("document progress remembers training start before evidence exists", () => 
         },
       },
     },
-    memoryProfile: { id: "mem-1", sessionsStarted: 1, abilityItems: {} },
+    memoryProfile: { id: "mem-1", sessionsStarted: 1, checkpointMastery: {} },
   });
 
   assert.equal(profile.documentProgress.currentDocPath, "docs/ai/agent/mcp.md");
@@ -193,7 +194,7 @@ test("document progress marks decomposition-failed documents as reading-only", (
         },
       },
     },
-    memoryProfile: { id: "mem-1", sessionsStarted: 0, abilityItems: {} },
+    memoryProfile: { id: "mem-1", sessionsStarted: 0, checkpointMastery: {} },
   });
 
   assert.equal(
@@ -228,7 +229,7 @@ test("document progress marks user-skipped training as a completed reading path"
       ...makeUser(makeUserTarget()),
       documents,
     },
-    memoryProfile: { id: "mem-1", sessionsStarted: 0, abilityItems: {} },
+    memoryProfile: { id: "mem-1", sessionsStarted: 0, checkpointMastery: {} },
   });
 
   const entry = profile.documentProgress.docs["docs/ai/agent/mcp.md"];
@@ -264,7 +265,7 @@ test("document progress rewards completed training even before mastery threshold
         },
       },
     },
-    memoryProfile: { id: "mem-1", sessionsStarted: 0, abilityItems: {} },
+    memoryProfile: { id: "mem-1", sessionsStarted: 0, checkpointMastery: {} },
   });
 
   const entry = profile.documentProgress.docs["docs/ai/agent/mcp.md"];
@@ -316,7 +317,7 @@ test("document progress exposes checkpoint fraction for in-progress training", (
         },
       },
     },
-    memoryProfile: { id: "mem-1", sessionsStarted: 1, abilityItems: {} },
+    memoryProfile: { id: "mem-1", sessionsStarted: 1, checkpointMastery: {} },
   });
 
   assert.equal(
@@ -352,9 +353,9 @@ test("document progress exposes recent document history with current marker", ()
     memoryProfile: {
       id: "mem-1",
       sessionsStarted: 0,
-      abilityItems: {
+      checkpointMastery: {
         "memory-only-doc": {
-          abilityItemId: "memory-only-doc",
+          checkpointId: "memory-only-doc",
           title: "只来自记忆证据的文档",
           evidenceCount: 1,
           lastUpdatedAt: "2026-05-01T10:12:00.000Z",
@@ -406,9 +407,9 @@ test("document progress hides ignored documents from current and recent views", 
     memoryProfile: {
       id: "mem-1",
       sessionsStarted: 0,
-      abilityItems: {
+      checkpointMastery: {
         "ignored-memory": {
-          abilityItemId: "ignored-memory",
+          checkpointId: "ignored-memory",
           title: "被忽略文档的记忆证据",
           evidenceCount: 1,
           lastUpdatedAt: "2026-05-01T10:12:00.000Z",
@@ -455,11 +456,33 @@ test("document progress can restore ignored documents", () => {
     memoryProfile: {
       id: "mem-1",
       sessionsStarted: 0,
-      abilityItems: {},
+      checkpointMastery: {},
     },
   });
 
   assert.deepEqual(profile.documentProgress.ignoredDocPaths, []);
   assert.equal(profile.documentProgress.docs["docs/ai/agent/mcp.md"].progressPercentage, 42);
   assert.equal(profile.documentProgress.currentDocPath, "docs/ai/agent/mcp.md");
+});
+
+test("document progress exposes snoozed recommendations without hiding the document", () => {
+  const user = makeUser(makeUserTarget());
+  user.documents = applyDocumentRecommendationSnooze(user.documents || {}, {
+    docPath: "docs/ai/agent/mcp.md",
+    docTitle: "万字拆解 MCP，附带工程实践",
+    until: "2099-01-01T00:00:00.000Z",
+    timestamp: "2026-05-01T10:00:00.000Z",
+  });
+
+  const profile = buildUserProfileView({
+    user,
+    memoryProfile: {
+      id: "mem-1",
+      sessionsStarted: 0,
+      checkpointMastery: {},
+    },
+  });
+
+  assert.deepEqual(profile.documentProgress.snoozedRecommendationDocPaths, ["docs/ai/agent/mcp.md"]);
+  assert.equal(profile.documentProgress.docs["docs/ai/agent/mcp.md"]?.snoozedRecommendationUntil, "2099-01-01T00:00:00.000Z");
 });

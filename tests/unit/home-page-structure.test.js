@@ -33,6 +33,12 @@ test("home page supports both status view and hierarchical library view from the
   assert.match(source, /当前层级文档/);
   assert.match(source, /我的资料 \/ /);
   assert.match(source, /getDocumentPreview/);
+  assert.match(source, /buildReentryPlan/);
+  assert.match(source, /今天先做什么/);
+  assert.match(source, /备选动作/);
+  assert.match(source, /开始新的一篇/);
+  assert.match(source, /今天先不练这个/);
+  assert.match(source, /今天先不读这个/);
   assert.match(source, /ll-detail-cta/);
   assert.doesNotMatch(source, /打开阅读页/);
   assert.doesNotMatch(source, /buildDetailHref/);
@@ -42,13 +48,15 @@ test("home page supports both status view and hierarchical library view from the
   assert.match(documentRouteSource, /redirect\(`\/learn/);
   assert.doesNotMatch(documentRouteSource, /DocumentPrepPage/);
 
-  assert.match(learnSource, /TrainingScoreCard/);
-  assert.match(learnSource, /TrainingExplanationCard/);
+  assert.match(learnSource, /TrainingOverviewCard/);
+  assert.match(learnSource, /TrainingThreadCard/);
   assert.match(learnSource, /TrainingAssistantRail/);
   assert.match(learnSource, /TrainingCompletionSummaryPage/);
   assert.match(learnSource, /ReadingDocumentContent/);
   assert.match(learnSource, /ReadingSelectionPopover/);
   assert.match(learnSource, /ReadingAssistantBubble/);
+  assert.match(learnSource, /ReadingReentryCard/);
+  assert.match(learnSource, /继续上次训练/);
   assert.match(learnSource, /buildReadingTrainingBanner/);
   assert.match(learnSource, /Mermaid 图表暂以源码显示/);
   assert.match(learnSource, /visibleReadProgressPercent/);
@@ -70,10 +78,8 @@ test("home page supports both status view and hierarchical library view from the
   assert.doesNotMatch(learnSource, /<p>\{entry\.body\}<\/p>/);
   assert.match(learnSource, /AnimatedMasteryValue/);
   assert.match(learnSource, /buildTrainingCompletionSummary/);
-  assert.match(learnSource, /仅作记录,不影响掌握度/);
-  assert.match(learnSource, /Agent = LLM \+ Planning \+ Memory \+ Tools/);
   assert.match(learnSource, /已记住的内容\(系统会基于这些追问\)/);
-  assert.match(learnSource, /正在判断你这次回答里已经说对了什么、还缺什么/);
+  assert.match(learnSource, /正在理解你的回答/);
   assert.match(learnSource, /明天还有事/);
   assert.match(learnSource, /立即重练/);
   assert.match(learnSource, /分享内容只展示你的学习成果/);
@@ -90,13 +96,14 @@ test("home page supports both status view and hierarchical library view from the
   assert.doesNotMatch(styles, /\.ll-prep-stage\s*\{/);
   assert.doesNotMatch(styles, /\.ll-prep-popover\s*,\s*\.ll-prep-menu\s*\{/);
   assert.match(styles, /\.ll-training-page\s*\{/);
-  assert.match(styles, /\.ll-score-card\s*\{/);
+  assert.match(styles, /\.ll-score-card\s*,/);
   assert.match(styles, /\.ll-training-rail\s*\{/);
   assert.match(styles, /\.ll-training-summary-page\s*\{/);
   assert.match(styles, /\.ll-summary-hero\s*\{/);
   assert.match(styles, /\.ll-summary-score-blocks\s*\{/);
   assert.match(styles, /\.ll-summary-weak-card\s*\{/);
   assert.match(styles, /\.reading-document-surface\s*\{/);
+  assert.match(styles, /\.reading-reentry-copy\s*\{/);
   assert.match(styles, /\.reading-code-block\s*\{/);
   assert.match(styles, /\.reading-training-banner\.tone-action\s*,/);
   assert.doesNotMatch(styles, /\.reader-mastery-pill\s*\{/);

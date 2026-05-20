@@ -34,7 +34,7 @@ test("simple login creates a reusable user profile and aggregates target progres
     assert.equal(profile.summary.totalTargets, 1);
     assert.ok(profile.summary.sessionsStarted >= 1);
     assert.equal(
-      profile.summary.assessedAbilityItems,
+      profile.summary.assessedCheckpoints,
       profile.summary.solidItems + profile.summary.partialItems + profile.summary.weakItems
     );
     assert.equal(profile.targets[0].targetBaselineId, "bigtech-java-backend");
@@ -126,7 +126,7 @@ test("reading progress persists the last-read document and survives target updat
     assert.ok(profile.targets[0].currentDocTitle.length > 0);
     assert.equal(profile.targets[0].domains.find((domain) => domain.id === "spring-runtime")?.currentDocPath, "docs/system-design/framework/spring/spring-transaction.md");
     assert.equal(
-      profile.summary.assessedAbilityItems,
+      profile.summary.assessedCheckpoints,
       profile.summary.solidItems + profile.summary.partialItems + profile.summary.weakItems
     );
   });
