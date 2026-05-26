@@ -5,7 +5,7 @@ AI interview tutoring project with a split runtime:
 - `frontend/`: Next.js web client
 - `bff/`: Node.js BFF and orchestration layer
 - `ai-service/`: FastAPI-based AI service
-- `tts-worker`: local FastAPI worker for LoopAssist Qwen3-TTS audio, started from `ai-service/app/loopassist/tts_worker.py`
+- `tts-worker`: local FastAPI worker for LoopAssist interviewer audio, with provider selection between local Qwen3-TTS and Alibaba Cloud CosyVoice, started from `ai-service/app/loopassist/tts_worker.py`
 - `src/`: shared JavaScript domain helpers still used by BFF, tests, scripts, and parts of the frontend
 
 ## Runtime boundary
@@ -32,11 +32,26 @@ npm install --prefix frontend
 python -m pip install -r ai-service/requirements.txt
 ```
 
-LoopAssist interviewer voice uses open-source Qwen3-TTS as an optional local TTS runtime. The upstream project is Apache-2.0 licensed. Install it separately because it pulls large ML/audio dependencies and downloads model weights on first synthesis:
+LoopAssist interviewer voice supports two optional synthesis paths:
+
+- Local Qwen3-TTS for fully local interviewer audio
+- Alibaba Cloud speech synthesis over WebSocket for managed interviewer audio
+
+Qwen3-TTS is Apache-2.0 licensed. Install it separately because it pulls large ML/audio dependencies and downloads model weights on first synthesis:
 
 ```bash
 brew install sox
 python3 -m pip install -r ai-service/requirements-tts-qwen3.txt
+```
+
+Alibaba Cloud speech synthesis requires the Alibaba Cloud SDK plus credentials. `auto` uses ordinary speech synthesis by default because it works with the trial/commercial speech synthesis service; use `aliyun-cosyvoice` only after enabling commercial flowing text-to-speech:
+
+```bash
+python3 -m pip install -r ai-service/requirements-tts-aliyun.txt
+export ALIYUN_AK_ID=...
+export ALIYUN_AK_SECRET=...
+export ALIYUN_ISI_APP_KEY=...
+export LOOPASSIST_TTS_PROVIDER=auto
 ```
 
 The default local voice model is `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice` with speaker `Uncle_Fu`. You can override runtime settings with `QWEN3_TTS_MODEL`, `QWEN3_TTS_SPEAKER`, `QWEN3_TTS_LANGUAGE`, `QWEN3_TTS_INSTRUCT`, `QWEN3_TTS_DEVICE_MAP`, `QWEN3_TTS_DTYPE`, and `QWEN3_TTS_ATTN_IMPLEMENTATION`. The upstream Qwen3-TTS README recommends a fresh Python 3.12 environment for fewer dependency conflicts; this project keeps the dependency in a separate requirements file so the core AI service can still start without loading TTS. SoX is required by the Qwen3-TTS audio stack; Linux users can install the equivalent `sox` system package. Windows users should install SoX and ensure `sox.exe` is on `PATH`.

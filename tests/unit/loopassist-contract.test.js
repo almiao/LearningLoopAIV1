@@ -10,8 +10,15 @@ test("LoopAssist prompt contract keeps process output to one interviewer message
   const source = await readFile(`${root}/ai-service/app/loopassist/service.py`, "utf8");
 
   assert.match(source, /build_interviewer_prompt/);
+  assert.match(source, /build_interview_plan_prompt/);
+  assert.match(source, /生成一份可展示给候选人的面试大纲/);
+  assert.match(source, /为什么这么安排/);
+  assert.match(source, /sourceExplanation/);
   assert.match(source, /只输出下一句面试官要说的话/);
   assert.match(source, /不要输出评分、诊断、答案提示/);
+  assert.match(source, /内部面试计划/);
+  assert.match(source, /简历与岗位 JD 上下文/);
+  assert.match(source, /不能因为上一轮回答随意跑到计划外主题/);
   assert.match(source, /输出必须是合法 JSON：\{\\\"text\\\"/);
   assert.match(source, /build_review_prompt/);
   assert.match(source, /readinessScore/);
@@ -19,7 +26,7 @@ test("LoopAssist prompt contract keeps process output to one interviewer message
 
 test("LoopAssist interview room keeps side panel transcript-only", async () => {
   const source = await readFile(`${root}/frontend/components/loopassist-workspace.js`, "utf8");
-  const transcriptAside = source.slice(source.indexOf("loopassist-transcript"), source.indexOf("loopassist-review"));
+  const transcriptAside = source.slice(source.indexOf("loopassist-history-drawer"));
 
   assert.match(source, /synthesizeLoopAssistSpeech/);
   assert.match(source, /createRealtimeSession/);
@@ -36,9 +43,13 @@ test("LoopAssist interview room keeps side panel transcript-only", async () => {
   assert.match(source, /ttsStatus/);
   assert.match(source, /answerSegmentsRef/);
   assert.doesNotMatch(source, /submitVoiceAnswer\(finalText\)/);
-  assert.doesNotMatch(source, /textarea|typedAnswer|manualFallback|文字兜底|输入你的回答/);
+  assert.match(source, /loopassist-resume-text/);
+  assert.match(source, /loopassist-jd-text/);
+  assert.match(source, /loopassist-plan/);
+  assert.doesNotMatch(source, /typedAnswer|manualFallback|文字兜底|输入你的回答/);
   assert.doesNotMatch(source, /即时回答支架|本轮节奏|answerScaffold|prepGoals|loopassist-stage-list/);
-  assert.match(transcriptAside, /Transcript/);
+  assert.match(source, /loopassist-history-drawer/);
+  assert.match(source, /历史记录/);
   assert.match(transcriptAside, /turn\.role === "interviewer"/);
   assert.doesNotMatch(transcriptAside, /seedId|source|scope|diagnostic|hint/i);
 });
