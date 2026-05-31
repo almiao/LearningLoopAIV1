@@ -1,5 +1,14 @@
 export const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:4000";
 
+function isFetchNetworkError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return message.includes("failed to fetch") || message.includes("networkerror") || message.includes("load failed");
+}
+
+function createServiceUnavailableError() {
+  return new Error("服务暂时连接不上，请确认后端服务正在运行后重试。");
+}
+
 export function buildApiUrl(pathname = "") {
   const normalizedPath = String(pathname || "").trim();
   if (!normalizedPath) {
@@ -12,14 +21,19 @@ export function buildApiUrl(pathname = "") {
 }
 
 export async function apiFetch(pathname, options = {}) {
-  const response = await fetch(buildApiUrl(pathname), {
-    ...options,
-    headers: {
-      "content-type": "application/json",
-      ...(options.headers || {})
-    },
-    cache: "no-store"
-  });
+  let response;
+  try {
+    response = await fetch(buildApiUrl(pathname), {
+      ...options,
+      headers: {
+        "content-type": "application/json",
+        ...(options.headers || {})
+      },
+      cache: "no-store"
+    });
+  } catch (error) {
+    throw isFetchNetworkError(error) ? createServiceUnavailableError() : error;
+  }
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.error || "Request failed");
@@ -52,15 +66,20 @@ function parseSseEvent(rawEvent) {
 }
 
 export async function postEventStream(pathname, payload, onEvent, options = {}) {
-  const response = await fetch(buildApiUrl(pathname), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-    signal: options.signal,
-  });
+  let response;
+  try {
+    response = await fetch(buildApiUrl(pathname), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+      signal: options.signal,
+    });
+  } catch (error) {
+    throw isFetchNetworkError(error) ? createServiceUnavailableError() : error;
+  }
 
   if (!response.ok || !response.body) {
     let data = {};

@@ -23,12 +23,13 @@ const defaultScope = {
   companyStyle: "",
   interviewStyle: "realistic",
   interviewMode: "batch",
-  questionBudget: 8,
+  questionBudget: 4,
   resumeText: "",
   jobDescription: "",
 };
 
 const waveHeights = [18, 28, 38, 24, 42, 30, 20, 36, 48, 32, 22, 34, 26, 40, 28, 18];
+const interviewRecordStorageKey = "loopassist-latest-interview-record";
 
 const helpSteps = [
   "点击右上角的面试信息按钮，先完成岗位、简历和 JD 配置，再生成可编辑的大纲。",
@@ -85,11 +86,176 @@ function DocumentIcon() {
   );
 }
 
+function MoreIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="5" cy="12" r="1.6" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+      <circle cx="19" cy="12" r="1.6" fill="currentColor" />
+    </svg>
+  );
+}
+
+function HistoryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 6.5h14M5 12h14M5 17.5h9" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" />
+    </svg>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="9" y="3.5" width="6" height="11" rx="3" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M5.8 11.5a6.2 6.2 0 0 0 12.4 0M12 17.8v2.7M9 20.5h6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+function ProgressDots({ current = 1, total = 4 }) {
+  const dotCount = Math.min(Math.max(Number(total) || 4, 4), 10);
+  const activeIndex = Math.min(Math.max(Number(current) || 1, 1), dotCount) - 1;
+  return (
+    <div className="loopassist-progress-dots" aria-hidden="true">
+      {Array.from({ length: dotCount }, (_, index) => (
+        <span key={index} className={index === activeIndex ? "is-active" : ""} />
+      ))}
+    </div>
+  );
+}
+
+function formatTurnTime(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+}
+
+function VoiceOrb({ state = "idle" }) {
+  const thinking = state === "thinking";
+  return (
+    <div
+      className={`loopassist-voice-orb is-${state}`}
+      data-testid="loopassist-voice-orb"
+      aria-hidden="true"
+    >
+      <span className="loopassist-orb-wave" aria-hidden="true">
+        {waveHeights.slice(0, 18).map((height, index) => (
+          <i key={`${height}-${index}`} style={{ "--wave-height": `${Math.max(12, height + (index % 2 ? 6 : 0))}px` }} />
+        ))}
+      </span>
+      <span className="loopassist-orb-core" aria-hidden="true">
+        <MicIcon />
+      </span>
+      {thinking ? <span className="loopassist-orb-pulse" aria-hidden="true" /> : null}
+    </div>
+  );
+}
+
+function TextAnswerComposer({ value, disabled, onChange, onSubmit }) {
+  return (
+    <section className="loopassist-text-answer" data-testid="loopassist-text-answer">
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="输入你的回答，尽量像真实面试一样完整表达。"
+        disabled={disabled}
+        data-testid="loopassist-text-answer-input"
+      />
+      <button type="button" className="loopassist-primary-action" onClick={onSubmit} disabled={disabled || !value.trim()} data-testid="loopassist-submit-text-answer">
+        提交回答
+      </button>
+    </section>
+  );
+}
+
+function ConversationHistoryDrawer({ open, turns, currentTurnId, currentTopic, currentQuestionNumber, questionBudget, onClose }) {
+  const bodyRef = useRef(null);
+  const currentRef = useRef(null);
+
+  useEffect(() => {
+    if (!open || !bodyRef.current) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      if (currentRef.current) {
+        currentRef.current.scrollIntoView({ block: "center" });
+        return;
+      }
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    });
+  }, [currentTurnId, open, turns.length]);
+
+  return (
+    <>
+      <button
+        type="button"
+        className={`loopassist-history-backdrop${open ? " is-open" : ""}`}
+        aria-label="关闭对话记录"
+        onClick={onClose}
+      />
+      <aside className={`loopassist-history-drawer${open ? " is-open" : ""}`} data-testid="loopassist-transcript" aria-hidden={!open}>
+        <div className="loopassist-history-head">
+          <div>
+            <h2>对话记录</h2>
+            <p>第 {currentQuestionNumber || 1} / {Math.max(questionBudget || 1, 1)} 题</p>
+          </div>
+          <button type="button" className="loopassist-icon-button" aria-label="关闭对话记录" onClick={onClose}>×</button>
+        </div>
+        <div className="loopassist-history-list" ref={bodyRef}>
+          {turns.length ? turns.map((turn) => (
+            <article
+              key={`${turn.turnId}-history`}
+              ref={turn.turnId === currentTurnId ? currentRef : null}
+              className={`loopassist-history-message is-${turn.role}${turn.turnId === currentTurnId ? " is-current" : ""}`}
+            >
+              <div className="loopassist-history-message-meta">
+                <span>{turn.role === "interviewer" ? "面试官" : "你"} · {formatTurnTime(turn.createdAt)}</span>
+                <em>{turn.topic || currentTopic || "综合面试"}</em>
+              </div>
+              <p>{turn.text}</p>
+              {turn.turnId === currentTurnId ? <strong>当前</strong> : null}
+            </article>
+          )) : (
+            <article className="loopassist-empty-state">
+              <strong>还没有对话记录</strong>
+              <p>开始作答后，本题问答会显示在这里。</p>
+            </article>
+          )}
+        </div>
+      </aside>
+    </>
+  );
+}
+
 function readStoredUserId() {
   if (typeof window === "undefined") {
     return "";
   }
   return window.localStorage.getItem("learning-loop-user-id") || "";
+}
+
+function readStoredInterviewRecord() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(interviewRecordStorageKey);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredInterviewRecord(record) {
+  if (typeof window === "undefined" || !record) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(interviewRecordStorageKey, JSON.stringify(record));
+  } catch {}
 }
 
 function decodeAssistPayload(payload) {
@@ -107,8 +273,22 @@ function describeMicError(error) {
   if (text.includes("permission") || text.includes("notallowederror")) {
     return "麦克风权限被拒绝。LoopAssist 当前仅支持语音回答，请允许麦克风后重试。";
   }
+  if (text.includes("failed to fetch") || text.includes("networkerror") || text.includes("load failed")) {
+    return "麦克风服务暂时连接不上，请检查设备后重试。";
+  }
   const detail = error?.message ? `（${error.message}）` : "";
   return `实时语音连接失败${detail}。LoopAssist 当前仅支持语音回答，请检查设备后重试。`;
+}
+
+function describeTtsError(error) {
+  const text = String(error?.message || error || "").toLowerCase();
+  if (text.includes("failed to fetch") || text.includes("networkerror") || text.includes("load failed")) {
+    return "面试官语音暂时不可用，可以继续文字作答；稍后点“重播”再试。";
+  }
+  if (text.includes("notallowed") || text.includes("autoplay") || text.includes("play()")) {
+    return "浏览器拦截了自动播放，点“重播”即可播放面试官问题。";
+  }
+  return "面试官语音暂时不可用，可以继续文字作答。";
 }
 
 function uniqueValues(values = []) {
@@ -168,6 +348,19 @@ function formatOutlineReason(interviewPlan, scope) {
   return parts.length ? `系统会围绕 ${parts.join(" · ")} 的真实面试路径来安排这轮问题。` : "系统会结合你的目标岗位和材料来安排这轮问题。";
 }
 
+function getStageTopic(stage) {
+  const raw = String(stage?.theme || stage?.topic || "综合面试");
+  return raw.split(/[·/｜|]/)[0]?.trim() || raw;
+}
+
+function getStageTitle(stage, index) {
+  return stage?.theme || stage?.baseQuestion || `第 ${index + 1} 题`;
+}
+
+function getStageMinutes(stage) {
+  return Math.max(Number(stage?.estimatedMinutes || stage?.minutes || 4) || 4, 1);
+}
+
 function getShellTitle(status) {
   if (status === "outline") {
     return "本轮大纲";
@@ -190,15 +383,21 @@ export function LoopAssistWorkspace() {
   const [status, setStatus] = useState("setup");
   const [error, setError] = useState("");
   const [voiceIssue, setVoiceIssue] = useState("");
+  const [voiceIssueKind, setVoiceIssueKind] = useState("");
   const [partialTranscript, setPartialTranscript] = useState("");
   const [capturedAnswer, setCapturedAnswer] = useState("");
+  const [answerInputMode, setAnswerInputMode] = useState("voice");
+  const [textAnswer, setTextAnswer] = useState("");
   const [answerState, setAnswerState] = useState("idle");
   const [lastInterviewerText, setLastInterviewerText] = useState("");
   const [ttsStatus, setTtsStatus] = useState("idle");
   const [activePanel, setActivePanel] = useState(null);
   const [resumeFileName, setResumeFileName] = useState("");
   const [jdFileName, setJdFileName] = useState("");
+  const [isJdExpanded, setIsJdExpanded] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isInterviewPaused, setIsInterviewPaused] = useState(false);
+  const [latestInterviewRecord, setLatestInterviewRecord] = useState(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [focusedQuestionIndex, setFocusedQuestionIndex] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -209,6 +408,7 @@ export function LoopAssistWorkspace() {
   const isCapturingRef = useRef(false);
   const latestSessionRef = useRef(null);
   const panelRef = useRef(null);
+  const settingsPanelRef = useRef(null);
   const resumeInputRef = useRef(null);
   const jdInputRef = useRef(null);
   const recordingTimerRef = useRef(null);
@@ -217,6 +417,10 @@ export function LoopAssistWorkspace() {
   useEffect(() => {
     latestSessionRef.current = session;
   }, [session]);
+
+  useEffect(() => {
+    setLatestInterviewRecord(readStoredInterviewRecord());
+  }, []);
 
   useEffect(() => {
     getLoopAssistOptions()
@@ -261,12 +465,18 @@ export function LoopAssistWorkspace() {
   }, []);
 
   useEffect(() => {
+    if (scope.jobDescription) {
+      setIsJdExpanded(true);
+    }
+  }, [scope.jobDescription]);
+
+  useEffect(() => {
     if (!activePanel) {
       return undefined;
     }
 
     function handlePointerDown(event) {
-      if (panelRef.current?.contains(event.target)) {
+      if (panelRef.current?.contains(event.target) || settingsPanelRef.current?.contains(event.target)) {
         return;
       }
       setActivePanel(null);
@@ -285,6 +495,31 @@ export function LoopAssistWorkspace() {
       document.removeEventListener("keydown", handleEscape);
     };
   }, [activePanel]);
+
+  useEffect(() => {
+    if (status !== "interview") {
+      return undefined;
+    }
+
+    function handleInterviewShortcuts(event) {
+      if (event.key === "Escape") {
+        setIsHistoryOpen(false);
+        setActivePanel(null);
+        return;
+      }
+      if (event.key?.toLowerCase() === "h") {
+        const target = event.target;
+        if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) {
+          return;
+        }
+        event.preventDefault();
+        setIsHistoryOpen((current) => !current);
+      }
+    }
+
+    document.addEventListener("keydown", handleInterviewShortcuts);
+    return () => document.removeEventListener("keydown", handleInterviewShortcuts);
+  }, [status]);
 
   useEffect(() => {
     if (answerState !== "listening") {
@@ -370,11 +605,42 @@ export function LoopAssistWorkspace() {
   const reviewScore = Number(review?.readinessScore || 0);
   const reviewVerdict = getReviewVerdict(reviewScore);
   const currentPlanStage = planStages[currentQuestionIndex] || planStages[0] || null;
+  const totalEstimatedMinutes = Math.max(
+    planStages.reduce((sum, stage) => sum + getStageMinutes(stage), 0) || questionBudget * 4,
+    1,
+  );
+  const reviewStrengthCount = review?.strengths?.length || 0;
+  const reviewWeaknessCount = review?.weaknesses?.length || 0;
+  const reviewFollowupCount = review?.likelyFollowups?.length || 0;
   const shellTitle = getShellTitle(status);
-  const settingsSummary = [
-    scope.role || "未选岗位",
-    scope.questionBudget ? `${scope.questionBudget} 题` : "未设题量",
-  ];
+  const hasResumeContext = Boolean(String(scope.resumeText || "").trim());
+  const outlineCtaBadge = hasResumeContext ? "贴合你" : "通用";
+  const outlineCtaHint = hasResumeContext
+    ? "已检测到简历，题目将围绕你的项目追问"
+    : "未贴简历也能生成，会出通用题";
+  const questionToneClassName = [
+    "loopassist-inline-message",
+    voiceIssue ? (voiceIssueKind === "tts" ? "loopassist-inline-note" : "loopassist-inline-error") : "",
+    error ? "loopassist-inline-error" : "",
+  ].filter(Boolean).join(" ");
+  const voiceVisualState = isAwaitingFollowup || answerState === "submitting" || answerState === "connecting"
+    ? "thinking"
+    : answerState === "listening"
+      ? "listening"
+      : answerState === "paused" || isInterviewPaused
+        ? "paused"
+        : "idle";
+  const voiceStatusText = voiceVisualState === "listening"
+    ? "正在聆听…"
+    : voiceVisualState === "paused"
+      ? "已暂停"
+      : voiceVisualState === "thinking"
+        ? "正在思考你的回答…"
+        : "点击麦克风开始作答";
+  const questionEyebrow = [
+    currentPlanStage?.theme || sampleTopics[0] || "综合面试",
+    currentPlanStage?.source ? currentPlanStage.source.replace(/^改编自/, "") : null,
+  ].filter(Boolean).join(" · ");
 
   useEffect(() => {
     if (autoOpenedSettingsRef.current || !options || hasGeneratedOutline || status !== "setup") {
@@ -408,6 +674,7 @@ export function LoopAssistWorkspace() {
     }
     updateScope("jobDescription", text);
     setJdFileName(file.name);
+    setIsJdExpanded(true);
     setActivePanel("settings");
   }
 
@@ -417,6 +684,10 @@ export function LoopAssistWorkspace() {
     setStatus("setup");
     setError("");
     setVoiceIssue("");
+    setVoiceIssueKind("");
+    setIsInterviewPaused(false);
+    setAnswerInputMode("voice");
+    setTextAnswer("");
     setPartialTranscript("");
     setCapturedAnswer("");
     setAnswerState("idle");
@@ -433,6 +704,7 @@ export function LoopAssistWorkspace() {
   async function beginInterview() {
     setError("");
     setVoiceIssue("");
+    setVoiceIssueKind("");
     setReview(null);
     setActivePanel(null);
     setStatus("outlining");
@@ -454,6 +726,8 @@ export function LoopAssistWorkspace() {
   async function startInterviewFromOutline() {
     setStatus("interview");
     setIsHistoryOpen(false);
+    setActivePanel(null);
+    setIsInterviewPaused(false);
     const interviewerText = session?.interviewerMessage?.text || session?.transcript?.at(-1)?.text || lastInterviewerText || "";
     setLastInterviewerText(interviewerText);
     await playInterviewerAudio(interviewerText);
@@ -497,12 +771,14 @@ export function LoopAssistWorkspace() {
       await audio.play();
     } catch (nextError) {
       setTtsStatus("error");
-      setVoiceIssue(`面试官语音播放失败（${nextError.message}）。如果音频已生成，请点击“播放面试官问题”。`);
+      setVoiceIssue(describeTtsError(nextError));
+      setVoiceIssueKind("tts");
     }
   }
 
   async function ensureVoiceRoom() {
     setVoiceIssue("");
+    setVoiceIssueKind("");
     const currentRoom = roomRef.current;
     if (currentRoom?.state === "connected") {
       return currentRoom;
@@ -542,6 +818,7 @@ export function LoopAssistWorkspace() {
         }
         if (event === "error") {
           setVoiceIssue(data.error || "实时语音识别异常。请检查麦克风后重试。");
+          setVoiceIssueKind("mic");
         }
       });
       await room.connect(transport.livekitUrl, transport.participantToken);
@@ -549,6 +826,7 @@ export function LoopAssistWorkspace() {
       return room;
     } catch (nextError) {
       setVoiceIssue(describeMicError(nextError));
+      setVoiceIssueKind("mic");
       throw nextError;
     }
   }
@@ -558,6 +836,7 @@ export function LoopAssistWorkspace() {
       return;
     }
     setAnswerState("connecting");
+    setIsInterviewPaused(false);
     setCapturedAnswer("");
     setPartialTranscript("");
     answerSegmentsRef.current = [];
@@ -578,8 +857,72 @@ export function LoopAssistWorkspace() {
     } catch {}
   }
 
-  async function finishAnswering() {
+  async function pauseAnswering() {
     if (answerState !== "listening") {
+      return;
+    }
+    isCapturingRef.current = false;
+    try {
+      await roomRef.current?.localParticipant?.setMicrophoneEnabled(false);
+    } catch {}
+    setPartialTranscript("");
+    setAnswerState("paused");
+    setIsInterviewPaused(true);
+  }
+
+  async function resumeAnswering() {
+    if (answerState !== "paused") {
+      return;
+    }
+    try {
+      const room = await ensureVoiceRoom();
+      isCapturingRef.current = true;
+      await room.localParticipant.setMicrophoneEnabled(true);
+      setAnswerState("listening");
+      setIsInterviewPaused(false);
+    } catch {
+      isCapturingRef.current = false;
+      setAnswerState("idle");
+    }
+  }
+
+  async function toggleMicrophone() {
+    if (answerState === "listening") {
+      await pauseAnswering();
+      return;
+    }
+    if (answerState === "paused") {
+      await resumeAnswering();
+      return;
+    }
+    await startAnswering();
+  }
+
+  async function switchAnswerInputMode(nextMode) {
+    if (nextMode === answerInputMode) {
+      return;
+    }
+    if (answerState === "listening") {
+      await pauseAnswering();
+    }
+    setAnswerInputMode(nextMode);
+    setVoiceIssue("");
+    setVoiceIssueKind("");
+  }
+
+  async function submitTextAnswer() {
+    const answer = textAnswer.trim();
+    if (!answer || isSubmitting || status !== "interview") {
+      return;
+    }
+    setTextAnswer("");
+    setAnswerState("submitting");
+    await submitVoiceAnswer(answer);
+    setAnswerState("idle");
+  }
+
+  async function finishAnswering() {
+    if (answerState !== "listening" && answerState !== "paused") {
       return;
     }
     setAnswerState("submitting");
@@ -596,11 +939,13 @@ export function LoopAssistWorkspace() {
     answerSegmentsRef.current = [];
     if (!answer) {
       setVoiceIssue("还没有识别到你的回答。请点击“开始作答”后再说一遍。");
+      setVoiceIssueKind("mic");
       setAnswerState("idle");
       return;
     }
     await submitVoiceAnswer(answer);
     setAnswerState("idle");
+    setIsInterviewPaused(false);
   }
 
   async function skipQuestion() {
@@ -653,6 +998,7 @@ export function LoopAssistWorkspace() {
       );
     } catch (nextError) {
       setVoiceIssue(nextError.message);
+      setVoiceIssueKind("network");
     } finally {
       setIsSubmitting(false);
     }
@@ -676,16 +1022,52 @@ export function LoopAssistWorkspace() {
     isCapturingRef.current = false;
     try {
       const result = await reviewLoopAssist({ sessionId });
+      const nextTranscript = result.transcript?.length ? result.transcript : latestSessionRef.current?.transcript || [];
+      const nextSession = {
+        ...(latestSessionRef.current || {}),
+        sessionId,
+        transcript: nextTranscript,
+      };
+      const nextRecord = {
+        id: sessionId,
+        savedAt: Date.now(),
+        scope,
+        session: nextSession,
+        review: result.review,
+        transcript: nextTranscript,
+        interviewPlan: nextSession.interviewPlan || null,
+      };
       setReview(result.review);
-      setSession((current) => ({
-        ...current,
-        transcript: result.transcript || current?.transcript || [],
-      }));
+      setSession(nextSession);
+      setLatestInterviewRecord(nextRecord);
+      writeStoredInterviewRecord(nextRecord);
       setStatus("review");
     } catch (nextError) {
       setError(nextError.message);
       setStatus("interview");
     }
+  }
+
+  function openLatestInterviewRecord() {
+    const record = latestInterviewRecord || readStoredInterviewRecord();
+    if (!record?.review) {
+      setError("暂无面试记录。完成一轮面试后，这里会直接打开结果页。");
+      return;
+    }
+    setActivePanel(null);
+    setIsHistoryOpen(false);
+    setScope((current) => ({
+      ...current,
+      ...(record.scope || {}),
+    }));
+    setSession({
+      ...(record.session || {}),
+      interviewPlan: record.interviewPlan || record.session?.interviewPlan || null,
+      transcript: record.transcript || record.session?.transcript || [],
+    });
+    setReview(record.review);
+    setStatus("review");
+    setLatestInterviewRecord(record);
   }
 
   async function confirmResetWorkspace() {
@@ -708,25 +1090,37 @@ export function LoopAssistWorkspace() {
     ? status === "starting"
       ? "正在开始..."
       : "开始面试"
+    : answerInputMode === "text"
+      ? isAwaitingFollowup || answerState === "submitting"
+        ? "等待下一问..."
+        : "语音作答"
     : answerState === "listening"
       ? "结束作答"
+      : answerState === "paused"
+        ? "结束作答"
       : isAwaitingFollowup
         ? "等待下一问..."
       : answerState === "connecting"
         ? "正在连接麦克风..."
-        : "● 开始作答";
+        : "开始作答";
   const primaryActionHandler = shouldShowPrimaryStart
     ? status === "review"
       ? resetWorkspace
       : beginInterview
+    : answerInputMode === "text"
+      ? () => switchAnswerInputMode("voice")
     : answerState === "listening"
       ? finishAnswering
+      : answerState === "paused"
+        ? finishAnswering
       : startAnswering;
   const primaryActionDisabled = shouldShowPrimaryStart
     ? !options || status === "starting"
     : isSubmitting || status !== "interview" || answerState === "connecting";
   const primaryActionTestId = shouldShowPrimaryStart
     ? "loopassist-start"
+    : answerInputMode === "text"
+      ? "loopassist-switch-voice"
     : answerState === "listening"
       ? "loopassist-finish-answer"
       : "loopassist-start-answer";
@@ -735,7 +1129,7 @@ export function LoopAssistWorkspace() {
   }`;
 
   return (
-    <main className="loopassist-shell" data-testid="loopassist-shell">
+    <main className={`loopassist-shell${isHistoryOpen && status === "interview" ? " is-history-open" : ""}`} data-testid="loopassist-shell">
       <header className="loopassist-nav">
         <Link href="/" className="loopassist-brand">
           <span className="loopassist-brand-mark" aria-hidden="true">L</span>
@@ -743,29 +1137,61 @@ export function LoopAssistWorkspace() {
             <strong>LoopAssist</strong>
             <span>{status === "setup" ? "新建面试" : `${scope.role || "目标岗位"} · ${scope.round || "当前轮次"}`}</span>
           </span>
+          {status === "review" || status === "reviewing" ? <span className="loopassist-review-verdict-pill">{reviewScore >= 70 ? "建议补强后推进" : "建议补强后再来一轮"}</span> : null}
         </Link>
 
         <div className="loopassist-nav-meta">
-          <strong>{shellTitle}</strong>
-          {status === "outline" ? <span>{planStages.length || questionBudget} 题 · 预计 {Math.max(planStages.length || questionBudget, 1) * 4} 分钟</span> : null}
-          {status === "interview" ? <span>第 {currentQuestionNumber || 1} / {Math.max(questionBudget, 1)} 题</span> : null}
+          <strong>{status === "interview" ? "面试中" : shellTitle}</strong>
+          {status === "outline" ? <span>{planStages.length || questionBudget} 题 · 预计 {totalEstimatedMinutes} 分钟</span> : null}
+          {status === "interview" ? <ProgressDots current={currentQuestionNumber || 1} total={planStages.length || questionBudget} /> : null}
           {status === "review" || status === "reviewing" ? <span>{transcript.length} 条记录</span> : null}
         </div>
 
         <div className="loopassist-topbar-actions" ref={panelRef}>
-          <button type="button" className="loopassist-icon-button" aria-label="帮助" onClick={() => setActivePanel((current) => (current === "help" ? null : "help"))}>
-            <HelpIcon />
-          </button>
-          <button
-            type="button"
-            className={`loopassist-settings-trigger${activePanel === "settings" ? " is-active" : ""}`}
-            aria-label="面试信息"
-            onClick={() => setActivePanel((current) => (current === "settings" ? null : "settings"))}
-            data-testid="loopassist-scope-toggle"
-          >
-            <SettingsIcon />
-            <span>{status === "interview" ? "背景" : "面试信息"}</span>
-          </button>
+          {status === "review" || status === "reviewing" ? (
+            <>
+              <button type="button" className="loopassist-ghost-button" onClick={() => setStatus("outline")}>← 回到大纲</button>
+              <button type="button" className="loopassist-ghost-button">导出 PDF</button>
+              <button type="button" className="loopassist-primary-action" onClick={resetWorkspace}>＋ 新建面试</button>
+            </>
+          ) : status === "interview" ? (
+            <button
+              type="button"
+              className={`loopassist-more-trigger${activePanel === "more" ? " is-active" : ""}`}
+              aria-label="更多操作"
+              onClick={() => setActivePanel((current) => (current === "more" ? null : "more"))}
+              data-testid="loopassist-more-menu"
+            >
+              <MoreIcon />
+            </button>
+          ) : (
+            <>
+              <button type="button" className="loopassist-icon-button" aria-label="帮助" onClick={() => setActivePanel((current) => (current === "help" ? null : "help"))}>
+                <HelpIcon />
+              </button>
+              <button
+                type="button"
+                className="loopassist-record-trigger"
+                onClick={openLatestInterviewRecord}
+                disabled={!latestInterviewRecord}
+                data-testid="loopassist-interview-record"
+                title={latestInterviewRecord ? "查看最近一次面试结果" : "完成一轮面试后可查看记录"}
+              >
+                <HistoryIcon />
+                <span>面试记录</span>
+              </button>
+              <button
+                type="button"
+                className={`loopassist-settings-trigger${activePanel === "settings" ? " is-active" : ""}`}
+                aria-label="面试信息"
+                onClick={() => setActivePanel((current) => (current === "settings" ? null : "settings"))}
+                data-testid="loopassist-scope-toggle"
+              >
+                <SettingsIcon />
+                <span>面试信息</span>
+              </button>
+            </>
+          )}
 
           <input ref={resumeInputRef} type="file" accept=".txt,.md,.markdown,.json,.csv" className="loopassist-file-input" onChange={(event) => handleDocumentUpload("resume", event.target.files?.[0])} data-testid="loopassist-resume-upload" />
           <input ref={jdInputRef} type="file" accept=".txt,.md,.markdown,.json,.csv" className="loopassist-file-input" onChange={(event) => handleDocumentUpload("jd", event.target.files?.[0])} data-testid="loopassist-jd-upload" />
@@ -782,84 +1208,114 @@ export function LoopAssistWorkspace() {
             </section>
           ) : null}
 
-          {activePanel === "settings" ? (
-            <button
-              type="button"
-              className="loopassist-settings-backdrop"
-              aria-label="关闭面试信息面板"
-              onClick={() => setActivePanel(null)}
-            />
-          ) : null}
-
-          {activePanel === "settings" ? (
-            <section
-              className={`loopassist-popover loopassist-settings-popover loopassist-scope-popover${shouldCenterSettings ? " is-centered" : ""}`}
-              role="dialog"
-              aria-modal="true"
-            >
-              <div className="loopassist-popover-head">
-                <div>
-                  <h2>{shouldCenterSettings ? "开始一轮面试" : "背景信息"}</h2>
-                  <p className="loopassist-settings-subtitle">{settingsSummary.join(" · ")}</p>
-                </div>
-                <button type="button" className="loopassist-popover-close" onClick={() => setActivePanel(null)}>关闭</button>
-              </div>
-              <div className="loopassist-config-grid">
-                <label>岗位<select value={scope.role} onChange={(event) => updateScope("role", event.target.value)} data-testid="loopassist-role">{(options?.roles || []).slice(0, 20).map((item) => <option key={item.value} value={item.value}>{item.label} ({item.count})</option>)}</select></label>
-                <label>题量<input type="number" min="4" max="12" value={scope.questionBudget} onChange={(event) => updateScope("questionBudget", Number(event.target.value) || 8)} data-testid="loopassist-budget" /></label>
-              </div>
-              <div className="loopassist-settings-docs">
-                <div className="loopassist-setup-group">
-                  <p className="loopassist-section-label">简历</p>
-                  <button type="button" className={`loopassist-upload-zone${scope.resumeText ? " is-filled" : ""}`} onClick={() => resumeInputRef.current?.click()} data-testid="loopassist-resume-toggle">
-                    <DocumentIcon />
-                    <strong>{resumeFileName || (scope.resumeText ? "已填写" : "上传文件")}</strong>
-                    <span>{scope.resumeText ? summarizeDocument(scope.resumeText) : "txt / md / json / csv"}</span>
-                  </button>
-                  <textarea value={scope.resumeText} onChange={(event) => updateScope("resumeText", event.target.value)} placeholder="粘贴简历文本" data-testid="loopassist-resume-text" />
-                </div>
-
-                <div className="loopassist-setup-group">
-                  <p className="loopassist-section-label">JD</p>
-                  <button type="button" className={`loopassist-upload-zone${scope.jobDescription ? " is-filled" : ""}`} onClick={() => jdInputRef.current?.click()} data-testid="loopassist-jd-toggle">
-                    <DocumentIcon />
-                    <strong>{jdFileName || (scope.jobDescription ? "已填写" : "上传文件")}</strong>
-                    <span>{scope.jobDescription ? summarizeDocument(scope.jobDescription) : "txt / md / json / csv"}</span>
-                  </button>
-                  <textarea value={scope.jobDescription} onChange={(event) => updateScope("jobDescription", event.target.value)} placeholder="粘贴 JD 或岗位 URL" data-testid="loopassist-jd-text" />
-                </div>
-              </div>
-              <section className="loopassist-mode-panel">
-                <p className="loopassist-section-label">模式</p>
-                <div className="loopassist-mode-toggle" aria-label="模式切换">
-                  <button type="button" className={scope.interviewMode === "batch" ? "is-selected" : ""} onClick={() => updateScope("interviewMode", "batch")}>
-                    文本模式
-                  </button>
-                  <button type="button" className={scope.interviewMode === "realtime" ? "is-selected" : ""} onClick={() => updateScope("interviewMode", "realtime")}>
-                    实时语音
-                  </button>
-                </div>
-              </section>
-              <div className="loopassist-preview loopassist-preview-inline">
-                <strong>参考题源 {preview?.matchedCount || 0} 条</strong>
-                <span>{previewCards[0]?.baseQuestion || "已准备好从真实面经中挑题。"}</span>
-              </div>
-              {error ? <p className="loopassist-inline-error">{error}</p> : null}
-              <div className="loopassist-settings-footer">
-                {session?.sessionId ? (
-                  <button type="button" className="loopassist-danger-button" onClick={confirmFinishAndReview}>结束本轮</button>
-                ) : <span className="loopassist-settings-footer-spacer" aria-hidden="true" />}
-                <div className="loopassist-settings-footer-actions">
-                  {hasGeneratedOutline ? <button type="button" className="loopassist-ghost-button" onClick={confirmResetWorkspace}>重置</button> : null}
-                  <button type="button" className="loopassist-primary-action" onClick={beginInterview} disabled={!options || status === "outlining" || !scope.role || !scope.round} data-testid="loopassist-start">
-                    {status === "outlining" ? "正在生成..." : hasGeneratedOutline ? "重新生成大纲" : "生成大纲"}
-                  </button>
-                </div>
-              </div>
+          {activePanel === "more" ? (
+            <section className="loopassist-popover loopassist-more-menu" role="menu">
+              <button type="button" onClick={() => { setIsInterviewPaused(true); pauseAnswering(); setActivePanel(null); }}>暂停面试</button>
+              <button type="button" onClick={() => { setActivePanel(null); confirmFinishAndReview(); }}>退出本轮</button>
+              <button type="button" onClick={() => { setActivePanel(null); reconnectVoiceRoom(); }}>麦克风设置</button>
             </section>
           ) : null}
+
         </div>
       </header>
+
+      {activePanel === "settings" ? (
+        <button
+          type="button"
+          className="loopassist-settings-backdrop"
+          aria-label="关闭面试信息面板"
+          onClick={() => setActivePanel(null)}
+        />
+      ) : null}
+
+      {activePanel === "settings" ? (
+        <section
+          ref={settingsPanelRef}
+          className={`loopassist-popover loopassist-settings-popover loopassist-scope-popover${shouldCenterSettings ? " is-centered" : ""}`}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="loopassist-popover-head loopassist-new-modal-head">
+            <div>
+              <p className="loopassist-new-modal-eyebrow">新建面试</p>
+              <h2>{shouldCenterSettings ? "面试信息" : "背景信息"}</h2>
+            </div>
+            <button type="button" className="loopassist-popover-close" onClick={() => setActivePanel(null)}>关闭</button>
+          </div>
+          <div className="loopassist-new-modal-body">
+            <div className="loopassist-new-modal-row">
+              <label className="loopassist-role-field">
+                <span className="loopassist-field-label">
+                  <strong>岗位</strong>
+                  <em>必填</em>
+                </span>
+                <select value={scope.role} onChange={(event) => updateScope("role", event.target.value)} data-testid="loopassist-role">
+                  {(options?.roles || []).slice(0, 20).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </label>
+              <div className="loopassist-count-field">
+                <span className="loopassist-field-label">
+                  <strong>题量</strong>
+                  <small>默认 4</small>
+                </span>
+                <div className="loopassist-count-toggle" data-testid="loopassist-budget" aria-label="题量">
+                  {[4, 6, 8, 10].map((count) => (
+                    <button key={count} type="button" className={Number(scope.questionBudget) === count ? "is-selected" : ""} onClick={() => updateScope("questionBudget", count)}>
+                      {count}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <section className="loopassist-personalize-card">
+              <div className="loopassist-personalize-head">
+                <strong>个性化</strong>
+                <em>可选 · 强烈推荐</em>
+              </div>
+              <p>围绕你的项目、技术栈追问，而不是通用八股</p>
+              <div className={`loopassist-material-field${scope.resumeText ? " is-filled" : ""}`}>
+                <textarea value={scope.resumeText} onChange={(event) => updateScope("resumeText", event.target.value)} placeholder="粘贴简历文本，或点下方上传…" data-testid="loopassist-resume-text" />
+                <div className="loopassist-material-actions">
+                  <button type="button" className="loopassist-material-upload" onClick={() => resumeInputRef.current?.click()} data-testid="loopassist-resume-toggle">
+                    <DocumentIcon />
+                    <span>上传简历</span>
+                  </button>
+                  <span>{resumeFileName || (scope.resumeText ? summarizeDocument(scope.resumeText) : "txt / md / json / csv")}</span>
+                </div>
+              </div>
+              <button type="button" className="loopassist-add-jd-button" onClick={() => setIsJdExpanded((current) => !current)} data-testid="loopassist-toggle-jd">
+                {isJdExpanded ? "－ 收起 JD" : "＋ 添加目标岗位 JD（可选）"}
+              </button>
+              <div className={`loopassist-jd-panel${isJdExpanded ? " is-open" : ""}`}>
+                {isJdExpanded ? (
+                  <div className={`loopassist-material-field loopassist-jd-field${scope.jobDescription ? " is-filled" : ""}`}>
+                    <textarea value={scope.jobDescription} onChange={(event) => updateScope("jobDescription", event.target.value)} placeholder="粘贴 JD 文本或岗位 URL…" data-testid="loopassist-jd-text" />
+                    <div className="loopassist-material-actions">
+                      <button type="button" className="loopassist-material-upload" onClick={() => jdInputRef.current?.click()} data-testid="loopassist-jd-toggle">
+                        <DocumentIcon />
+                        <span>上传 JD</span>
+                      </button>
+                      <span>{jdFileName || (scope.jobDescription ? summarizeDocument(scope.jobDescription) : "txt / md / json / csv / url")}</span>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          </div>
+          {error ? <p className="loopassist-inline-error">{error}</p> : null}
+          <div className="loopassist-settings-footer">
+            <p className={`loopassist-settings-cta-note${hasResumeContext ? " is-tailored" : ""}`}>{outlineCtaHint}</p>
+            <div className="loopassist-settings-footer-actions">
+              {hasGeneratedOutline ? <button type="button" className="loopassist-ghost-button" onClick={confirmResetWorkspace}>重置</button> : null}
+              <button type="button" className="loopassist-primary-action loopassist-outline-cta" onClick={beginInterview} disabled={!options || status === "outlining" || !scope.role} data-testid="loopassist-start">
+                <span>{status === "outlining" ? "正在生成..." : hasGeneratedOutline ? "重新生成大纲" : "生成大纲"}</span>
+                <em>{outlineCtaBadge}</em>
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <div className="loopassist-test-preview" data-testid="loopassist-preview">
         <strong>{preview?.matchedCount || 0} 条匹配题源</strong>
@@ -867,12 +1323,22 @@ export function LoopAssistWorkspace() {
       </div>
 
       {status === "setup" || status === "outlining" ? (
-        <section className="loopassist-idle-stage">
+        <section className={`loopassist-idle-stage${status === "outlining" ? " is-generating" : ""}`}>
           {error ? <p className="loopassist-inline-error">{error}</p> : null}
-          {!shouldCenterSettings ? (
+          {status === "outlining" ? (
+            <div className="loopassist-generating-card" role="status" aria-live="polite">
+              <div className="loopassist-generating-mark" aria-hidden="true">
+                <span />
+              </div>
+              <div>
+                <h1>正在生成大纲</h1>
+                <p>{scope.role || "目标岗位"} · {scope.questionBudget || questionBudget} 题</p>
+              </div>
+            </div>
+          ) : !shouldCenterSettings ? (
             <>
               <button type="button" className="loopassist-primary-action" onClick={openSettingsPanel}>
-                {status === "outlining" ? "正在生成大纲..." : "填写面试信息"}
+                填写面试信息
               </button>
             </>
           ) : null}
@@ -881,25 +1347,34 @@ export function LoopAssistWorkspace() {
 
       {status === "outline" ? (
         <section className="loopassist-outline" data-testid="loopassist-plan">
-          <div className="loopassist-page-title">
+          <div className="loopassist-page-title loopassist-outline-hero">
+            <div className="loopassist-eyebrow">面试大纲 · OUTLINE</div>
             <h1>本轮大纲</h1>
-            <p>{interviewPlan?.title || "先看清方向，再开始面试。"}</p>
+            <p>{interviewPlan?.title || `${scope.role || "目标岗位"}${scope.round ? ` ${scope.round}` : ""}模拟面试 · 覆盖项目表达、基础知识与真实追问`}</p>
             <div className="loopassist-source-row">
               <span>{planStages.length || questionBudget} 题</span>
-              <span>预计 {Math.max(planStages.length || questionBudget, 1) * 4} 分钟</span>
+              <span>预计 {totalEstimatedMinutes} 分钟</span>
+              <span>难度 中高</span>
               {scope.resumeText || scope.jobDescription ? <span>已结合背景信息</span> : <span>通用题源</span>}
             </div>
           </div>
 
+          <div className="loopassist-outline-divider">题目清单</div>
           <ol className="loopassist-outline-list loopassist-outline-plain">
             {planStages.map((stage, index) => (
               <li key={`${stage.step || index}-${stage.theme || stage.baseQuestion}`} className="loopassist-outline-item">
                 <span className="loopassist-outline-index">{formatCount(index + 1)}</span>
                 <div>
-                  <strong>{stage.theme || `第 ${index + 1} 题`}</strong>
+                  <div className="loopassist-outline-tags">
+                    <span className="is-topic">{getStageTopic(stage)}</span>
+                    {stage.source ? <span className="is-source">真实面经</span> : null}
+                    <span>{getStageMinutes(stage)}′</span>
+                  </div>
+                  <strong>{getStageTitle(stage, index)}</strong>
                   <p>{buildOutlineLine(stage)}</p>
-                  {stage.source ? <div className="loopassist-outline-tags"><span className="is-source">{stage.source}</span></div> : null}
+                  {stage.source ? <div className="loopassist-outline-tags"><span>{stage.source}</span></div> : null}
                 </div>
+                <span className="loopassist-outline-go">进入 →</span>
               </li>
             ))}
           </ol>
@@ -931,35 +1406,52 @@ export function LoopAssistWorkspace() {
         <section className="loopassist-interview">
           <section className="loopassist-question-stage">
             <div className="loopassist-stage-status">
-              <span />
-              <p>第 {currentQuestionNumber || 1} / {Math.max(questionBudget, 1)} 题</p>
               {ttsStatus !== "idle" && answerState !== "listening" ? (
-                <button type="button" className="loopassist-ghost-button" onClick={() => playInterviewerAudio(lastInterviewerText || currentQuestion, { autoplay: true })} disabled={ttsStatus === "loading"} data-testid="loopassist-replay-tts">重播</button>
+                <button type="button" className="loopassist-ghost-button loopassist-replay-button" onClick={() => playInterviewerAudio(lastInterviewerText || currentQuestion, { autoplay: true })} disabled={ttsStatus === "loading"} data-testid="loopassist-replay-tts">↺ 重播</button>
               ) : null}
             </div>
+            <p className="loopassist-question-eyebrow">{questionEyebrow}</p>
             <h1>{questionTitle}</h1>
             {currentPlanStage ? (
-              <p className="loopassist-question-hint">{currentPlanStage.theme || "当前考察点"} · {buildOutlineLine(currentPlanStage)}</p>
+              <p className="loopassist-question-hint">{buildOutlineLine(currentPlanStage)}</p>
             ) : null}
           </section>
 
-          {answerState === "listening" || answerState === "submitting" || isAwaitingFollowup ? (
-            <section className="loopassist-transcript-stream loopassist-recognition-strip">
-              <strong>实时识别</strong>
-              <p>{partialTranscript || capturedAnswer || "正在听你说..."}</p>
-              <span />
+          {answerInputMode === "text" ? (
+            <TextAnswerComposer
+              value={textAnswer}
+              disabled={isSubmitting || isAwaitingFollowup}
+              onChange={setTextAnswer}
+              onSubmit={submitTextAnswer}
+            />
+          ) : (
+            <section className={`loopassist-voice-zone is-${voiceVisualState}`}>
+              <VoiceOrb state={voiceVisualState} />
+              <p>{voiceStatusText}</p>
+              {partialTranscript || capturedAnswer ? (
+                <span className="loopassist-voice-partial">{partialTranscript || capturedAnswer}</span>
+              ) : null}
             </section>
-          ) : null}
+          )}
 
-          {questionTone ? <p className={`loopassist-inline-message${voiceIssue || error ? " loopassist-inline-error" : ""}`}>{questionTone}</p> : null}
+          {questionTone ? <p className={questionToneClassName}>{questionTone}</p> : null}
 
           <div className="loopassist-bottom-dock">
-            <button type="button" className="loopassist-ghost-button" onClick={() => setIsHistoryOpen(true)}>历史 · {transcript.length}</button>
-            <div className="loopassist-dock-spacer" />
-            {answerState === "listening" ? <div className="loopassist-wave is-recording">{waveHeights.slice(0, 11).map((height, index) => <span key={`${height}-${index}`} style={{ "--wave-height": `${height}px` }} />)}</div> : null}
-            {answerState !== "listening" ? <button type="button" className="loopassist-ghost-button" onClick={skipQuestion} disabled={isSubmitting}>跳过本题</button> : null}
-            {voiceIssue ? <button type="button" className="loopassist-ghost-button" onClick={reconnectVoiceRoom} data-testid="loopassist-retry-mic">重试</button> : null}
-            <button type="button" className={primaryActionClassName} onClick={primaryActionHandler} disabled={primaryActionDisabled} data-testid={primaryActionTestId}>{primaryActionLabel}</button>
+            <button
+              type="button"
+              className={`loopassist-history-button${isHistoryOpen ? " is-active" : ""}`}
+              aria-expanded={isHistoryOpen}
+              onClick={() => setIsHistoryOpen((current) => !current)}
+            >
+              <HistoryIcon />
+              <span>对话记录</span>
+            </button>
+            <button type="button" className="loopassist-mode-weak-button" onClick={() => switchAnswerInputMode(answerInputMode === "voice" ? "text" : "voice")} data-testid="loopassist-toggle-text-mode">
+              {answerInputMode === "voice" ? "文字模式" : "语音模式"}
+            </button>
+            {answerInputMode === "voice" ? (
+              <button type="button" className={primaryActionClassName} onClick={primaryActionHandler} disabled={primaryActionDisabled} data-testid={primaryActionTestId}>{primaryActionLabel}</button>
+            ) : null}
           </div>
         </section>
       ) : null}
@@ -984,12 +1476,36 @@ export function LoopAssistWorkspace() {
         <section className="loopassist-review-page" data-testid="loopassist-review">
           <div className="loopassist-review-hero">
             <div>
-              <p className="loopassist-section-label">总结 / 评价</p>
+              <p className="loopassist-eyebrow">总结 / 评价 · 第 1 轮</p>
               <h1>{reviewVerdict}</h1>
               <span>总计 {transcript.length} 条记录 · {review ? `${review.readinessScore} / 100` : "生成复盘中"}</span>
             </div>
+            <section className="loopassist-scorecard">
+              <span>Overall Readiness</span>
+              <strong>{review ? review.readinessScore : "…"}</strong>
+              <em>/ 100</em>
+              <div><i style={{ width: `${Math.min(Math.max(reviewScore, 0), 100)}%` }} /></div>
+              <p>一面通过线约 60 分</p>
+            </section>
             {review?.summary ? <p className="loopassist-review-summary">{review.summary}</p> : null}
           </div>
+          <section className="loopassist-review-stats" aria-label="复盘概览">
+            <button type="button">
+              <strong>{reviewWeaknessCount}</strong>
+              <span>待补强</span>
+              <em>短板 / 缺失点</em>
+            </button>
+            <button type="button">
+              <strong>{reviewFollowupCount}</strong>
+              <span>高概率追问</span>
+              <em>继续深挖</em>
+            </button>
+            <button type="button">
+              <strong>{reviewStrengthCount}</strong>
+              <span>已掌握</span>
+              <em>可复用表达</em>
+            </button>
+          </section>
           <div className="loopassist-review-grid">
             {reviewPanels.map((panel) => (
               <section key={panel.title}>
@@ -1006,33 +1522,18 @@ export function LoopAssistWorkspace() {
               </details>
             ))}
           </div>
-          <div className="loopassist-bottom-dock">
-            <button type="button" className="loopassist-ghost-button" onClick={() => setStatus("outline")}>回到大纲</button>
-            <button type="button" className="loopassist-ghost-button">导出 PDF</button>
-            <button type="button" className="loopassist-primary-action" onClick={resetWorkspace}>新建面试</button>
-          </div>
         </section>
       ) : null}
 
-      <aside className={`loopassist-history-drawer${isHistoryOpen ? " is-open" : ""}`} data-testid="loopassist-transcript">
-        <div className="loopassist-transcript-head">
-          <h2>历史记录</h2>
-          <button type="button" className="loopassist-icon-button" onClick={() => setIsHistoryOpen(false)}>×</button>
-        </div>
-        <div className="loopassist-transcript-body">
-          {transcript.length ? transcript.map((turn) => (
-            <article key={`${turn.turnId}-history`} className={`loopassist-transcript-line is-${turn.role}`}>
-              <strong>{turn.role === "interviewer" ? "面试官" : "我"}</strong>
-              <p>{turn.text}</p>
-            </article>
-          )) : (
-            <article className="loopassist-empty-state">
-              <strong>本轮考察重点</strong>
-              <p>{planStages[0]?.objective || "开始后会在这里记录完整问答。"}</p>
-            </article>
-          )}
-        </div>
-      </aside>
+      <ConversationHistoryDrawer
+        open={isHistoryOpen}
+        turns={transcript}
+        currentTurnId={currentQuestionTurn?.turnId}
+        currentTopic={currentPlanStage?.theme || sampleTopics[0] || "综合面试"}
+        currentQuestionNumber={currentQuestionNumber || 1}
+        questionBudget={planStages.length || questionBudget}
+        onClose={() => setIsHistoryOpen(false)}
+      />
     </main>
   );
 }

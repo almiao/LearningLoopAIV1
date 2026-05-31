@@ -25,14 +25,19 @@ export function reviewLoopAssist(payload) {
 }
 
 export async function synthesizeLoopAssistSpeech(payload) {
-  const response = await fetch(buildApiUrl("/api/loopassist/tts"), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
+  let response;
+  try {
+    response = await fetch(buildApiUrl("/api/loopassist/tts"), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+  } catch {
+    throw new Error("面试官语音暂时不可用，可以继续文字作答；稍后点“重播”再试。");
+  }
 
   if (!response.ok) {
     let data = {};
