@@ -66,6 +66,7 @@ const testFiles = [
   "tests/unit/loopassist-corpus.test.js",
   "tests/unit/reentry-actions.test.js",
   "tests/unit/superapp/reminder-candidate.test.js",
+  "tests/unit/user/resume-version-store.test.js",
 ];
 
 const requiredCaseKeys = [

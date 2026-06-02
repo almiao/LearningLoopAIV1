@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { ensureResumeVersionLibrary } from "./resume-version-store.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,7 +53,8 @@ function createUserProfile({ handle, pin }) {
     createdAt: new Date().toISOString(),
     lastLoginAt: new Date().toISOString(),
     lastActiveAt: new Date().toISOString(),
-    targets: {}
+    targets: {},
+    resumeLibrary: ensureResumeVersionLibrary(),
   };
 }
 
@@ -76,6 +78,12 @@ function validateUserShape(user, expectedId = "") {
   }
   if (!user.targets || typeof user.targets !== "object" || Array.isArray(user.targets)) {
     throw new Error("User targets are invalid.");
+  }
+  if (user.resumeLibrary !== undefined) {
+    if (!user.resumeLibrary || typeof user.resumeLibrary !== "object" || Array.isArray(user.resumeLibrary)) {
+      throw new Error("User resumeLibrary is invalid.");
+    }
+    ensureResumeVersionLibrary(user.resumeLibrary);
   }
   if (user.documents !== undefined) {
     if (!user.documents || typeof user.documents !== "object" || Array.isArray(user.documents)) {

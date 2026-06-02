@@ -11,7 +11,11 @@ test("LoopAssist prompt contract keeps process output to one interviewer message
 
   assert.match(source, /build_interviewer_prompt/);
   assert.match(source, /build_interview_plan_prompt/);
+  assert.match(source, /build_question_review_prompt/);
+  assert.match(source, /build_review_summary_prompt/);
   assert.match(source, /生成一份可展示给候选人的面试大纲/);
+  assert.match(source, /sample source context/);
+  assert.match(source, /不是要照搬的最终题目/);
   assert.match(source, /为什么这么安排/);
   assert.match(source, /sourceExplanation/);
   assert.match(source, /只输出下一句面试官要说的话/);
@@ -22,6 +26,9 @@ test("LoopAssist prompt contract keeps process output to one interviewer message
   assert.match(source, /输出必须是合法 JSON：\{\\\"text\\\"/);
   assert.match(source, /build_review_prompt/);
   assert.match(source, /readinessScore/);
+  assert.match(source, /capabilityDistribution/);
+  assert.match(source, /questionReviews/);
+  assert.match(source, /questionNumber, topic, difficulty, status, score/);
 });
 
 test("LoopAssist interview room keeps side panel transcript-only", async () => {
@@ -47,6 +54,8 @@ test("LoopAssist interview room keeps side panel transcript-only", async () => {
   assert.match(source, /answerSegmentsRef/);
   assert.doesNotMatch(source, /submitVoiceAnswer\(finalText\)/);
   assert.match(source, /loopassist-resume-text/);
+  assert.match(source, /loopassist-use-saved-resume/);
+  assert.match(source, /loopassist-resume-version-select/);
   assert.match(source, /loopassist-jd-text/);
   assert.match(source, /loopassist-toggle-jd/);
   assert.match(source, /可选 · 强烈推荐/);

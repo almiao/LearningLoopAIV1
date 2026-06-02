@@ -8,6 +8,14 @@ export function previewLoopAssistScope(scope) {
   return postJson("/api/loopassist/preview-scope", { scope });
 }
 
+export function getLoopAssistResumeVersions(userId) {
+  return apiFetch(`/api/profile/resume-versions?userId=${encodeURIComponent(userId)}`);
+}
+
+export function saveLoopAssistResumeVersion(payload) {
+  return postJson("/api/profile/resume-versions", payload);
+}
+
 export function startLoopAssist(payload) {
   return postJson("/api/loopassist/start", payload);
 }
@@ -22,6 +30,14 @@ export function streamLoopAssistAnswer(payload, onEvent, options = {}) {
 
 export function reviewLoopAssist(payload) {
   return postJson("/api/loopassist/review", payload);
+}
+
+export function reviewLoopAssistQuestion(payload) {
+  return postJson("/api/loopassist/review-question", payload);
+}
+
+export function reviewLoopAssistSummary(payload) {
+  return postJson("/api/loopassist/review-summary", payload);
 }
 
 export async function synthesizeLoopAssistSpeech(payload) {

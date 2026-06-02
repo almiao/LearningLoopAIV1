@@ -4,6 +4,7 @@ import path from "node:path";
 const rootDir = path.resolve(new URL("../..", import.meta.url).pathname);
 const corpusDir = path.join(rootDir, "data", "loopassist");
 const seedsPath = path.join(corpusDir, "question-seeds.jsonl");
+const reportsPath = path.join(corpusDir, "interview-reports.jsonl");
 const manifestPath = path.join(corpusDir, "manifest.json");
 
 const fallbackSeeds = [
@@ -102,6 +103,23 @@ export function loadLoopAssistSeeds() {
   return seeds.length ? seeds : fallbackSeeds;
 }
 
+export function loadLoopAssistReports() {
+  return parseJsonlFile(reportsPath);
+}
+
+function enrichSeedWithReport(seed, reportsById) {
+  const report = reportsById.get(String(seed.reportId || ""));
+  if (!report) {
+    return seed;
+  }
+  return {
+    ...seed,
+    sourceReportTitle: report.title || "",
+    sourceReportText: report.text || "",
+    sourceReportCreatedAt: report.createdAt || "",
+  };
+}
+
 export function buildLoopAssistOptions(seeds = loadLoopAssistSeeds()) {
   const countBy = (mapper) => {
     const counts = new Map();
@@ -197,5 +215,7 @@ export function selectLoopAssistSeeds(scope = {}, seeds = loadLoopAssistSeeds(),
     }
   }
   const selected = Array.from(byId.values());
-  return selected.length >= min ? selected : fallbackSeeds.slice(0, max);
+  const reportsById = new Map(loadLoopAssistReports().map((report) => [String(report.contentId || ""), report]));
+  const finalSeeds = selected.length >= min ? selected : fallbackSeeds.slice(0, max);
+  return finalSeeds.map((seed) => enrichSeedWithReport(seed, reportsById));
 }

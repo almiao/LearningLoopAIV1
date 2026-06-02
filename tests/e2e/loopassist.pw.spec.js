@@ -2,6 +2,15 @@ import { expect, test } from "@playwright/test";
 
 async function mockLoopAssistSetup(page, options = {}) {
   let startPayload = null;
+  const resumeVersions = options.resumeVersions || [
+    {
+      id: "resume-v2",
+      fileName: "java-resume-v2.md",
+      createdAt: "2026-06-02T09:30:00.000Z",
+      charCount: 20,
+      text: "负责订单系统 Redis 缓存一致性和接口隔离。",
+    },
+  ];
   await page.route("**/api/loopassist/options", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -25,6 +34,33 @@ async function mockLoopAssistSetup(page, options = {}) {
       }),
     });
   });
+  await page.route("**/api/profile/resume-versions?*", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        latestVersionId: resumeVersions[0]?.id || "",
+        versions: resumeVersions,
+      }),
+    });
+  });
+  await page.route("**/api/profile/resume-versions", async (route) => {
+    const payload = route.request().postDataJSON();
+    const savedVersion = {
+      id: "resume-uploaded",
+      fileName: payload.fileName || "uploaded.md",
+      createdAt: "2026-06-02T10:00:00.000Z",
+      charCount: String(payload.text || "").trim().length,
+      text: payload.text,
+    };
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        latestVersionId: savedVersion.id,
+        savedVersionId: savedVersion.id,
+        versions: [savedVersion, ...resumeVersions],
+      }),
+    });
+  });
   await page.route("**/api/loopassist/start", async (route) => {
     startPayload = route.request().postDataJSON();
     await route.fulfill({
@@ -36,14 +72,44 @@ async function mockLoopAssistSetup(page, options = {}) {
         interviewerMessage: { text: "我们先聊 AQS 的底层实现原理。", topic: "并发", seedId: "s1" },
         interviewPlan: {
           title: "Java 一面并发模拟",
-          rationale: "根据候选人简历、目标岗位 JD 和真实面经题源，先验证并发基础再追项目证据。",
+          rationale: "根据候选人简历、目标岗位 JD 和历史面经样本，先验证并发基础再追项目证据。",
           sourceExplanation: "题目来源于用户选择的 Java 一面面经，并结合上传的简历和 JD 调整顺序。",
           stages: [
             {
               step: 1,
               theme: "并发基础",
               objective: "确认候选人能讲清 AQS 的核心机制。",
-              source: "真实面经题源 + JD",
+              source: "历史面经样本 + 用户 JD",
+              seedId: "s1",
+              baseQuestion: "AQS 的底层实现原理是什么？",
+              sourceContexts: [
+                {
+                  type: "historical_interview",
+                  label: "历史面经 s1",
+                  excerpt: "原始面经：AQS 的底层实现原理是什么？",
+                  reason: "参考真实面试中的并发考法。",
+                  contextId: "s1",
+                },
+                {
+                  type: "user_resume",
+                  label: "用户简历",
+                  excerpt: "负责订单系统 Redis 缓存一致性和接口隔离。",
+                  reason: "用于控制项目追问是否贴近用户真实经历。",
+                },
+                {
+                  type: "user_jd",
+                  label: "用户 JD",
+                  excerpt: "Java 后端岗位，要求分布式系统和服务治理经验。",
+                  reason: "用于控制岗位能力要求。",
+                },
+              ],
+              sourcePreview: {
+                seedId: "s1",
+                baseQuestion: "AQS 的底层实现原理是什么？",
+                reportText: "原始面经：AQS 的底层实现原理是什么？",
+                followupAngles: ["如果线上出现线程阻塞，你会怎么定位？"],
+                strongSignals: ["能讲队列和状态"],
+              },
             },
           ],
         },
@@ -67,21 +133,87 @@ async function mockLoopAssistSetup(page, options = {}) {
   await page.route("**/api/interview-assist/realtime-session", async (route) => {
     await route.abort("failed");
   });
-  await page.route("**/api/loopassist/review", async (route) => {
+  const questionReviews = [
+    {
+      questionNumber: 1,
+      topic: "并发",
+      difficulty: "中高",
+      status: "good",
+      score: 78,
+      questionText: "我们先聊 AQS 的底层实现原理。",
+      answerText: "AQS 主要通过 state 和 CLH 队列实现同步。",
+      performanceSummary: "这题已经有主线，但还能继续补线上排查场景。",
+      strengths: ["能讲出 state 和队列两个核心点"],
+      misses: ["还没讲到线程阻塞时怎么定位"],
+      keyPoints: ["AQS 用 state 表示同步状态", "获取失败后进入等待队列", "唤醒依赖 acquire/release 语义"],
+      coachingTip: "补上一个线程池阻塞定位案例，这题就会更稳。",
+      likelyFollowups: ["如果线程一直拿不到锁，你怎么排查？"],
+    },
+    {
+      questionNumber: 2,
+      topic: "并发",
+      difficulty: "中高",
+      status: "warn",
+      score: 58,
+      questionText: "那公平锁和非公平锁有什么区别？",
+      answerText: "公平锁会按顺序拿锁，非公平锁可能插队。",
+      performanceSummary: "方向对，但没有展开性能差异和适用场景。",
+      strengths: ["已经答到公平和插队的核心差异"],
+      misses: ["缺少吞吐量与饥饿风险的取舍", "没有结合业务场景说明为什么选型"],
+      keyPoints: ["公平锁降低饥饿风险", "非公平锁通常吞吐更高", "选型要看延迟和公平性的权衡"],
+      coachingTip: "下次补一个吞吐量和饥饿风险的取舍点，这题就不止及格。",
+      likelyFollowups: ["你在线上更倾向用哪种锁，为什么？"],
+    },
+  ];
+  const summaryReview = {
+    readinessScore: 72,
+    summary: "回答方向正确，但需要补项目细节。",
+    capabilityDistribution: [
+      {
+        topic: "并发",
+        score: 74,
+        verdict: "基础不错，但线上排查细节还需要更扎实。",
+        evidence: "AQS 回答能建立主线，但缺少故障定位细节。",
+        questionCount: 2,
+      },
+      {
+        topic: "项目",
+        score: 52,
+        verdict: "能说到项目方向，但量化结果不够。",
+        evidence: "回答里缺少指标和业务结果。",
+        questionCount: 1,
+      },
+    ],
+    strengths: ["能说出核心机制"],
+    weaknesses: ["缺少线上排查细节", "项目结果不够量化"],
+    likelyFollowups: ["怎么定位线程阻塞？"],
+    practicalNextSteps: ["准备一个线程池排查案例"],
+    nextRecommendedScope: "并发专项追问",
+    counts: {
+      miss: 0,
+      warn: 1,
+      good: 1,
+      total: 2,
+    },
+    questionReviews,
+  };
+  await page.route("**/api/loopassist/review-question", async (route) => {
+    const payload = route.request().postDataJSON();
+    const matched = questionReviews.find((item) => item.questionNumber === payload.questionNumber);
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
         sessionId: "loop-e2e",
-        transcript: [],
-        review: {
-          readinessScore: 72,
-          summary: "回答方向正确，但需要补项目细节。",
-          strengths: ["能说出核心机制"],
-          weaknesses: ["缺少线上排查细节"],
-          likelyFollowups: ["怎么定位线程阻塞？"],
-          practicalNextSteps: ["准备一个线程池排查案例"],
-          nextRecommendedScope: "并发专项追问",
-        },
+        questionReview: matched,
+      }),
+    });
+  });
+  await page.route("**/api/loopassist/review-summary", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        sessionId: "loop-e2e",
+        review: summaryReview,
       }),
     });
   });
@@ -100,7 +232,7 @@ async function mockLoopAssistSetup(page, options = {}) {
           ],
           interviewerMessage: { text: "那公平锁和非公平锁有什么区别？", topic: "并发", seedId: "s2" },
           interviewPlan: {
-            stages: [{ step: 1, theme: "并发基础", objective: "确认候选人能讲清 AQS 的核心机制。", source: "真实面经题源 + JD" }],
+            stages: [{ step: 1, theme: "并发基础", objective: "确认候选人能讲清 AQS 的核心机制。", source: "历史面经样本 + 用户 JD" }],
           },
           remainingBudget: 4,
         })}`,
@@ -115,22 +247,49 @@ async function mockLoopAssistSetup(page, options = {}) {
 }
 
 async function prepareLoopAssistInterview(page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("learning-loop-user-id", "loopassist-e2e-user");
+  });
   await page.goto("/loopassist");
   await expect(page.getByTestId("loopassist-shell")).not.toContainText("即时回答支架");
   await expect(page.getByTestId("loopassist-shell")).not.toContainText("本轮节奏");
+  if (!(await page.getByTestId("loopassist-resume-text").isVisible())) {
+    await page.getByTestId("loopassist-scope-toggle").click();
+  }
+  if (!(await page.getByTestId("loopassist-resume-text").isVisible())) {
+    await page.getByRole("button", { name: "填写面试信息" }).click();
+  }
   await expect(page.getByTestId("loopassist-resume-text")).toBeVisible();
+  await expect(page.getByTestId("loopassist-saved-resume-panel")).toBeVisible();
+  await expect(page.getByTestId("loopassist-use-saved-resume")).toBeChecked();
+  await expect(page.getByTestId("loopassist-resume-version-select")).toBeVisible();
+  await expect(page.getByTestId("loopassist-resume-text")).toHaveValue("负责订单系统 Redis 缓存一致性和接口隔离。");
   await expect(page.getByTestId("loopassist-jd-text")).not.toBeVisible();
-  await expect(page.getByTestId("loopassist-start")).toContainText("通用");
-  await page.getByTestId("loopassist-resume-text").fill("负责订单系统 Redis 缓存一致性和接口隔离。");
   await expect(page.getByTestId("loopassist-start")).toContainText("贴合你");
-  await expect(page.getByTestId("loopassist-shell")).toContainText("已检测到简历，题目将围绕你的项目追问");
+  await page.getByTestId("loopassist-use-saved-resume").uncheck();
+  await expect(page.getByTestId("loopassist-resume-text")).toHaveValue("");
+  await expect(page.getByTestId("loopassist-start")).toContainText("通用");
+  await page.getByTestId("loopassist-use-saved-resume").check();
+  await expect(page.getByTestId("loopassist-resume-text")).toHaveValue("负责订单系统 Redis 缓存一致性和接口隔离。");
+  await expect(page.getByTestId("loopassist-start")).toContainText("贴合你");
+  await expect(page.getByTestId("loopassist-shell")).not.toContainText("已检测到简历，题目将围绕你的项目追问");
+  await expect(page.getByTestId("loopassist-shell")).not.toContainText("未贴简历也能生成，会出通用题");
   await page.getByTestId("loopassist-toggle-jd").click();
   await page.getByTestId("loopassist-jd-text").fill("Java 后端岗位，要求分布式系统和服务治理经验。");
   await expect(page.getByTestId("loopassist-preview")).toContainText("AQS");
   await page.getByTestId("loopassist-start").click();
   await expect(page.getByTestId("loopassist-plan")).toContainText("大纲");
   await expect(page.getByTestId("loopassist-plan")).toContainText("确认候选人能讲清 AQS");
-  await expect(page.getByTestId("loopassist-plan")).toContainText("真实面经题源 + JD");
+  await expect(page.getByTestId("loopassist-plan")).toContainText("参考面经 s1");
+  await expect(page.getByTestId("loopassist-plan")).toContainText("生成依据：确认候选人能讲清 AQS");
+  await expect(page.getByTestId("loopassist-plan")).toContainText("参考：历史面经 s1 + 用户简历 + 用户 JD");
+  await expect(page.getByTestId("loopassist-plan")).not.toContainText("为什么这样生成");
+  await expect(page.getByTestId("loopassist-plan")).not.toContainText("这次参考了什么");
+  await page.getByRole("button", { name: "参考面经 s1" }).click();
+  const sourceDialog = page.getByRole("dialog", { name: "题源预览" });
+  await expect(sourceDialog).toContainText("原始面经：AQS");
+  await expect(sourceDialog).toContainText("负责订单系统 Redis 缓存一致性");
+  await sourceDialog.getByRole("button", { name: "关闭", exact: true }).click();
   await expect(page.getByTestId("loopassist-plan")).toContainText("开始面试");
 }
 
@@ -189,6 +348,9 @@ test("LoopAssist keeps voice focused and offers a weak text fallback", async ({ 
   await page.getByTestId("loopassist-more-menu").click();
   await page.getByRole("button", { name: "退出本轮" }).click();
   await expect(page.getByTestId("loopassist-review")).toContainText("72 / 100");
+  await expect(page.getByTestId("loopassist-review")).toContainText("能力分布");
+  await expect(page.getByTestId("loopassist-review")).toContainText("逐题复盘");
+  await expect(page.getByTestId("loopassist-review")).toContainText("公平锁和非公平锁有什么区别");
   await page.getByRole("button", { name: "＋ 新建面试" }).click();
   await expect(page.getByTestId("loopassist-interview-record")).toBeEnabled();
   await page.getByTestId("loopassist-interview-record").click();

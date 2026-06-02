@@ -36,6 +36,11 @@ import { applyReadingProgress } from "../../src/user/reading-progress.js";
 import { createUserProfileStore } from "../../src/user/user-profile-store.js";
 import { buildUserProfileView } from "../../src/user/profile-aggregator.js";
 import {
+  ensureResumeVersionLibrary,
+  getLatestResumeVersion,
+  saveResumeVersion,
+} from "../../src/user/resume-version-store.js";
+import {
   createUserRulesStore,
   interactionPreferenceRule,
 } from "../../src/user/user-rules-store.js";
@@ -150,6 +155,20 @@ async function buildProfilePayload(user) {
     userRules,
     sessionSummaries,
   });
+}
+
+function buildResumeLibraryPayload(user = {}) {
+  const library = ensureResumeVersionLibrary(user.resumeLibrary);
+  return {
+    latestVersionId: library.latestVersionId,
+    versions: library.versions.map((item) => ({
+      id: item.id,
+      fileName: item.fileName,
+      createdAt: item.createdAt,
+      charCount: item.charCount,
+      text: item.text,
+    })),
+  };
 }
 
 async function proxyJson(method, pathname, payload) {
@@ -977,7 +996,17 @@ async function handleAnswerStream(body, response) {
 }
 
 async function handleLoopAssistStart(body) {
-  const scope = body.scope || {};
+  let scope = body.scope || {};
+  if (!String(scope.resumeText || "").trim() && body.userId && body.useLatestStoredResume !== false) {
+    const user = await getUserProfile(body.userId);
+    const latestResumeVersion = getLatestResumeVersion(user.resumeLibrary);
+    if (latestResumeVersion?.text) {
+      scope = {
+        ...scope,
+        resumeText: latestResumeVersion.text,
+      };
+    }
+  }
   const seeds = selectLoopAssistSeeds(scope);
   const { data, traceId } = await proxyJson("POST", "/api/loopassist/start", {
     ...body,
@@ -1020,6 +1049,39 @@ async function handleLoopAssistStream(body, response) {
     response.write(chunk);
   }
   response.end();
+}
+
+async function handleListResumeVersions(userId = "") {
+  if (!userId) {
+    throw new Error("userId is required.");
+  }
+  const user = await getUserProfile(userId);
+  return buildResumeLibraryPayload(user);
+}
+
+async function handleSaveResumeVersion(body = {}) {
+  if (!body.userId) {
+    throw new Error("userId is required.");
+  }
+  const text = String(body.text || "").trim();
+  if (!text) {
+    throw new Error("resume text is required.");
+  }
+  const user = await getUserProfile(body.userId);
+  const nextLibrary = saveResumeVersion(user.resumeLibrary, {
+    text,
+    fileName: body.fileName || body.filename || "",
+  });
+  user.resumeLibrary = {
+    latestVersionId: nextLibrary.latestVersionId,
+    versions: nextLibrary.versions,
+  };
+  user.lastActiveAt = new Date().toISOString();
+  await userProfileStore.save(user);
+  return {
+    ...buildResumeLibraryPayload(user),
+    savedVersionId: nextLibrary.savedVersion.id,
+  };
 }
 
 const server = http.createServer(async (request, response) => {
@@ -1070,6 +1132,18 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/loopassist/review-question") {
+      const { data, traceId } = await proxyJson("POST", "/api/loopassist/review-question", await readJsonBody(request));
+      sendJson(response, 200, { ...data, traceId });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/loopassist/review-summary") {
+      const { data, traceId } = await proxyJson("POST", "/api/loopassist/review-summary", await readJsonBody(request));
+      sendJson(response, 200, { ...data, traceId });
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/loopassist/tts") {
       const result = await proxyBinary(ttsServiceUrl, "POST", "/api/tts", await readJsonBody(request));
       sendBuffer(response, 200, result.body, {
@@ -1091,6 +1165,17 @@ const server = http.createServer(async (request, response) => {
         created,
         profile: await buildProfilePayload(user),
       });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/profile/resume-versions") {
+      const userId = url.searchParams.get("userId") || "";
+      sendJson(response, 200, await handleListResumeVersions(userId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/profile/resume-versions") {
+      sendJson(response, 200, await handleSaveResumeVersion(await readJsonBody(request)));
       return;
     }
 

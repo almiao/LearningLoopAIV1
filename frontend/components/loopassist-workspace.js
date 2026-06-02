@@ -3,14 +3,19 @@
 import Link from "next/link";
 import { Room, RoomEvent } from "livekit-client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { postJson } from "../lib/api";
+import { getStoredUserId } from "../lib/user-session";
 import {
   createLivekitTransport,
   createRealtimeSession,
 } from "../lib/interview-assist-api";
 import {
+  getLoopAssistResumeVersions,
   getLoopAssistOptions,
   previewLoopAssistScope,
-  reviewLoopAssist,
+  reviewLoopAssistQuestion,
+  reviewLoopAssistSummary,
+  saveLoopAssistResumeVersion,
   startLoopAssist,
   streamLoopAssistAnswer,
   synthesizeLoopAssistSpeech,
@@ -154,6 +159,18 @@ function VoiceOrb({ state = "idle" }) {
   );
 }
 
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = String(reader.result || "");
+      resolve(value.includes(",") ? value.split(",").at(-1) : value);
+    };
+    reader.onerror = () => reject(new Error("文件读取失败。"));
+    reader.readAsDataURL(file);
+  });
+}
+
 function TextAnswerComposer({ value, disabled, onChange, onSubmit }) {
   return (
     <section className="loopassist-text-answer" data-testid="loopassist-text-answer">
@@ -230,13 +247,6 @@ function ConversationHistoryDrawer({ open, turns, currentTurnId, currentTopic, c
   );
 }
 
-function readStoredUserId() {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  return window.localStorage.getItem("learning-loop-user-id") || "";
-}
-
 function readStoredInterviewRecord() {
   if (typeof window === "undefined") {
     return null;
@@ -307,6 +317,28 @@ function summarizeDocument(value) {
   return `${text.length} 字`;
 }
 
+function formatResumeVersionTime(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) {
+    return "刚刚";
+  }
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function buildResumeVersionLabel(version, index = 0) {
+  const parts = [
+    version?.fileName || `简历版本 ${index + 1}`,
+    formatResumeVersionTime(version?.createdAt),
+    version?.charCount ? `${version.charCount} 字` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
 function normalizePreviewTopics(preview, topicOptions, scope) {
   if (preview?.sampleSeeds?.length) {
     return uniqueValues(preview.sampleSeeds.flatMap((item) => item.topics || [])).slice(0, 4);
@@ -337,15 +369,7 @@ function getReviewVerdict(score) {
 }
 
 function buildOutlineLine(stage) {
-  return stage?.objective || stage?.baseQuestion || stage?.theme || "围绕当前主题继续追问";
-}
-
-function formatOutlineReason(interviewPlan, scope) {
-  if (interviewPlan?.rationale) {
-    return interviewPlan.rationale;
-  }
-  const parts = [scope.role, scope.round].filter(Boolean);
-  return parts.length ? `系统会围绕 ${parts.join(" · ")} 的真实面试路径来安排这轮问题。` : "系统会结合你的目标岗位和材料来安排这轮问题。";
+  return stage?.baseQuestion || stage?.question || stage?.objective || stage?.theme || "围绕当前主题继续追问";
 }
 
 function getStageTopic(stage) {
@@ -361,6 +385,36 @@ function getStageMinutes(stage) {
   return Math.max(Number(stage?.estimatedMinutes || stage?.minutes || 4) || 4, 1);
 }
 
+function getStageSourceLabel(stage) {
+  const contexts = stage?.sourceContexts || stage?.sourcePreview?.sourceContexts || [];
+  const historical = contexts.find((context) => context?.type === "historical_interview");
+  if (historical?.contextId) {
+    return `参考面经 ${historical.contextId}`;
+  }
+  const preview = stage?.sourcePreview || {};
+  if (preview.seedId) {
+    return `参考面经 ${preview.seedId}`;
+  }
+  if (stage?.seedId) {
+    return `参考面经 ${stage.seedId}`;
+  }
+  return "查看参考材料";
+}
+
+function getStageReferenceLine(stage, scope) {
+  const contexts = stage?.sourceContexts || stage?.sourcePreview?.sourceContexts || [];
+  const parts = contexts.map((context) => context?.label).filter(Boolean);
+  if (parts.length) {
+    return `参考：${parts.slice(0, 3).join(" + ")}`;
+  }
+  const fallback = [
+    stage?.sourcePreview?.baseQuestion ? "历史面经" : null,
+    scope?.resumeText ? "用户简历" : null,
+    scope?.jobDescription ? "用户 JD" : null,
+  ].filter(Boolean);
+  return fallback.length ? `参考：${fallback.join(" + ")}` : "参考：所选岗位范围";
+}
+
 function getShellTitle(status) {
   if (status === "outline") {
     return "本轮大纲";
@@ -371,10 +425,199 @@ function getShellTitle(status) {
   if (status === "review" || status === "reviewing") {
     return "面后总结";
   }
-  return "开始一轮面试";
+  return "开始面试";
+}
+
+const reviewStatusMeta = {
+  miss: {
+    label: "未答出",
+    pillClassName: "is-miss",
+    sectionClassName: "is-miss",
+  },
+  warn: {
+    label: "待提升",
+    pillClassName: "is-warn",
+    sectionClassName: "is-warn",
+  },
+  good: {
+    label: "已掌握",
+    pillClassName: "is-good",
+    sectionClassName: "is-good",
+  },
+};
+
+function getReviewStatusMeta(status) {
+  return reviewStatusMeta[String(status || "").toLowerCase()] || reviewStatusMeta.warn;
+}
+
+function normalizeReviewQuestions(review) {
+  return Array.isArray(review?.questionReviews) ? review.questionReviews : [];
+}
+
+function normalizeCapabilityDistribution(review, reviewQuestions = []) {
+  if (Array.isArray(review?.capabilityDistribution) && review.capabilityDistribution.length) {
+    return review.capabilityDistribution;
+  }
+  if (Array.isArray(review?.topicPerformance) && review.topicPerformance.length) {
+    return review.topicPerformance.map((item) => ({
+      topic: item.topic || "综合",
+      score: Number(item.score) || 0,
+      verdict: item.verdict || "",
+      evidence: item.evidence || "",
+      questionCount: Number(item.questionCount) || 0,
+    }));
+  }
+  const grouped = new Map();
+  for (const item of reviewQuestions) {
+    const topic = String(item?.topic || "综合");
+    const current = grouped.get(topic) || { topic, total: 0, count: 0 };
+    current.total += Number(item?.score) || 0;
+    current.count += 1;
+    grouped.set(topic, current);
+  }
+  return Array.from(grouped.values()).map((item) => ({
+    topic: item.topic,
+    score: item.count ? Math.round(item.total / item.count) : 0,
+    verdict: "",
+    evidence: "",
+    questionCount: item.count,
+  }));
+}
+
+function buildReviewStats(review, reviewQuestions = []) {
+  const counts = review?.counts || {};
+  const miss = Number.isFinite(Number(counts.miss)) ? Number(counts.miss) : reviewQuestions.filter((item) => item?.status === "miss").length;
+  const warn = Number.isFinite(Number(counts.warn)) ? Number(counts.warn) : reviewQuestions.filter((item) => item?.status === "warn").length;
+  const good = Number.isFinite(Number(counts.good)) ? Number(counts.good) : reviewQuestions.filter((item) => item?.status === "good").length;
+  return {
+    miss,
+    warn,
+    good,
+    total: Number.isFinite(Number(counts.total)) ? Number(counts.total) : reviewQuestions.length,
+  };
+}
+
+function shortTopicLabel(topic = "") {
+  const raw = String(topic || "综合").split(/[·/｜|]/)[0]?.trim() || "综合";
+  return raw.length > 6 ? `${raw.slice(0, 6)}` : raw;
+}
+
+function CapabilityRadar({ items = [], passScore = 60 }) {
+  const normalizedItems = items.slice(0, 6);
+  const size = 280;
+  const center = size / 2;
+  const radius = 88;
+  const levels = [20, 40, 60, 80, 100];
+  const angleStep = (Math.PI * 2) / Math.max(normalizedItems.length, 3);
+
+  function pointFor(score, index) {
+    const angle = -Math.PI / 2 + angleStep * index;
+    const ratio = Math.max(0, Math.min(Number(score) || 0, 100)) / 100;
+    const x = center + Math.cos(angle) * radius * ratio;
+    const y = center + Math.sin(angle) * radius * ratio;
+    return `${x},${y}`;
+  }
+
+  function ringPoints(score) {
+    return normalizedItems.map((_, index) => pointFor(score, index)).join(" ");
+  }
+
+  const polygonPoints = normalizedItems.map((item, index) => pointFor(item?.score, index)).join(" ");
+  const passPoints = ringPoints(passScore);
+
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} className="loopassist-radar-chart" aria-hidden="true">
+      {levels.map((level) => (
+        <polygon key={level} points={ringPoints(level)} className={`loopassist-radar-ring${level === passScore ? " is-pass" : ""}`} />
+      ))}
+      {normalizedItems.map((item, index) => {
+        const angle = -Math.PI / 2 + angleStep * index;
+        const labelRadius = radius + 26;
+        const labelX = center + Math.cos(angle) * labelRadius;
+        const labelY = center + Math.sin(angle) * labelRadius;
+        return (
+          <g key={`${item?.topic || "topic"}-${index}`}>
+            <line
+              x1={center}
+              y1={center}
+              x2={center + Math.cos(angle) * radius}
+              y2={center + Math.sin(angle) * radius}
+              className="loopassist-radar-axis"
+            />
+            <text x={labelX} y={labelY} textAnchor="middle" className="loopassist-radar-label">
+              {shortTopicLabel(item?.topic)}
+            </text>
+          </g>
+        );
+      })}
+      <polygon points={passPoints} className="loopassist-radar-pass" />
+      <polygon points={polygonPoints} className="loopassist-radar-area" />
+      {normalizedItems.map((item, index) => {
+        const [x, y] = pointFor(item?.score, index).split(",");
+        return <circle key={`point-${index}`} cx={x} cy={y} r="4" className="loopassist-radar-point" />;
+      })}
+    </svg>
+  );
+}
+
+function guessReviewDifficulty(questionText = "", topic = "") {
+  const text = String(questionText || "");
+  const topicText = String(topic || "");
+  if (/[原理机制底层源码索引事务并发]/.test(text) || /系统设计|分布式|数据库|并发/.test(topicText)) {
+    return "中高";
+  }
+  if (/[项目介绍负责]/.test(text)) {
+    return "中等";
+  }
+  return "高频";
+}
+
+function buildInitialReviewCards(session, transcript = []) {
+  const interviewerTurns = (transcript || []).filter((turn) => turn?.role === "interviewer");
+  const planStages = session?.interviewPlan?.stages || [];
+  return interviewerTurns.map((turn, index) => {
+    const stage = planStages[index] || planStages.find((item) => Number(item?.step) === Number(turn?.planStep)) || {};
+    return {
+      questionNumber: index + 1,
+      questionText: turn?.text || stage?.baseQuestion || `第 ${index + 1} 题`,
+      topic: turn?.topic || stage?.theme || "综合",
+      difficulty: guessReviewDifficulty(turn?.text || stage?.baseQuestion || "", turn?.topic || stage?.theme || ""),
+      phase: "pending",
+      review: null,
+      error: "",
+      mastered: false,
+    };
+  });
+}
+
+function buildReviewLiveProgress(cards = []) {
+  return cards.reduce((acc, item) => {
+    if (item?.phase === "success") {
+      acc.resolved += 1;
+      if (item?.review?.status === "miss") {
+        acc.miss += 1;
+      } else if (item?.review?.status === "good") {
+        acc.good += 1;
+      } else if (item?.review?.status === "warn") {
+        acc.warn += 1;
+      }
+      return acc;
+    }
+    if (item?.phase === "error") {
+      acc.resolved += 1;
+    }
+    return acc;
+  }, {
+    resolved: 0,
+    miss: 0,
+    warn: 0,
+    good: 0,
+    total: cards.length,
+  });
 }
 
 export function LoopAssistWorkspace() {
+  const [userId, setUserId] = useState("");
   const [options, setOptions] = useState(null);
   const [scope, setScope] = useState(defaultScope);
   const [preview, setPreview] = useState(null);
@@ -393,14 +636,26 @@ export function LoopAssistWorkspace() {
   const [ttsStatus, setTtsStatus] = useState("idle");
   const [activePanel, setActivePanel] = useState(null);
   const [resumeFileName, setResumeFileName] = useState("");
+  const [resumeVersions, setResumeVersions] = useState([]);
+  const [selectedResumeVersionId, setSelectedResumeVersionId] = useState("");
+  const [useSavedResumeVersion, setUseSavedResumeVersion] = useState(false);
+  const [resumeLibraryState, setResumeLibraryState] = useState("idle");
+  const [resumeLibraryNotice, setResumeLibraryNotice] = useState("");
   const [jdFileName, setJdFileName] = useState("");
   const [isJdExpanded, setIsJdExpanded] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isInterviewPaused, setIsInterviewPaused] = useState(false);
   const [latestInterviewRecord, setLatestInterviewRecord] = useState(null);
+  const [activeSourcePreview, setActiveSourcePreview] = useState(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [focusedQuestionIndex, setFocusedQuestionIndex] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [reviewFilter, setReviewFilter] = useState("all");
+  const [openReviewQuestions, setOpenReviewQuestions] = useState({});
+  const [reviewCards, setReviewCards] = useState([]);
+  const [reviewSummaryState, setReviewSummaryState] = useState("idle");
+  const [isReviewSummaryInView, setIsReviewSummaryInView] = useState(true);
+  const [showReviewSummaryToast, setShowReviewSummaryToast] = useState(false);
   const roomRef = useRef(null);
   const audioRef = useRef(null);
   const audioCacheRef = useRef(new Map());
@@ -413,14 +668,63 @@ export function LoopAssistWorkspace() {
   const jdInputRef = useRef(null);
   const recordingTimerRef = useRef(null);
   const autoOpenedSettingsRef = useRef(false);
+  const reviewQuestionsRef = useRef(null);
+  const reviewSummaryRef = useRef(null);
+  const reviewRunIdRef = useRef(0);
 
   useEffect(() => {
     latestSessionRef.current = session;
   }, [session]);
 
   useEffect(() => {
+    setUserId(getStoredUserId());
+  }, []);
+
+  useEffect(() => {
     setLatestInterviewRecord(readStoredInterviewRecord());
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!userId) {
+      setResumeLibraryState("ready");
+      return undefined;
+    }
+
+    setResumeLibraryState("loading");
+    getLoopAssistResumeVersions(userId)
+      .then((data) => {
+        if (cancelled) {
+          return;
+        }
+        const versions = Array.isArray(data?.versions) ? data.versions : [];
+        const latestVersionId = data?.latestVersionId || versions[0]?.id || "";
+        setResumeVersions(versions);
+        setSelectedResumeVersionId(latestVersionId);
+        setUseSavedResumeVersion(Boolean(versions.length));
+        setResumeLibraryState("ready");
+        if (versions.length) {
+          const defaultVersion = versions.find((item) => item.id === latestVersionId) || versions[0];
+          setScope((current) => (
+            String(current.resumeText || "").trim()
+              ? current
+              : { ...current, resumeText: defaultVersion.text || "" }
+          ));
+          setResumeFileName((current) => current || defaultVersion.fileName || "");
+        }
+      })
+      .catch((nextError) => {
+        if (cancelled) {
+          return;
+        }
+        setResumeLibraryState("error");
+        setResumeLibraryNotice(nextError.message || "简历版本加载失败。");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   useEffect(() => {
     getLoopAssistOptions()
@@ -544,6 +848,36 @@ export function LoopAssistWorkspace() {
     };
   }, [answerState]);
 
+  useEffect(() => {
+    const reviewQuestions = normalizeReviewQuestions(review);
+    const firstWeakQuestion = reviewQuestions.find((item) => item?.status !== "good") || reviewQuestions[0];
+    setReviewFilter("all");
+    setOpenReviewQuestions(firstWeakQuestion ? { [String(firstWeakQuestion.questionNumber || 1)]: true } : {});
+  }, [review]);
+
+  useEffect(() => {
+    if (!reviewSummaryRef.current || (status !== "review" && status !== "reviewing")) {
+      return undefined;
+    }
+    const observer = new IntersectionObserver(([entry]) => {
+      setIsReviewSummaryInView(Boolean(entry?.isIntersecting));
+    }, {
+      threshold: 0.2,
+    });
+    observer.observe(reviewSummaryRef.current);
+    return () => observer.disconnect();
+  }, [status, reviewSummaryState]);
+
+  useEffect(() => {
+    if (reviewSummaryState !== "done") {
+      setShowReviewSummaryToast(false);
+      return;
+    }
+    if (!isReviewSummaryInView && typeof window !== "undefined" && window.scrollY > 120) {
+      setShowReviewSummaryToast(true);
+    }
+  }, [isReviewSummaryInView, reviewSummaryState]);
+
   const transcript = session?.transcript || [];
   const topicOptions = useMemo(() => options?.topics?.slice(0, 18) || [], [options]);
   const sampleTopics = useMemo(
@@ -555,6 +889,11 @@ export function LoopAssistWorkspace() {
     () => transcript.filter((turn) => turn.role === "interviewer"),
     [transcript],
   );
+  const selectedResumeVersion = useMemo(
+    () => resumeVersions.find((item) => item.id === selectedResumeVersionId) || null,
+    [resumeVersions, selectedResumeVersionId],
+  );
+  const latestResumeVersion = resumeVersions[0] || null;
 
   useEffect(() => {
     if (!interviewerTurns.length) {
@@ -577,7 +916,6 @@ export function LoopAssistWorkspace() {
     lastInterviewerText ||
     "第一题会在这里显示。";
   const latestTurn = transcript.at(-1) || null;
-  const topicSummary = sampleTopics.length ? sampleTopics.join(" + ") : "项目 + 分布式";
   const isAwaitingFollowup = status === "interview" && isSubmitting && latestTurn?.role === "candidate";
   const questionTitle = isAwaitingFollowup ? "正在生成下一问…" : currentQuestion;
   const questionTone = isAwaitingFollowup
@@ -587,21 +925,40 @@ export function LoopAssistWorkspace() {
       : !voiceIssue && error
         ? error
         : "";
-  const reviewPanels = review
-    ? [
-        { title: "优势", items: review.strengths || [] },
-        { title: "短板", items: review.weaknesses || [] },
-        { title: "高概率追问", items: review.likelyFollowups || [] },
-        {
-          title: "下一步",
-          items: [...(review.practicalNextSteps || []), review.nextRecommendedScope].filter(Boolean),
-        },
-      ]
-    : [];
+  const reviewQuestions = useMemo(() => normalizeReviewQuestions(review), [review]);
+  const reviewLiveProgress = useMemo(() => buildReviewLiveProgress(reviewCards), [reviewCards]);
+  const capabilityDistribution = useMemo(
+    () => normalizeCapabilityDistribution(review, reviewQuestions),
+    [review, reviewQuestions],
+  );
+  const reviewStats = useMemo(
+    () => buildReviewStats(review, reviewQuestions),
+    [review, reviewQuestions],
+  );
+  const filteredReviewQuestions = useMemo(
+    () => (reviewFilter === "all"
+      ? reviewQuestions
+      : reviewQuestions.filter((item) => item?.status === reviewFilter)),
+    [reviewFilter, reviewQuestions],
+  );
+  const filteredReviewCards = useMemo(
+    () => (reviewFilter === "all"
+      ? reviewCards
+      : reviewCards.filter((item) => item?.review?.status === reviewFilter)),
+    [reviewCards, reviewFilter],
+  );
+  const firstWeakReviewQuestion = useMemo(
+    () => reviewQuestions.find((item) => item?.status !== "good") || reviewQuestions[0] || null,
+    [reviewQuestions],
+  );
+  const displayedReviewCards = reviewSummaryState === "done" ? filteredReviewCards : reviewCards;
+  const reviewFilterCounts = reviewSummaryState === "done"
+    ? { all: reviewStats.total, miss: reviewStats.miss, warn: reviewStats.warn, good: reviewStats.good }
+    : { all: reviewCards.length, miss: reviewLiveProgress.miss, warn: reviewLiveProgress.warn, good: reviewLiveProgress.good };
   const interviewPlan = session?.interviewPlan || null;
   const planStages = interviewPlan?.stages || [];
   const hasGeneratedOutline = hasInterviewPlan(session) || ["outline", "interview", "review", "reviewing"].includes(status);
-  const shouldCenterSettings = status === "setup" && !hasGeneratedOutline;
+  const shouldCenterSettings = true;
   const reviewScore = Number(review?.readinessScore || 0);
   const reviewVerdict = getReviewVerdict(reviewScore);
   const currentPlanStage = planStages[currentQuestionIndex] || planStages[0] || null;
@@ -609,15 +966,14 @@ export function LoopAssistWorkspace() {
     planStages.reduce((sum, stage) => sum + getStageMinutes(stage), 0) || questionBudget * 4,
     1,
   );
-  const reviewStrengthCount = review?.strengths?.length || 0;
-  const reviewWeaknessCount = review?.weaknesses?.length || 0;
+  const reviewStrengthCount = reviewStats.good;
+  const reviewWeaknessCount = reviewStats.miss + reviewStats.warn;
   const reviewFollowupCount = review?.likelyFollowups?.length || 0;
+  const reviewScoreGap = Math.max(60 - reviewScore, 0);
+  const weakestCapability = capabilityDistribution.slice().sort((left, right) => (Number(left?.score) || 0) - (Number(right?.score) || 0))[0] || null;
   const shellTitle = getShellTitle(status);
   const hasResumeContext = Boolean(String(scope.resumeText || "").trim());
   const outlineCtaBadge = hasResumeContext ? "贴合你" : "通用";
-  const outlineCtaHint = hasResumeContext
-    ? "已检测到简历，题目将围绕你的项目追问"
-    : "未贴简历也能生成，会出通用题";
   const questionToneClassName = [
     "loopassist-inline-message",
     voiceIssue ? (voiceIssueKind === "tts" ? "loopassist-inline-note" : "loopassist-inline-error") : "",
@@ -637,10 +993,8 @@ export function LoopAssistWorkspace() {
       : voiceVisualState === "thinking"
         ? "正在思考你的回答…"
         : "点击麦克风开始作答";
-  const questionEyebrow = [
-    currentPlanStage?.theme || sampleTopics[0] || "综合面试",
-    currentPlanStage?.source ? currentPlanStage.source.replace(/^改编自/, "") : null,
-  ].filter(Boolean).join(" · ");
+  const questionEyebrow = currentPlanStage?.theme || sampleTopics[0] || "综合面试";
+  const canReplayInterviewer = ttsStatus !== "idle" && answerState !== "listening" && Boolean(lastInterviewerText || currentQuestion);
 
   useEffect(() => {
     if (autoOpenedSettingsRef.current || !options || hasGeneratedOutline || status !== "setup") {
@@ -657,6 +1011,74 @@ export function LoopAssistWorkspace() {
     }));
   }
 
+  function applySavedResumeVersion(version, { keepSelection = true, clearNotice = true } = {}) {
+    if (!version) {
+      return;
+    }
+    setScope((current) => ({
+      ...current,
+      resumeText: version.text || "",
+    }));
+    setResumeFileName(version.fileName || "");
+    setUseSavedResumeVersion(true);
+    if (keepSelection) {
+      setSelectedResumeVersionId(version.id || "");
+    }
+    if (clearNotice) {
+      setResumeLibraryNotice("");
+    }
+  }
+
+  function handleResumeTextChange(value) {
+    setUseSavedResumeVersion(false);
+    setResumeFileName("");
+    updateScope("resumeText", value);
+  }
+
+  function handleSavedResumeToggle(checked) {
+    if (!checked) {
+      setUseSavedResumeVersion(false);
+      setResumeFileName("");
+      updateScope("resumeText", "");
+      return;
+    }
+    const nextVersion = selectedResumeVersion || latestResumeVersion;
+    if (nextVersion) {
+      applySavedResumeVersion(nextVersion);
+    }
+  }
+
+  function handleResumeVersionSelection(versionId) {
+    const nextVersion = resumeVersions.find((item) => item.id === versionId);
+    setSelectedResumeVersionId(versionId);
+    if (nextVersion) {
+      applySavedResumeVersion(nextVersion, { keepSelection: false });
+    }
+  }
+
+  function toggleReviewQuestion(questionNumber) {
+    const key = String(questionNumber || "");
+    if (!key) {
+      return;
+    }
+    setOpenReviewQuestions((current) => ({
+      ...current,
+      [key]: !current[key],
+    }));
+  }
+
+  function focusRescueQuestions(nextFilter = "miss") {
+    setReviewFilter(nextFilter);
+    const candidateQuestion = reviewQuestions.find((item) => item?.status === nextFilter)
+      || firstWeakReviewQuestion;
+    if (candidateQuestion) {
+      setOpenReviewQuestions({ [String(candidateQuestion.questionNumber || 1)]: true });
+    }
+    window.requestAnimationFrame(() => {
+      reviewQuestionsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
   function openSettingsPanel() {
     setActivePanel("settings");
   }
@@ -665,17 +1087,86 @@ export function LoopAssistWorkspace() {
     if (!file) {
       return;
     }
-    const text = await file.text();
+    let text = "";
+    const isPdf = (file.type || "").toLowerCase() === "application/pdf" || /\.pdf$/i.test(file.name || "");
+    if (isPdf) {
+      if (!userId) {
+        setResumeLibraryState("error");
+        setResumeLibraryNotice("请先登录后再上传 PDF 文件。");
+        if (resumeInputRef.current) {
+          resumeInputRef.current.value = "";
+        }
+        return;
+      }
+      const data = await postJson("/api/materials/upload", {
+        userId,
+        filename: file.name,
+        mimeType: file.type || "application/pdf",
+        contentBase64: await readFileAsBase64(file),
+      });
+      text = String(
+        data?.material?.learning?.text
+        || data?.material?.learning?.markdown
+        || data?.material?.markdown
+        || "",
+      ).trim();
+      if (!text) {
+        throw new Error("PDF 暂未提取出足够文本，请检查文件内容后重试。");
+      }
+    } else {
+      text = await file.text();
+    }
     if (kind === "resume") {
-      updateScope("resumeText", text);
-      setResumeFileName(file.name);
+      setResumeLibraryNotice("");
+      if (!userId) {
+        setUseSavedResumeVersion(false);
+        updateScope("resumeText", text);
+        setResumeFileName(file.name);
+        setActivePanel("settings");
+        if (resumeInputRef.current) {
+          resumeInputRef.current.value = "";
+        }
+        return;
+      }
+      try {
+        setResumeLibraryState("saving");
+        const nextLibrary = await saveLoopAssistResumeVersion({
+          userId,
+          text,
+          fileName: file.name,
+        });
+        const versions = Array.isArray(nextLibrary?.versions) ? nextLibrary.versions : [];
+        const savedVersion = versions.find((item) => item.id === nextLibrary.savedVersionId) || versions[0] || null;
+        setResumeVersions(versions);
+        setSelectedResumeVersionId(nextLibrary.savedVersionId || savedVersion?.id || "");
+        setResumeLibraryState("ready");
+        if (savedVersion) {
+          applySavedResumeVersion(savedVersion, { keepSelection: false, clearNotice: false });
+        } else {
+          setUseSavedResumeVersion(false);
+          updateScope("resumeText", text);
+          setResumeFileName(file.name);
+        }
+      } catch (nextError) {
+        setResumeLibraryState("error");
+        setUseSavedResumeVersion(false);
+        updateScope("resumeText", text);
+        setResumeFileName(file.name);
+        setResumeLibraryNotice(nextError.message || "简历版本保存失败，本次先使用当前上传内容。");
+      }
       setActivePanel("settings");
+      if (resumeInputRef.current) {
+        resumeInputRef.current.value = "";
+      }
       return;
     }
     updateScope("jobDescription", text);
     setJdFileName(file.name);
     setIsJdExpanded(true);
     setActivePanel("settings");
+    if (jdInputRef.current) {
+      jdInputRef.current.value = "";
+    }
   }
 
   function resetWorkspace() {
@@ -695,8 +1186,12 @@ export function LoopAssistWorkspace() {
     setTtsStatus("idle");
     setActivePanel(null);
     setIsHistoryOpen(false);
+    setActiveSourcePreview(null);
     setRecordingSeconds(0);
     setFocusedQuestionIndex(null);
+    setReviewCards([]);
+    setReviewSummaryState("idle");
+    setShowReviewSummaryToast(false);
     answerSegmentsRef.current = [];
     audioRef.current?.pause?.();
   }
@@ -710,7 +1205,8 @@ export function LoopAssistWorkspace() {
     setStatus("outlining");
     try {
       const nextSession = await startLoopAssist({
-        userId: readStoredUserId(),
+        userId,
+        useLatestStoredResume: useSavedResumeVersion,
         scope,
       });
       setSession(nextSession);
@@ -1011,40 +1507,170 @@ export function LoopAssistWorkspace() {
     await loadReviewForSession(session.sessionId);
   }
 
+  function persistLatestInterviewReview({ sessionId, nextSession, nextReview }) {
+    const nextRecord = {
+      id: sessionId,
+      savedAt: Date.now(),
+      scope,
+      session: nextSession,
+      review: nextReview,
+      transcript: nextSession.transcript || [],
+      interviewPlan: nextSession.interviewPlan || null,
+    };
+    setLatestInterviewRecord(nextRecord);
+    writeStoredInterviewRecord(nextRecord);
+  }
+
+  async function runSingleQuestionReview(sessionId, questionNumber) {
+    const result = await reviewLoopAssistQuestion({ sessionId, questionNumber });
+    return result?.questionReview || null;
+  }
+
+  async function retryReviewQuestion(questionNumber) {
+    const activeSession = latestSessionRef.current;
+    if (!activeSession?.sessionId) {
+      return;
+    }
+    setReviewCards((current) => current.map((item) => (
+      item.questionNumber === questionNumber
+        ? { ...item, phase: "running", error: "" }
+        : item
+    )));
+    try {
+      const questionReview = await runSingleQuestionReview(activeSession.sessionId, questionNumber);
+      setReviewCards((current) => current.map((item) => (
+        item.questionNumber === questionNumber
+          ? { ...item, phase: "success", review: questionReview, error: "" }
+          : item
+      )));
+    } catch (nextError) {
+      setReviewCards((current) => current.map((item) => (
+        item.questionNumber === questionNumber
+          ? { ...item, phase: "error", error: nextError.message || "诊断失败，请重试。" }
+          : item
+      )));
+    }
+  }
+
+  function markReviewQuestionMastered(questionNumber) {
+    setReviewCards((current) => current.map((item) => (
+      item.questionNumber === questionNumber
+        ? { ...item, mastered: !item.mastered }
+        : item
+    )));
+  }
+
+  function scrollToReviewSummary() {
+    reviewSummaryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setShowReviewSummaryToast(false);
+  }
+
   async function loadReviewForSession(sessionId) {
     if (!sessionId) {
       return;
     }
     setStatus("reviewing");
     setError("");
+    setReview(null);
+    setReviewSummaryState("progress");
+    setShowReviewSummaryToast(false);
     roomRef.current?.disconnect?.();
     audioRef.current?.pause?.();
     isCapturingRef.current = false;
     try {
-      const result = await reviewLoopAssist({ sessionId });
-      const nextTranscript = result.transcript?.length ? result.transcript : latestSessionRef.current?.transcript || [];
+      const runId = Date.now();
+      reviewRunIdRef.current = runId;
+      const nextTranscript = latestSessionRef.current?.transcript || [];
       const nextSession = {
         ...(latestSessionRef.current || {}),
         sessionId,
         transcript: nextTranscript,
       };
-      const nextRecord = {
-        id: sessionId,
-        savedAt: Date.now(),
-        scope,
-        session: nextSession,
-        review: result.review,
-        transcript: nextTranscript,
-        interviewPlan: nextSession.interviewPlan || null,
-      };
-      setReview(result.review);
       setSession(nextSession);
-      setLatestInterviewRecord(nextRecord);
-      writeStoredInterviewRecord(nextRecord);
+      const initialCards = buildInitialReviewCards(nextSession, nextTranscript);
+      setReviewCards(initialCards);
+
+      const results = new Array(initialCards.length).fill(null);
+      let cursor = 0;
+      const concurrency = Math.min(5, Math.max(initialCards.length, 1));
+
+      async function worker() {
+        while (cursor < initialCards.length) {
+          const currentIndex = cursor;
+          cursor += 1;
+          const currentCard = initialCards[currentIndex];
+          if (!currentCard) {
+            continue;
+          }
+          if (reviewRunIdRef.current !== runId) {
+            return;
+          }
+          setReviewCards((current) => current.map((item) => (
+            item.questionNumber === currentCard.questionNumber
+              ? { ...item, phase: "running", error: "" }
+              : item
+          )));
+          try {
+            const questionReview = await Promise.race([
+              runSingleQuestionReview(sessionId, currentCard.questionNumber),
+              new Promise((_, reject) => {
+                window.setTimeout(() => reject(new Error("诊断超时，请重试。")), 20000);
+              }),
+            ]);
+            results[currentIndex] = questionReview;
+            if (reviewRunIdRef.current !== runId) {
+              return;
+            }
+            setReviewCards((current) => current.map((item) => (
+              item.questionNumber === currentCard.questionNumber
+                ? { ...item, phase: "success", review: questionReview, error: "" }
+                : item
+            )));
+          } catch (nextError) {
+            if (reviewRunIdRef.current !== runId) {
+              return;
+            }
+            setReviewCards((current) => current.map((item) => (
+              item.questionNumber === currentCard.questionNumber
+                ? { ...item, phase: "error", error: nextError.message || "诊断失败，请重试。" }
+                : item
+            )));
+          }
+        }
+      }
+
+      await Promise.all(Array.from({ length: concurrency }, () => worker()));
+      if (reviewRunIdRef.current !== runId) {
+        return;
+      }
+      setReviewSummaryState("summarizing");
+      await new Promise((resolve) => window.setTimeout(resolve, 900));
+      const resolvedQuestionReviews = results.filter(Boolean);
+      const summaryResult = await reviewLoopAssistSummary({
+        sessionId,
+        questionReviews: resolvedQuestionReviews,
+      });
+      if (reviewRunIdRef.current !== runId) {
+        return;
+      }
+      setReview(summaryResult.review);
+      setReviewCards((current) => current.map((item) => {
+        const matched = summaryResult.review?.questionReviews?.find((reviewItem) => Number(reviewItem?.questionNumber) === Number(item.questionNumber));
+        return matched
+          ? { ...item, phase: "success", review: matched, error: item.error || "", mastered: item.mastered }
+          : item;
+      }));
+      setReviewSummaryState("done");
+      persistLatestInterviewReview({
+        sessionId,
+        nextSession,
+        nextReview: summaryResult.review,
+      });
       setStatus("review");
     } catch (nextError) {
       setError(nextError.message);
       setStatus("interview");
+      setReviewSummaryState("idle");
     }
   }
 
@@ -1066,6 +1692,18 @@ export function LoopAssistWorkspace() {
       transcript: record.transcript || record.session?.transcript || [],
     });
     setReview(record.review);
+    setReviewCards((record.review?.questionReviews || []).map((item) => ({
+      questionNumber: item.questionNumber,
+      questionText: item.questionText,
+      topic: item.topic,
+      difficulty: item.difficulty,
+      phase: "success",
+      review: item,
+      error: "",
+      mastered: false,
+    })));
+    setReviewSummaryState("done");
+    setShowReviewSummaryToast(false);
     setStatus("review");
     setLatestInterviewRecord(record);
   }
@@ -1137,7 +1775,11 @@ export function LoopAssistWorkspace() {
             <strong>LoopAssist</strong>
             <span>{status === "setup" ? "新建面试" : `${scope.role || "目标岗位"} · ${scope.round || "当前轮次"}`}</span>
           </span>
-          {status === "review" || status === "reviewing" ? <span className="loopassist-review-verdict-pill">{reviewScore >= 70 ? "建议补强后推进" : "建议补强后再来一轮"}</span> : null}
+          {((status === "review" || status === "reviewing") && reviewSummaryState === "done") ? (
+            <span className="loopassist-review-verdict-pill">
+              {reviewScore >= 70 ? "建议补强后推进" : "建议补强后再来一轮"}
+            </span>
+          ) : null}
         </Link>
 
         <div className="loopassist-nav-meta">
@@ -1193,7 +1835,7 @@ export function LoopAssistWorkspace() {
             </>
           )}
 
-          <input ref={resumeInputRef} type="file" accept=".txt,.md,.markdown,.json,.csv" className="loopassist-file-input" onChange={(event) => handleDocumentUpload("resume", event.target.files?.[0])} data-testid="loopassist-resume-upload" />
+          <input ref={resumeInputRef} type="file" accept=".txt,.md,.markdown,.json,.csv,.pdf,application/pdf" className="loopassist-file-input" onChange={(event) => handleDocumentUpload("resume", event.target.files?.[0])} data-testid="loopassist-resume-upload" />
           <input ref={jdInputRef} type="file" accept=".txt,.md,.markdown,.json,.csv" className="loopassist-file-input" onChange={(event) => handleDocumentUpload("jd", event.target.files?.[0])} data-testid="loopassist-jd-upload" />
 
           {activePanel === "help" ? (
@@ -1238,7 +1880,7 @@ export function LoopAssistWorkspace() {
           <div className="loopassist-popover-head loopassist-new-modal-head">
             <div>
               <p className="loopassist-new-modal-eyebrow">新建面试</p>
-              <h2>{shouldCenterSettings ? "面试信息" : "背景信息"}</h2>
+              <h2>面试信息</h2>
             </div>
             <button type="button" className="loopassist-popover-close" onClick={() => setActivePanel(null)}>关闭</button>
           </div>
@@ -1274,16 +1916,47 @@ export function LoopAssistWorkspace() {
                 <em>可选 · 强烈推荐</em>
               </div>
               <p>围绕你的项目、技术栈追问，而不是通用八股</p>
+              {userId && resumeVersions.length ? (
+                <div className="loopassist-saved-resume-panel" data-testid="loopassist-saved-resume-panel">
+                  <label className="loopassist-saved-resume-toggle">
+                    <input
+                      type="checkbox"
+                      checked={useSavedResumeVersion}
+                      onChange={(event) => handleSavedResumeToggle(event.target.checked)}
+                      data-testid="loopassist-use-saved-resume"
+                    />
+                    <span>默认使用最近上传简历</span>
+                  </label>
+                  <select
+                    value={selectedResumeVersionId}
+                    onChange={(event) => handleResumeVersionSelection(event.target.value)}
+                    disabled={!resumeVersions.length}
+                    data-testid="loopassist-resume-version-select"
+                  >
+                    {resumeVersions.map((item, index) => (
+                      <option key={item.id} value={item.id}>
+                        {buildResumeVersionLabel(item, index)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
               <div className={`loopassist-material-field${scope.resumeText ? " is-filled" : ""}`}>
-                <textarea value={scope.resumeText} onChange={(event) => updateScope("resumeText", event.target.value)} placeholder="粘贴简历文本，或点下方上传…" data-testid="loopassist-resume-text" />
+                <textarea
+                  value={scope.resumeText}
+                  onChange={(event) => handleResumeTextChange(event.target.value)}
+                  placeholder="粘贴简历文本，或点下方上传…"
+                  data-testid="loopassist-resume-text"
+                />
                 <div className="loopassist-material-actions">
                   <button type="button" className="loopassist-material-upload" onClick={() => resumeInputRef.current?.click()} data-testid="loopassist-resume-toggle">
                     <DocumentIcon />
                     <span>上传简历</span>
                   </button>
-                  <span>{resumeFileName || (scope.resumeText ? summarizeDocument(scope.resumeText) : "txt / md / json / csv")}</span>
+                  <span>{resumeFileName || (scope.resumeText ? summarizeDocument(scope.resumeText) : "txt / md / json / csv / pdf")}</span>
                 </div>
               </div>
+              {(resumeLibraryState === "error" && resumeLibraryNotice) ? <p className="loopassist-inline-note">{resumeLibraryNotice}</p> : null}
               <button type="button" className="loopassist-add-jd-button" onClick={() => setIsJdExpanded((current) => !current)} data-testid="loopassist-toggle-jd">
                 {isJdExpanded ? "－ 收起 JD" : "＋ 添加目标岗位 JD（可选）"}
               </button>
@@ -1305,7 +1978,6 @@ export function LoopAssistWorkspace() {
           </div>
           {error ? <p className="loopassist-inline-error">{error}</p> : null}
           <div className="loopassist-settings-footer">
-            <p className={`loopassist-settings-cta-note${hasResumeContext ? " is-tailored" : ""}`}>{outlineCtaHint}</p>
             <div className="loopassist-settings-footer-actions">
               {hasGeneratedOutline ? <button type="button" className="loopassist-ghost-button" onClick={confirmResetWorkspace}>重置</button> : null}
               <button type="button" className="loopassist-primary-action loopassist-outline-cta" onClick={beginInterview} disabled={!options || status === "outlining" || !scope.role} data-testid="loopassist-start">
@@ -1335,13 +2007,13 @@ export function LoopAssistWorkspace() {
                 <p>{scope.role || "目标岗位"} · {scope.questionBudget || questionBudget} 题</p>
               </div>
             </div>
-          ) : !shouldCenterSettings ? (
+          ) : (
             <>
               <button type="button" className="loopassist-primary-action" onClick={openSettingsPanel}>
                 填写面试信息
               </button>
             </>
-          ) : null}
+          )}
         </section>
       ) : null}
 
@@ -1367,32 +2039,20 @@ export function LoopAssistWorkspace() {
                 <div>
                   <div className="loopassist-outline-tags">
                     <span className="is-topic">{getStageTopic(stage)}</span>
-                    {stage.source ? <span className="is-source">真实面经</span> : null}
+                    <button type="button" className="is-source" onClick={() => setActiveSourcePreview({ stage, index })}>{getStageSourceLabel(stage)}</button>
                     <span>{getStageMinutes(stage)}′</span>
                   </div>
                   <strong>{getStageTitle(stage, index)}</strong>
                   <p>{buildOutlineLine(stage)}</p>
-                  {stage.source ? <div className="loopassist-outline-tags"><span>{stage.source}</span></div> : null}
+                  <div className="loopassist-outline-evidence">
+                    <span>生成依据：{stage.objective || "基于 sample source context 生成本题。"}</span>
+                    <span>{getStageReferenceLine(stage, scope)}</span>
+                  </div>
                 </div>
                 <span className="loopassist-outline-go">进入 →</span>
               </li>
             ))}
           </ol>
-
-          <section className="loopassist-outline-footnote">
-            <div className="loopassist-outline-footnote-block">
-              <span>为什么这样生成</span>
-              <p>{interviewPlan?.sourceExplanation || "系统会优先参考你的目标岗位、简历、JD 和匹配到的真实面经题源。"} </p>
-            </div>
-            <div className="loopassist-outline-footnote-block">
-              <span>这次参考了什么</span>
-              <p>{[
-                scope.resumeText ? (resumeFileName || "简历") : null,
-                scope.jobDescription ? (jdFileName || "岗位 JD") : null,
-                topicSummary,
-              ].filter(Boolean).join(" · ")}</p>
-            </div>
-          </section>
 
           <div className="loopassist-bottom-dock">
             <button type="button" className="loopassist-ghost-button" onClick={openSettingsPanel}>返回修改背景</button>
@@ -1405,16 +2065,8 @@ export function LoopAssistWorkspace() {
       {status === "interview" && scope.interviewMode === "batch" ? (
         <section className="loopassist-interview">
           <section className="loopassist-question-stage">
-            <div className="loopassist-stage-status">
-              {ttsStatus !== "idle" && answerState !== "listening" ? (
-                <button type="button" className="loopassist-ghost-button loopassist-replay-button" onClick={() => playInterviewerAudio(lastInterviewerText || currentQuestion, { autoplay: true })} disabled={ttsStatus === "loading"} data-testid="loopassist-replay-tts">↺ 重播</button>
-              ) : null}
-            </div>
             <p className="loopassist-question-eyebrow">{questionEyebrow}</p>
             <h1>{questionTitle}</h1>
-            {currentPlanStage ? (
-              <p className="loopassist-question-hint">{buildOutlineLine(currentPlanStage)}</p>
-            ) : null}
           </section>
 
           {answerInputMode === "text" ? (
@@ -1446,6 +2098,11 @@ export function LoopAssistWorkspace() {
               <HistoryIcon />
               <span>对话记录</span>
             </button>
+            {canReplayInterviewer ? (
+              <button type="button" className="loopassist-mode-weak-button loopassist-replay-button" onClick={() => playInterviewerAudio(lastInterviewerText || currentQuestion, { autoplay: true })} disabled={ttsStatus === "loading"} data-testid="loopassist-replay-tts">
+                ↺ 重播
+              </button>
+            ) : null}
             <button type="button" className="loopassist-mode-weak-button" onClick={() => switchAnswerInputMode(answerInputMode === "voice" ? "text" : "voice")} data-testid="loopassist-toggle-text-mode">
               {answerInputMode === "voice" ? "文字模式" : "语音模式"}
             </button>
@@ -1474,55 +2131,253 @@ export function LoopAssistWorkspace() {
 
       {status === "review" || status === "reviewing" ? (
         <section className="loopassist-review-page" data-testid="loopassist-review">
-          <div className="loopassist-review-hero">
-            <div>
-              <p className="loopassist-eyebrow">总结 / 评价 · 第 1 轮</p>
-              <h1>{reviewVerdict}</h1>
-              <span>总计 {transcript.length} 条记录 · {review ? `${review.readinessScore} / 100` : "生成复盘中"}</span>
-            </div>
-            <section className="loopassist-scorecard">
-              <span>Overall Readiness</span>
-              <strong>{review ? review.readinessScore : "…"}</strong>
-              <em>/ 100</em>
-              <div><i style={{ width: `${Math.min(Math.max(reviewScore, 0), 100)}%` }} /></div>
-              <p>一面通过线约 60 分</p>
-            </section>
-            {review?.summary ? <p className="loopassist-review-summary">{review.summary}</p> : null}
-          </div>
-          <section className="loopassist-review-stats" aria-label="复盘概览">
-            <button type="button">
-              <strong>{reviewWeaknessCount}</strong>
-              <span>待补强</span>
-              <em>短板 / 缺失点</em>
-            </button>
-            <button type="button">
-              <strong>{reviewFollowupCount}</strong>
-              <span>高概率追问</span>
-              <em>继续深挖</em>
-            </button>
-            <button type="button">
-              <strong>{reviewStrengthCount}</strong>
-              <span>已掌握</span>
-              <em>可复用表达</em>
-            </button>
+          <section ref={reviewSummaryRef} className={`summary${reviewSummaryState === "done" ? " done" : ""}`}>
+            <div className="eyebrow sum-eyebrow">总结 / 评价 · 第 1 轮</div>
+            {reviewSummaryState !== "done" ? (
+              <div className="strip">
+                <div className="strip-top">
+                  <span className={`strip-spin${reviewSummaryState === "summarizing" ? " is-dim" : ""}`} />
+                  <span className="strip-title">{reviewSummaryState === "summarizing" ? "整体诊断 · 汇总中" : "整体诊断 · 进行中"}</span>
+                  <span className="strip-count">{reviewLiveProgress.resolved}/{reviewLiveProgress.total || reviewCards.length}</span>
+                </div>
+                <div className="strip-bar">
+                  <i style={{ width: `${(reviewLiveProgress.total ? (reviewLiveProgress.resolved / reviewLiveProgress.total) * 100 : 0)}%` }} />
+                </div>
+                <div className="strip-live">
+                  <span className="live m"><b>{reviewLiveProgress.miss}</b> 未答出</span>
+                  <span className="live w"><b>{reviewLiveProgress.warn}</b> 待提升</span>
+                  <span className="live g"><b>{reviewLiveProgress.good}</b> 已掌握</span>
+                </div>
+                <div className="strip-stage">
+                  {reviewSummaryState === "summarizing"
+                    ? `汇总 ${reviewLiveProgress.total || reviewCards.length} 道结果，生成整体结论…`
+                    : "完成一道更新一道 · 全部就绪后在此生成整体结论与能力分布"}
+                </div>
+              </div>
+            ) : (
+              <div className="full">
+                <h1>{reviewVerdict}</h1>
+                <p className="sub">{review?.summary || `本轮共 ${reviewStats.total || interviewerTurns.length} 道核心题，逐题结果已经整理完毕。`}</p>
+                <div className="hero-grid">
+                  <div className="scorecard">
+                    <div className="label">Overall Readiness</div>
+                    <div className="score-row">
+                      <span className="big">{review ? review.readinessScore : "…"}</span>
+                      <span className="denom">/ 100</span>
+                    </div>
+                    <div className="score-note">一面通过线约 60 分</div>
+                    <div className="progress-track"><div className="progress-fill" style={{ width: `${Math.min(Math.max(reviewScore, 0), 100)}%` }} /></div>
+                    <div className="score-note">
+                      {reviewScoreGap > 0
+                        ? <>距通过线还差 <b style={{ color: "#f0834f" }}>{reviewScoreGap} 分</b>{weakestCapability?.topic ? ` · 主要丢在 ${weakestCapability.topic}` : ""}</>
+                        : <>已经达到通过线以上，可以继续做下一轮强化。</>}
+                    </div>
+                  </div>
+                  <div className="stats">
+                    <button type="button" className="stat miss" onClick={() => focusRescueQuestions("miss")}>
+                      <span className="num">{reviewStats.miss}</span>
+                      <div className="meta">
+                        <div className="t">未答出</div>
+                        <div className="d">明显失分题</div>
+                      </div>
+                      <span className="arrow">查看 →</span>
+                    </button>
+                    <button type="button" className="stat warn" onClick={() => setReviewFilter("warn")}>
+                      <span className="num">{reviewStats.warn}</span>
+                      <div className="meta">
+                        <div className="t">待提升</div>
+                        <div className="d">有方向但不完整</div>
+                      </div>
+                      <span className="arrow">查看 →</span>
+                    </button>
+                    <button type="button" className="stat good" onClick={() => setReviewFilter("good")}>
+                      <span className="num">{reviewStats.good}</span>
+                      <div className="meta">
+                        <div className="t">已掌握</div>
+                        <div className="d">可以复用表达</div>
+                      </div>
+                      <span className="arrow">查看 →</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="section-head">
+                  <div className="eyebrow">能力分布</div>
+                  <h2>哪一块最薄弱，一眼看清</h2>
+                </div>
+                <section className="cap">
+                  <div className="radar-wrap">
+                    <CapabilityRadar items={capabilityDistribution} />
+                    <div className="radar-cap">按本轮各知识域的作答表现估算，虚线为 <b>通过线 60</b>，橙色越往里越薄弱。</div>
+                  </div>
+                  <div className="dom-list">
+                    {capabilityDistribution.map((item) => {
+                      const meta = getReviewStatusMeta(
+                        Number(item?.score) >= 75 ? "good" : Number(item?.score) >= 45 ? "warn" : "miss",
+                      );
+                      return (
+                        <div key={`${item?.topic || "topic"}-${item?.score || 0}`} className="dom">
+                          <span className={`st st-${meta.pillClassName.replace("is-", "")}`}>{meta.label}</span>
+                            <div className="dn">
+                              <div className="nm">{item?.topic || "综合"}</div>
+                              <div className="qc">本轮 {item?.questionCount || 0} 题</div>
+                            </div>
+                          <div className="mb"><i style={{ width: `${Math.min(Math.max(Number(item?.score) || 0, 0), 100)}%` }} /></div>
+                          <span className="vv">{Number(item?.score) || 0}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              </div>
+            )}
           </section>
-          <div className="loopassist-review-grid">
-            {reviewPanels.map((panel) => (
-              <section key={panel.title}>
-                <h2>{panel.title}</h2>
-                {panel.items.slice(0, 3).map((item) => <p key={item}>{item}</p>)}
-              </section>
-            ))}
-          </div>
-          <div className="loopassist-review-list">
-            {interviewerTurns.map((turn, index) => (
-              <details key={turn.turnId} open={index === 0}>
-                <summary>{formatCount(index + 1)} · {turn.text}</summary>
-                <p>{transcript.find((item, itemIndex) => itemIndex > transcript.indexOf(turn) && item.role === "candidate")?.text || "本题未记录回答。"}</p>
-              </details>
-            ))}
-          </div>
+          <section className="loopassist-review-questions-section" ref={reviewQuestionsRef}>
+            <div className="section-head">
+              <div className="eyebrow">逐题复盘</div>
+              <h2>每道题：好在哪 · 差在哪 · 怎么补</h2>
+            </div>
+            <div className={`filters${reviewSummaryState === "done" ? " is-ready" : ""}`} role="tablist" aria-label="复盘筛选">
+              {[
+                { key: "all", label: "全部", count: reviewFilterCounts.all },
+                { key: "miss", label: "未答出", count: reviewFilterCounts.miss },
+                { key: "warn", label: "待提升", count: reviewFilterCounts.warn },
+                { key: "good", label: "已掌握", count: reviewFilterCounts.good },
+              ].map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`tab${reviewFilter === item.key ? " active" : ""}`}
+                  onClick={() => setReviewFilter(item.key)}
+                  disabled={reviewSummaryState !== "done"}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <div className="qlist" data-testid="loopassist-review-questions">
+              {displayedReviewCards.length ? displayedReviewCards.map((card) => {
+                const item = card?.review || null;
+                const meta = getReviewStatusMeta(item?.status);
+                const isOpen = Boolean(openReviewQuestions[String(card?.questionNumber || "")]);
+                if (card?.phase === "pending" || card?.phase === "running") {
+                  return (
+                    <article key={`review-card-${card?.questionNumber || 0}`} className="qcard loading" data-status={card?.review?.status || "loading"}>
+                      <div className="qhead skelhead">
+                        <div className="qnum">{formatCount(card?.questionNumber || 0)}</div>
+                        <div className="qbody-head">
+                          <div className="qtags">
+                            <span className="diag"><span className="spin" />诊断中…</span>
+                            <span className="chip chip-topic">{card?.topic || "综合"}</span>
+                            <span className="chip chip-diff">{card?.difficulty || "高频"}</span>
+                          </div>
+                          <div className="qtitle">{card?.questionText || "正在准备题目…"}</div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                }
+                if (card?.phase === "error") {
+                  return (
+                    <article key={`review-card-${card?.questionNumber || 0}`} className="qcard errored" data-status={card?.review?.status || "error"}>
+                      <div className="qhead">
+                        <div className="qnum">{formatCount(card?.questionNumber || 0)}</div>
+                        <div className="qbody-head">
+                          <div className="qtags">
+                            <span className="diag err"><i className="x">!</i>诊断失败</span>
+                            <span className="chip chip-topic">{card?.topic || "综合"}</span>
+                            <span className="chip chip-diff">{card?.difficulty || "高频"}</span>
+                          </div>
+                          <div className="qtitle">{card?.questionText || "未记录题目"}</div>
+                        </div>
+                        <button type="button" className="retry" onClick={() => retryReviewQuestion(card?.questionNumber)}>↺ 重试</button>
+                      </div>
+                    </article>
+                  );
+                }
+                return (
+                  <article
+                    key={`${card?.questionNumber || 0}-${item?.questionText || "question"}`}
+                    className={`qcard ready show${isOpen ? " open" : ""}${card?.mastered ? " is-mastered" : ""}`}
+                    data-status={item?.status || "warn"}
+                  >
+                    <button type="button" className="qhead" onClick={() => toggleReviewQuestion(card?.questionNumber)}>
+                      <div className="qnum">{formatCount(card?.questionNumber || 0)}</div>
+                      <div className="qbody-head">
+                        <div className="qtags">
+                          <span className={`status ${item?.status || "warn"}`}>{meta.label}</span>
+                          <span className="chip chip-topic">{item?.topic || card?.topic || "综合"}</span>
+                          <span className="chip chip-diff">{item?.difficulty || card?.difficulty || "高频"}</span>
+                        </div>
+                        <div className="qtitle">{item?.questionText || card?.questionText || "未记录题目"}</div>
+                      </div>
+                      <div className="qchevron">⌄</div>
+                    </button>
+                    {isOpen ? (
+                      <div className="qdetail" style={{ maxHeight: isOpen ? "2000px" : "0" }}>
+                        <div className="qdetail-inner">
+                          <div className="perf">📋 你的表现：{item?.performanceSummary || "正在整理本题复盘。"}</div>
+                          {(item?.strengths || []).length ? (
+                            <div className="block">
+                              <div className="block-label lbl-good"><span className="ic">✓</span>答得好的地方</div>
+                              <ul className="pts good">
+                                {(item?.strengths || []).map((point) => <li key={point}>{point}</li>)}
+                              </ul>
+                            </div>
+                          ) : null}
+                          <div className="block">
+                            <div className="block-label lbl-miss"><span className="ic">!</span>失分 / 缺失点</div>
+                            <ul className="pts miss">
+                              {(item?.misses || []).map((point) => <li key={point}>{point}</li>)}
+                            </ul>
+                          </div>
+                          <div className="block">
+                            <div className="block-label lbl-key"><span className="ic">★</span>参考答案 · 核心要点</div>
+                            <div className="keybox">
+                              {(item?.keyPoints || []).map((point) => <p key={point}>{point}</p>)}
+                            </div>
+                          </div>
+                          {item?.coachingTip ? (
+                            <div className="block">
+                              <div className="block-label lbl-tip"><span className="ic">↑</span>优化建议</div>
+                              <div className="tipbox">{item.coachingTip}</div>
+                            </div>
+                          ) : null}
+                          {(item?.likelyFollowups || []).length ? (
+                            <div className="block">
+                              <div className="block-label lbl-ask"><span className="ic">?</span>高概率追问</div>
+                              <ul className="pts ask">
+                                {(item?.likelyFollowups || []).map((point) => <li key={point}>{point}</li>)}
+                              </ul>
+                            </div>
+                          ) : null}
+                          <div className="qactions">
+                            <button type="button" className="qa qa-learn" onClick={(event) => { event.stopPropagation(); focusRescueQuestions(item?.status === "good" ? "all" : item?.status || "miss"); }}>⚡ 立即深入学习</button>
+                            <button type="button" className="qa qa-master" onClick={(event) => { event.stopPropagation(); markReviewQuestionMastered(card?.questionNumber); }}>
+                              {card?.mastered ? "✓ 已掌握" : "✓ 标记已掌握"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              }) : (
+                <div className="loopassist-review-empty foot">
+                  当前筛选下没有题目。
+                </div>
+              )}
+            </div>
+            <div className="foot">LOOPASSIST · 进度条原地展开为总结 · 非侵入到达提示 · 不自动滚动</div>
+          </section>
         </section>
+      ) : null}
+
+      {showReviewSummaryToast ? (
+        <div className="toast show" data-testid="loopassist-review-toast">
+          <span className="tmsg"><b>✓ 整体结论已就绪</b> —— 在页面顶部</span>
+          <button type="button" className="tgo" onClick={scrollToReviewSummary}>查看 ↑</button>
+          <button type="button" className="tx" aria-label="关闭到达提示" onClick={() => setShowReviewSummaryToast(false)}>✕</button>
+        </div>
       ) : null}
 
       <ConversationHistoryDrawer
@@ -1534,6 +2389,60 @@ export function LoopAssistWorkspace() {
         questionBudget={planStages.length || questionBudget}
         onClose={() => setIsHistoryOpen(false)}
       />
+      {activeSourcePreview ? (
+        <section className="loopassist-source-preview" role="dialog" aria-modal="true" aria-label="题源预览">
+          <button type="button" className="loopassist-source-preview-backdrop" aria-label="关闭题源预览" onClick={() => setActiveSourcePreview(null)} />
+          <article className="loopassist-source-preview-card">
+            <div className="loopassist-source-preview-head">
+              <div>
+                <p>第 {formatCount(activeSourcePreview.index + 1)} 题来源</p>
+                <h2>{getStageSourceLabel(activeSourcePreview.stage)}</h2>
+              </div>
+              <button type="button" className="loopassist-popover-close" onClick={() => setActiveSourcePreview(null)}>关闭</button>
+            </div>
+            <div className="loopassist-source-preview-body">
+              {(activeSourcePreview.stage.sourceContexts || activeSourcePreview.stage.sourcePreview?.sourceContexts || []).map((context, contextIndex) => (
+                <section key={`${context?.type || "context"}-${contextIndex}`} className={`is-${context?.type || "context"}`}>
+                  <span>{context?.label || `参考材料 ${contextIndex + 1}`}</span>
+                  <p>{context?.excerpt || "暂无片段。"}</p>
+                  {context?.reason ? <em>{context.reason}</em> : null}
+                </section>
+              ))}
+              {!(activeSourcePreview.stage.sourceContexts || activeSourcePreview.stage.sourcePreview?.sourceContexts || []).length ? (
+                <section>
+                  <span>历史面经样本</span>
+                  <p>{activeSourcePreview.stage.sourcePreview?.baseQuestion || activeSourcePreview.stage.baseQuestion || "暂无片段。"}</p>
+                </section>
+              ) : null}
+              <section>
+                <span>生成依据</span>
+                <p>{activeSourcePreview.stage.objective || "基于 sample source context 生成本题。"}</p>
+              </section>
+              {activeSourcePreview.stage.sourcePreview?.reportText ? (
+                <section>
+                  <span>历史面经原文</span>
+                  <p>{activeSourcePreview.stage.sourcePreview.reportText}</p>
+                </section>
+              ) : null}
+              {activeSourcePreview.stage.sourcePreview?.followupAngles?.length ? (
+                <section>
+                  <span>可能追问</span>
+                  <p>{activeSourcePreview.stage.sourcePreview.followupAngles.join("；")}</p>
+                </section>
+              ) : null}
+              {activeSourcePreview.stage.sourcePreview?.strongSignals?.length ? (
+                <section>
+                  <span>强回答信号</span>
+                  <p>{activeSourcePreview.stage.sourcePreview.strongSignals.join("；")}</p>
+                </section>
+              ) : null}
+              {activeSourcePreview.stage.sourcePreview?.url ? (
+                <a href={activeSourcePreview.stage.sourcePreview.url} target="_blank" rel="noreferrer">打开牛客原帖 ↗</a>
+              ) : null}
+            </div>
+          </article>
+        </section>
+      ) : null}
     </main>
   );
 }

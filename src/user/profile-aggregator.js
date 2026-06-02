@@ -11,6 +11,7 @@ import {
 } from "../mastery/mastery-scoring.js";
 import { buildTrainingPointsFromDecomposition } from "../training/training-model.js";
 import { buildDocumentProgressView } from "./document-progress-state.js";
+import { ensureResumeVersionLibrary } from "./resume-version-store.js";
 import { buildReadingDomainsForTarget } from "./reading-roadmap.js";
 
 function progressLabel(progressPercentage) {
@@ -367,6 +368,7 @@ export function buildUserProfileView({ user, memoryProfile, userRules = [], sess
   const targetItems = targets.flatMap((target) => target.domains.flatMap((domain) => domain.items));
   const summarizedStates = targetItems.map((item) => summarizeState(item)).filter(Boolean);
   const documentProgress = buildDocumentProgressView({ user, memoryProfile });
+  const resumeLibrary = ensureResumeVersionLibrary(user.resumeLibrary);
   return {
     user: {
       id: user.id,
@@ -383,6 +385,11 @@ export function buildUserProfileView({ user, memoryProfile, userRules = [], sess
       solidItems: summarizedStates.filter((state) => state === "solid").length,
       partialItems: summarizedStates.filter((state) => state === "partial").length,
       weakItems: summarizedStates.filter((state) => state === "weak").length
+    },
+    resumeLibrary: {
+      latestVersionId: resumeLibrary.latestVersionId,
+      versionCount: resumeLibrary.versions.length,
+      latestUploadedAt: resumeLibrary.versions[0]?.createdAt || "",
     },
     documentProgress,
     userRules,

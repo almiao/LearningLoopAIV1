@@ -46,7 +46,9 @@ from app.interview_assist import (
 from app.loopassist import (
     answer_loopassist,
     create_loopassist_session,
+    review_loopassist_question,
     review_loopassist_session,
+    summarize_loopassist_review,
     synthesize_loopassist_tts,
     stream_loopassist_answer,
 )
@@ -314,6 +316,16 @@ class LoopAssistReviewRequest(BaseModel):
     sessionId: str
 
 
+class LoopAssistQuestionReviewRequest(BaseModel):
+    sessionId: str
+    questionNumber: int
+
+
+class LoopAssistReviewSummaryRequest(BaseModel):
+    sessionId: str
+    questionReviews: List[Dict[str, Any]] = []
+
+
 class LoopAssistTtsRequest(BaseModel):
     text: str
     speaker: str = ""
@@ -501,6 +513,28 @@ def loopassist_answer_stream(payload: LoopAssistAnswerRequest) -> StreamingRespo
 def loopassist_review(payload: LoopAssistReviewRequest) -> Dict[str, Any]:
     try:
         return review_loopassist_session(session_id=payload.sessionId)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/loopassist/review-question")
+def loopassist_review_question(payload: LoopAssistQuestionReviewRequest) -> Dict[str, Any]:
+    try:
+        return review_loopassist_question(
+            session_id=payload.sessionId,
+            question_number=payload.questionNumber,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/loopassist/review-summary")
+def loopassist_review_summary(payload: LoopAssistReviewSummaryRequest) -> Dict[str, Any]:
+    try:
+        return summarize_loopassist_review(
+            session_id=payload.sessionId,
+            question_reviews=payload.questionReviews,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

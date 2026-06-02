@@ -74,7 +74,26 @@ test("LoopAssist AI service starts, follows up, streams interviewer text, and re
       sessionId: session.sessionId,
     });
     assert.ok(review.review.readinessScore > 0);
+    assert.ok(Array.isArray(review.review.capabilityDistribution));
+    assert.ok(review.review.capabilityDistribution.length >= 1);
+    assert.ok(Array.isArray(review.review.questionReviews));
+    assert.ok(review.review.questionReviews.length >= 1);
+    assert.match(review.review.questionReviews[0].questionText, /AQS|项目|介绍/);
     assert.ok(review.transcript.length >= 3);
+
+    const questionReview = await postJson(`${aiBaseUrl}/api/loopassist/review-question`, {
+      sessionId: session.sessionId,
+      questionNumber: 1,
+    });
+    assert.equal(questionReview.questionReview.questionNumber, 1);
+    assert.ok(["miss", "warn", "good"].includes(questionReview.questionReview.status));
+
+    const reviewSummary = await postJson(`${aiBaseUrl}/api/loopassist/review-summary`, {
+      sessionId: session.sessionId,
+      questionReviews: [questionReview.questionReview],
+    });
+    assert.ok(reviewSummary.review.readinessScore > 0);
+    assert.ok(Array.isArray(reviewSummary.review.capabilityDistribution));
   }, { aiPort: 18221 });
 });
 
@@ -98,6 +117,11 @@ test("LoopAssist builds a visible LLM interview plan from resume, JD, and select
     assert.match(session.interviewPlan.rationale, /真实面经|岗位|简历|题源/);
     assert.match(session.interviewPlan.sourceExplanation, /真实面经|简历|JD|岗位/);
     assert.equal(session.interviewPlan.stages[0].step, 1);
+    assert.ok(session.interviewPlan.stages[0].sourcePreview);
+    assert.equal(session.interviewPlan.stages[0].sourcePreview.seedId, "seed-project-cache");
+    assert.match(session.interviewPlan.stages[0].sourcePreview.resumeText, /订单系统 Redis 缓存/);
+    assert.ok(session.interviewPlan.stages[0].sourceContexts.some((context) => context.type === "user_resume"));
+    assert.ok(session.interviewPlan.stages[0].sourceContexts.some((context) => context.type === "historical_interview"));
     assert.match(session.interviewerMessage.text, /Redis|缓存一致性|项目/);
     assert.equal(session.transcript[0].planStep, 1);
 

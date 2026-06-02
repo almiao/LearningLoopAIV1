@@ -53,6 +53,45 @@ test("simple login creates a reusable user profile and aggregates target progres
   });
 });
 
+test("uploaded resumes are versioned and latest version is returned first", async () => {
+  await withSplitServices(null, async ({ bffBaseUrl }) => {
+    const handle = `resume_versions_${Date.now()}`;
+    const login = await postJson(`${bffBaseUrl}/api/auth/login`, {
+      handle,
+      pin: "1234",
+    });
+    const userId = login.profile.user.id;
+
+    const firstSave = await postJson(`${bffBaseUrl}/api/profile/resume-versions`, {
+      userId,
+      fileName: "resume-v1.md",
+      text: "这是第一版简历，强调 Java 基础和并发。",
+    });
+    const secondSave = await postJson(`${bffBaseUrl}/api/profile/resume-versions`, {
+      userId,
+      fileName: "resume-v2.md",
+      text: "这是第二版简历，补充了 Redis 缓存和服务治理。",
+    });
+
+    assert.equal(firstSave.versions.length, 1);
+    assert.equal(secondSave.versions.length, 2);
+    assert.equal(secondSave.latestVersionId, secondSave.savedVersionId);
+    assert.equal(secondSave.versions[0].fileName, "resume-v2.md");
+    assert.match(secondSave.versions[0].text, /Redis 缓存/);
+
+    const versionsResponse = await fetch(`${bffBaseUrl}/api/profile/resume-versions?userId=${encodeURIComponent(userId)}`);
+    const versions = await versionsResponse.json();
+    assert.equal(versions.latestVersionId, secondSave.latestVersionId);
+    assert.equal(versions.versions[0].fileName, "resume-v2.md");
+    assert.equal(versions.versions[1].fileName, "resume-v1.md");
+
+    const profileResponse = await fetch(`${bffBaseUrl}/api/profile/${userId}`);
+    const profile = await profileResponse.json();
+    assert.equal(profile.resumeLibrary.versionCount, 2);
+    assert.equal(profile.resumeLibrary.latestVersionId, secondSave.latestVersionId);
+  });
+});
+
 test("reading progress persists the last-read document and survives target updates", async () => {
   await withSplitServices(null, async ({ bffBaseUrl }) => {
     const handle = `reader_progress_${Date.now()}`;
