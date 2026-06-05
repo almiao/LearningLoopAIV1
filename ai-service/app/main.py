@@ -47,6 +47,7 @@ from app.loopassist import (
     answer_loopassist,
     create_loopassist_session,
     generate_loopassist_rescue_material,
+    plan_loopassist_rescue,
     review_loopassist_question,
     review_loopassist_session,
     summarize_loopassist_review,
@@ -332,6 +333,12 @@ class LoopAssistRescueMaterialRequest(BaseModel):
     gap: Dict[str, Any] = {}
 
 
+class LoopAssistRescuePlanRequest(BaseModel):
+    scope: Dict[str, Any] = {}
+    review: Dict[str, Any] = {}
+    documents: List[Dict[str, Any]] = []
+
+
 class LoopAssistTtsRequest(BaseModel):
     text: str
     speaker: str = ""
@@ -548,6 +555,15 @@ def loopassist_review_summary(payload: LoopAssistReviewSummaryRequest) -> Dict[s
 @app.post("/api/loopassist/rescue-material")
 def loopassist_rescue_material(payload: LoopAssistRescueMaterialRequest) -> Dict[str, Any]:
     return generate_loopassist_rescue_material(scope=payload.scope, gap=payload.gap)
+
+
+@app.post("/api/loopassist/rescue-plan")
+def loopassist_rescue_plan(payload: LoopAssistRescuePlanRequest) -> Dict[str, Any]:
+    return plan_loopassist_rescue(
+        scope=payload.scope,
+        review=payload.review,
+        documents=payload.documents,
+    )
 
 
 @app.post("/api/loopassist/tts")

@@ -722,6 +722,149 @@ def build_rescue_material_prompt(*, scope: Dict[str, Any], gap: Dict[str, Any]) 
     ])
 
 
+def _weak_question_reviews(review: Dict[str, Any]) -> List[Dict[str, Any]]:
+    question_reviews = review.get("questionReviews") if isinstance(review, dict) else None
+    weak: List[Dict[str, Any]] = []
+    for item in question_reviews or []:
+        if not isinstance(item, dict):
+            continue
+        if _normalize(item.get("status")) == "good":
+            continue
+        weak.append(item)
+    return weak
+
+
+def _format_gap_questions(question_reviews: List[Dict[str, Any]]) -> str:
+    lines: List[str] = []
+    for item in question_reviews:
+        gap = {
+            "questionNumber": item.get("questionNumber"),
+            "topic": _normalize(item.get("topic")),
+            "questionText": _normalize(item.get("questionText")),
+            "status": _normalize(item.get("status")),
+            "score": item.get("score"),
+            "misses": _normalize_list(item.get("misses")),
+            "keyPoints": _normalize_list(item.get("keyPoints")),
+            "likelyFollowups": _normalize_list(item.get("likelyFollowups")),
+            "performanceSummary": _normalize(item.get("performanceSummary")),
+            "coachingTip": _normalize(item.get("coachingTip")),
+        }
+        lines.append(json.dumps(gap, ensure_ascii=False))
+    return "\n".join(lines) if lines else "（无明确薄弱题目）"
+
+
+def _format_document_library(documents: List[Dict[str, Any]]) -> str:
+    lines: List[str] = []
+    for document in documents or []:
+        if not isinstance(document, dict):
+            continue
+        doc_path = _normalize(document.get("path"))
+        if not doc_path:
+            continue
+        title = _normalize(document.get("title")) or doc_path
+        labels = document.get("folderLabels")
+        category = " / ".join(_normalize(label) for label in labels if _normalize(label)) if isinstance(labels, list) else ""
+        lines.append(f"{doc_path} | {category or '未分类'} | {title}")
+    return "\n".join(lines) if lines else "（资料库为空，全部走 AI 生成）"
+
+
+def build_rescue_plan_prompt(*, scope: Dict[str, Any], review: Dict[str, Any], documents: List[Dict[str, Any]]) -> str:
+    weak_questions = _weak_question_reviews(review)
+    review_summary = _normalize(review.get("summary")) if isinstance(review, dict) else ""
+    return "\n".join([
+        "你是一位资深技术面试教练。根据本次面试的复盘结果，为候选人规划一份「面试补救清单」。",
+        "铁律：清单里的每一项都必须直接对应这次面试真正暴露出来的薄弱点，绝不能引入与本次面试无关的话题或知识点。",
+        "",
+        "工作方式：",
+        "1. 读完下面这次面试的复盘：每道薄弱题目都带有主题 topic、原题 questionText、判定 status、本应答到的关键点 keyPoints、答错或答漏的点 misses、可能的追问 likelyFollowups。",
+        "2. 把性质相近、可以合并成同一份学习材料的薄弱点合并成一项；不要为每道题机械拆一项，也不要为了凑数硬加无关项。最终一般 2-6 项即可。",
+        "3. 对每一项，判断「已有资料库」里是否存在一篇能直接覆盖这个缺口的现成文档：",
+        "   - 若有：reuseDocPath 填它的 path（必须严格复制资料库清单里的 path，禁止编造或改写），source 设为 \"reuse\"。",
+        "   - 若没有合适现成文档：source 设为 \"generate\"（之后由 AI 单独生成讲解），reuseDocPath 留空字符串。",
+        "   - 若这块知识依赖版本/最新实践、需要联网核对：source 设为 \"checked\"，reuseDocPath 留空字符串。",
+        "   - 拿不准资料库文档是否真的对口时，宁可 generate，也不要勉强 reuse 一篇不贴合的文档。",
+        "4. 给每一项写一个具体、贴合本次缺口的中文标题，不要直接套用资料库里无关文档的名字。",
+        "",
+        "只输出严格 JSON，不要任何解释或代码块包裹，结构如下：",
+        '{"items":[{"title":"...","questionNumbers":[1,2],"summary":"一句话说明这项补什么缺口","misses":["..."],"keyPoints":["..."],"likelyFollowups":["..."],"source":"reuse|generate|checked","reuseDocPath":"","priority":0}]}',
+        "priority 为 0-100 的整数，越高越优先，反映这个缺口对面试结果的影响；items 按 priority 从高到低排序。",
+        "",
+        f"选定 scope：{_format_scope(scope)}",
+        f"本轮复盘摘要：{review_summary or '（无）'}",
+        "",
+        "本次面试的薄弱题目（每行一个 JSON）：",
+        _format_gap_questions(weak_questions),
+        "",
+        "已有资料库（每行格式： path | 分类 | 标题；reuseDocPath 只能从这里挑）：",
+        _format_document_library(documents),
+    ])
+
+
+def _default_rescue_plan(review: Dict[str, Any]) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    for item in _weak_question_reviews(review):
+        topic = _normalize(item.get("topic")) or _normalize(item.get("questionText")) or "这块知识"
+        status = _normalize(item.get("status"))
+        question_number = item.get("questionNumber")
+        items.append({
+            "title": f"{topic} · 面试补救讲解",
+            "questionNumbers": [question_number] if question_number else [],
+            "summary": _normalize(item.get("coachingTip")) or _normalize(item.get("performanceSummary")) or f"补上「{topic}」这块在面试里暴露的缺口。",
+            "misses": _normalize_list(item.get("misses")),
+            "keyPoints": _normalize_list(item.get("keyPoints")),
+            "likelyFollowups": _normalize_list(item.get("likelyFollowups")),
+            "source": "generate",
+            "reuseDocPath": "",
+            "priority": 100 if status == "miss" else 60,
+        })
+    return items
+
+
+def _normalize_rescue_plan(payload: Any, *, documents: List[Dict[str, Any]]) -> Dict[str, Any]:
+    raw_items = payload.get("items") if isinstance(payload, dict) else None
+    valid_paths = {
+        _normalize(document.get("path"))
+        for document in (documents or [])
+        if isinstance(document, dict) and _normalize(document.get("path"))
+    }
+    normalized: List[Dict[str, Any]] = []
+    for item in raw_items or []:
+        if not isinstance(item, dict):
+            continue
+        title = _normalize(item.get("title"))
+        if not title:
+            continue
+        source = _normalize(item.get("source")).lower()
+        reuse_path = _normalize(item.get("reuseDocPath"))
+        if reuse_path and reuse_path not in valid_paths:
+            reuse_path = ""
+        if reuse_path:
+            source = "reuse"
+        elif source not in {"generate", "checked"}:
+            source = "generate"
+        question_numbers = []
+        for value in item.get("questionNumbers") or []:
+            try:
+                number = int(value)
+            except (TypeError, ValueError):
+                continue
+            if number > 0 and number not in question_numbers:
+                question_numbers.append(number)
+        normalized.append({
+            "title": title,
+            "questionNumbers": question_numbers,
+            "summary": _normalize(item.get("summary")),
+            "misses": _normalize_list(item.get("misses")),
+            "keyPoints": _normalize_list(item.get("keyPoints")),
+            "likelyFollowups": _normalize_list(item.get("likelyFollowups")),
+            "source": source,
+            "reuseDocPath": reuse_path,
+            "priority": _normalize_int(item.get("priority"), default=50, minimum=0, maximum=100),
+        })
+    normalized.sort(key=lambda entry: entry.get("priority", 0), reverse=True)
+    return {"items": normalized[:12]}
+
+
 def _build_mock_rescue_markdown(gap: Dict[str, Any]) -> str:
     topic = _normalize(gap.get("topic")) or _normalize(gap.get("title")) or "这块知识"
     misses = _normalize_list(gap.get("misses"))
@@ -926,6 +1069,9 @@ class MockLoopAssistIntelligence:
     def rescue_material(self, *, scope: Dict[str, Any], gap: Dict[str, Any]) -> Dict[str, Any]:
         return {"markdown": _build_mock_rescue_markdown(gap)}
 
+    def rescue_plan(self, *, scope: Dict[str, Any], review: Dict[str, Any], documents: List[Dict[str, Any]]) -> Dict[str, Any]:
+        return {"items": _default_rescue_plan(review)}
+
     def summarize_review(
         self,
         *,
@@ -985,6 +1131,10 @@ class ProviderLoopAssistIntelligence:
         if not markdown:
             raise RuntimeError("LoopAssist rescue material returned empty text.")
         return {"markdown": markdown}
+
+    def rescue_plan(self, *, scope: Dict[str, Any], review: Dict[str, Any], documents: List[Dict[str, Any]]) -> Dict[str, Any]:
+        payload = self._complete_json(build_rescue_plan_prompt(scope=scope, review=review, documents=documents))
+        return payload if isinstance(payload, dict) else {"items": []}
 
     def interview_plan(self, *, scope: Dict[str, Any], seeds: List[Dict[str, Any]]) -> Dict[str, Any]:
         payload = self._complete_json(build_interview_plan_prompt(scope=scope, seeds=seeds))
@@ -1271,3 +1421,14 @@ def summarize_loopassist_review(*, session_id: str, question_reviews: List[Dict[
 def generate_loopassist_rescue_material(*, scope: Dict[str, Any], gap: Dict[str, Any]) -> Dict[str, Any]:
     intelligence = _require_intelligence()
     return intelligence.rescue_material(scope=scope or {}, gap=gap or {})
+
+
+def plan_loopassist_rescue(
+    *,
+    scope: Dict[str, Any],
+    review: Dict[str, Any],
+    documents: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    intelligence = _require_intelligence()
+    payload = intelligence.rescue_plan(scope=scope or {}, review=review or {}, documents=documents or [])
+    return _normalize_rescue_plan(payload, documents=documents or [])

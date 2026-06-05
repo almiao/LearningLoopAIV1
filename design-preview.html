@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Learning Loop AI · 统一设计语言预览</title>
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+<style>
+/* =========================================================================
+   Learning Loop AI - Unified Design Language (redesign-preserve)
+   Tokens carried over from the live product: warm paper + single purple accent.
+   Dials: VARIANCE 6 / MOTION 4 / DENSITY 5. Zero em-dashes. One accent locked.
+   ========================================================================= */
+:root{
+  --bg:#faf9f5;
+  --bg-sunken:#f3f1ea;
+  --card:#ffffff;
+  --card-tint:#f7f5ef;
+  --line:#e7e4db;
+  --line-strong:#dad9d4;
+
+  --text:#191917;
+  --text-2:#5d5c56;
+  --text-3:#908e85;
+
+  --accent:#534ab7;
+  --accent-strong:#3c3489;
+  --accent-wash:#efeefb;
+  --accent-line:#dad7f3;
+
+  --ok:#2c7a57;
+  --ok-wash:#e8f3ec;
+  --warn:#9a6a1f;
+  --warn-wash:#f6efe0;
+
+  /* one radius scale, locked */
+  --r-card:16px;
+  --r-field:11px;
+  --r-pill:999px;
+
+  --shadow-sm:0 1px 2px rgba(40,38,30,.04), 0 1px 0 rgba(40,38,30,.02);
+  --shadow-md:0 8px 24px -12px rgba(45,40,30,.18), 0 2px 6px -2px rgba(45,40,30,.06);
+  --shadow-lift:0 18px 40px -18px rgba(45,40,30,.28);
+
+  --ease:cubic-bezier(.16,1,.3,1);
+  --font:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"SFMono-Regular",ui-monospace,"JetBrains Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--font);
+  color:var(--text);
+  background:var(--bg);
+  -webkit-font-smoothing:antialiased;
+  line-height:1.55;
+  font-size:15px;
+}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;cursor:pointer;border:none;background:none}
+::selection{background:var(--accent-wash);color:var(--accent-strong)}
+
+/* ---------- texture: warm paper grain (fixed, non-scrolling) ---------- */
+body::before{
+  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.5;
+  background-image:radial-gradient(rgba(120,110,80,.05) .5px,transparent .5px);
+  background-size:4px 4px;
+}
+
+/* ===================== APP CHROME ===================== */
+.app{position:relative;z-index:1;min-height:100dvh;display:flex;flex-direction:column}
+
+.topbar{
+  position:sticky;top:0;z-index:40;height:64px;
+  display:flex;align-items:center;gap:28px;
+  padding:0 28px;
+  background:rgba(250,249,245,.82);
+  backdrop-filter:saturate(160%) blur(14px);
+  -webkit-backdrop-filter:saturate(160%) blur(14px);
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:center;gap:11px;font-weight:600;letter-spacing:-.01em}
+.brand .mark{
+  width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+  background:linear-gradient(150deg,var(--accent),var(--accent-strong));
+  color:#fff;box-shadow:0 4px 10px -3px rgba(83,74,183,.5);
+}
+.brand .mark i{font-size:17px}
+.brand .name{font-size:15px}
+.brand .name small{display:block;font-size:10.5px;font-weight:500;color:var(--text-3);letter-spacing:.02em}
+
+.nav{display:flex;gap:2px;margin-left:6px}
+.nav button{
+  position:relative;padding:8px 15px;border-radius:var(--r-pill);
+  color:var(--text-2);font-size:14px;font-weight:500;
+  transition:color .2s var(--ease),background .2s var(--ease);
+}
+.nav button:hover{color:var(--text);background:var(--bg-sunken)}
+.nav button.on{color:var(--accent-strong);background:var(--accent-wash)}
+
+.topbar .spacer{flex:1}
+.icon-btn{
+  width:38px;height:38px;border-radius:var(--r-pill);display:grid;place-items:center;
+  color:var(--text-2);transition:.2s var(--ease);
+}
+.icon-btn:hover{background:var(--bg-sunken);color:var(--text)}
+.avatar{
+  width:36px;height:36px;border-radius:var(--r-pill);
+  background:linear-gradient(150deg,#cbb37e,#a98b53);
+  color:#fff;display:grid;place-items:center;font-weight:600;font-size:13px;
+  box-shadow:var(--shadow-sm);
+}
+
+/* ===================== SHARED PRIMITIVES ===================== */
+.wrap{width:100%;max-width:1180px;margin:0 auto;padding:0 28px}
+.screen{display:none;animation:screen-in .5s var(--ease) both}
+.screen.on{display:block}
+@keyframes screen-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+.eyebrow{
+  font-size:11.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--accent);
+}
+.btn{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:11px 20px;border-radius:var(--r-pill);font-size:14px;font-weight:600;
+  transition:transform .18s var(--ease),box-shadow .2s var(--ease),background .2s var(--ease);
+}
+.btn i{font-size:17px}
+.btn:active{transform:translateY(1px) scale(.99)}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 8px 18px -8px rgba(83,74,183,.6)}
+.btn-primary:hover{background:var(--accent-strong);box-shadow:0 12px 24px -8px rgba(83,74,183,.65);transform:translateY(-1px)}
+.btn-ghost{background:var(--card);color:var(--text);border:1px solid var(--line-strong)}
+.btn-ghost:hover{background:var(--bg-sunken);transform:translateY(-1px)}
+.btn-soft{background:var(--accent-wash);color:var(--accent-strong)}
+.btn-soft:hover{background:#e6e4f8}
+
+.chip{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 11px;border-radius:var(--r-pill);font-size:12px;font-weight:600;
+  background:var(--bg-sunken);color:var(--text-2);
+}
+.chip.accent{background:var(--accent-wash);color:var(--accent-strong)}
+.chip.ok{background:var(--ok-wash);color:var(--ok)}
+.chip.warn{background:var(--warn-wash);color:var(--warn)}
+
+.card{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--shadow-sm);
+}
+
+/* ===================== SCREEN 1 : HOME ===================== */
+.hero{padding:74px 0 30px;position:relative}
+.hero-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:48px;align-items:center}
+.hero h1{
+  font-size:clamp(34px,4.4vw,56px);line-height:1.08;letter-spacing:-.025em;font-weight:680;
+  margin:18px 0 0;
+}
+.hero h1 em{font-style:normal;color:var(--accent);position:relative}
+.hero h1 em::after{
+  content:"";position:absolute;left:0;right:0;bottom:.06em;height:.16em;
+  background:var(--accent-line);border-radius:4px;z-index:-1;
+}
+.hero p.lead{margin-top:20px;font-size:17px;color:var(--text-2);max-width:46ch}
+.hero .cta-row{margin-top:30px;display:flex;gap:12px;flex-wrap:wrap}
+
+/* hero visual: a real-feel "current session" preview card, not a fake screenshot dump */
+.hero-card{
+  background:var(--card);border:1px solid var(--line);border-radius:20px;
+  box-shadow:var(--shadow-lift);overflow:hidden;
+}
+.hero-card .hc-top{
+  padding:16px 18px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:10px;background:var(--card-tint);
+}
+.hero-card .hc-top .dot{width:9px;height:9px;border-radius:50%}
+.hero-card .hc-body{padding:20px 18px}
+.hero-card .q{font-size:14.5px;font-weight:600;line-height:1.5}
+.hero-card .a{
+  margin-top:14px;padding:13px 14px;border-radius:12px;background:var(--bg-sunken);
+  font-size:13.5px;color:var(--text-2);line-height:1.6;
+}
+.hero-card .meter{margin-top:16px;display:flex;align-items:center;gap:10px}
+.hero-card .meter .bar{flex:1;height:7px;border-radius:var(--r-pill);background:var(--bg-sunken);overflow:hidden}
+.hero-card .meter .bar i{display:block;height:100%;width:68%;border-radius:inherit;background:linear-gradient(90deg,var(--accent),var(--accent-strong))}
+.hero-card .meter span{font-size:12px;font-weight:600;color:var(--text-2)}
+
+.stat-strip{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:0;
+  border:1px solid var(--line);border-radius:var(--r-card);background:var(--card);
+  overflow:hidden;margin-top:14px;
+}
+.stat-strip .s{padding:20px 22px;border-right:1px solid var(--line)}
+.stat-strip .s:last-child{border-right:none}
+.stat-strip .s .v{font-size:26px;font-weight:680;letter-spacing:-.02em;font-feature-settings:"tnum"}
+.stat-strip .s .v small{font-size:14px;color:var(--text-3);font-weight:600}
+.stat-strip .s .k{font-size:12.5px;color:var(--text-3);margin-top:3px}
+
+.section{padding:46px 0}
+.section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}
+.section-head h2{font-size:24px;font-weight:660;letter-spacing:-.02em}
+.section-head p{font-size:14px;color:var(--text-2);margin-top:4px}
+.see-all{font-size:13.5px;font-weight:600;color:var(--accent);display:inline-flex;align-items:center;gap:5px}
+.see-all:hover{color:var(--accent-strong)}
+
+/* two asymmetric entry tiles (not 3 equal cards) */
+.entries{display:grid;grid-template-columns:1.25fr 1fr;gap:18px}
+.entry{
+  position:relative;padding:26px;border-radius:var(--r-card);overflow:hidden;
+  border:1px solid var(--line);transition:transform .25s var(--ease),box-shadow .25s var(--ease);
+  min-height:188px;display:flex;flex-direction:column;
+}
+.entry:hover{transform:translateY(-4px);box-shadow:var(--shadow-md)}
+.entry .eb{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;font-size:23px}
+.entry h3{font-size:19px;font-weight:660;margin-top:16px;letter-spacing:-.01em}
+.entry p{font-size:14px;color:var(--text-2);margin-top:7px;max-width:34ch}
+.entry .go{margin-top:auto;padding-top:18px;font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.entry.learn{background:linear-gradient(160deg,#fff,#f6f4fc)}
+.entry.learn .eb{background:var(--accent-wash);color:var(--accent-strong)}
+.entry.learn .go{color:var(--accent-strong)}
+.entry.loop{background:linear-gradient(160deg,#fff,#f4f6f2)}
+.entry.loop .eb{background:var(--ok-wash);color:var(--ok)}
+.entry.loop .go{color:var(--ok)}
+.entry .ph-glow{position:absolute;right:-30px;top:-30px;font-size:130px;opacity:.05;pointer-events:none}
+
+/* continue-learning rows */
+.rows{display:flex;flex-direction:column}
+.row{
+  display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:16px;
+  padding:16px 4px;border-bottom:1px solid var(--line);transition:background .18s var(--ease);
+}
+.row:hover{background:var(--card-tint)}
+.row:last-child{border-bottom:none}
+.row .thumb{width:42px;height:42px;border-radius:11px;background:var(--accent-wash);color:var(--accent-strong);display:grid;place-items:center;font-size:20px}
+.row .meta h4{font-size:14.5px;font-weight:600}
+.row .meta span{font-size:12.5px;color:var(--text-3)}
+.row .mini-bar{width:120px;height:6px;border-radius:var(--r-pill);background:var(--bg-sunken);overflow:hidden}
+.row .mini-bar i{display:block;height:100%;background:var(--accent);border-radius:inherit}
+.row .pct{font-size:12.5px;font-weight:600;color:var(--text-2);width:38px;text-align:right;font-feature-settings:"tnum"}
+
+/* ===================== SCREEN 2 : LEARN ===================== */
+.work{display:grid;grid-template-columns:1fr 1fr;gap:0;min-height:calc(100dvh - 64px)}
+.work-head{
+  grid-column:1/-1;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:16px 28px;border-bottom:1px solid var(--line);background:var(--bg);
+}
+.work-head .title{font-size:16px;font-weight:660;letter-spacing:-.01em}
+.work-head .crumb{font-size:12.5px;color:var(--text-3)}
+.progress-pts{display:flex;align-items:center;gap:8px;margin-left:auto}
+.progress-pts .track{display:flex;gap:5px}
+.progress-pts .pt{width:26px;height:6px;border-radius:var(--r-pill);background:var(--bg-sunken)}
+.progress-pts .pt.done{background:var(--ok)}
+.progress-pts .pt.now{background:var(--accent)}
+.progress-pts .lbl{font-size:12.5px;font-weight:600;color:var(--text-2);font-feature-settings:"tnum"}
+
+.panel{padding:24px 28px;overflow:auto}
+.panel.read{border-right:1px solid var(--line);background:var(--card)}
+.panel.qa{background:var(--bg-sunken)}
+.panel-label{font-size:11.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--text-3);margin-bottom:14px}
+
+.doc h3{font-size:21px;font-weight:660;letter-spacing:-.02em;margin-bottom:4px}
+.doc .src{font-size:12.5px;color:var(--text-3);margin-bottom:20px}
+.doc p{font-size:14.5px;color:var(--text-2);line-height:1.78;margin-bottom:15px;max-width:62ch}
+.doc .anchor{
+  background:linear-gradient(transparent 62%,var(--accent-wash) 62%);
+  border-radius:2px;color:var(--text);font-weight:600;padding:0 1px;cursor:pointer;
+}
+.doc .anchor:hover{background:linear-gradient(transparent 0,var(--accent-wash) 0)}
+.anchor-list{margin:22px 0 0;border-top:1px solid var(--line);padding-top:18px}
+.anchor-list .al-title{font-size:12.5px;font-weight:600;color:var(--text-3);margin-bottom:10px}
+.anchor-row{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:10px;font-size:13.5px;transition:background .15s var(--ease)}
+.anchor-row:hover{background:var(--card-tint)}
+.anchor-row i{font-size:16px}
+.anchor-row.done i{color:var(--ok)}
+.anchor-row.now{background:var(--accent-wash);color:var(--accent-strong);font-weight:600}
+.anchor-row.now i{color:var(--accent)}
+.anchor-row.todo i{color:var(--text-3)}
+
+/* qa panel */
+.turn-meta{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.question{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);
+  padding:20px;box-shadow:var(--shadow-sm);
+}
+.question .q-from{display:flex;align-items:center;gap:9px;margin-bottom:11px}
+.question .q-from .tutor{width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,var(--accent),var(--accent-strong));color:#fff;display:grid;place-items:center;font-size:15px}
+.question .q-from span{font-size:13px;font-weight:600}
+.question .q-text{font-size:16px;font-weight:600;line-height:1.55;letter-spacing:-.01em}
+.question .q-hint{margin-top:12px;font-size:13px;color:var(--text-2);display:flex;gap:8px;align-items:flex-start;background:var(--card-tint);padding:11px 13px;border-radius:11px}
+.question .q-hint i{color:var(--accent);font-size:16px;flex-shrink:0;margin-top:1px}
+
+.answer{margin-top:16px}
+.answer textarea{
+  width:100%;min-height:118px;resize:vertical;
+  border:1px solid var(--line-strong);border-radius:var(--r-card);background:var(--card);
+  padding:15px;font:inherit;font-size:14.5px;color:var(--text);line-height:1.6;
+  transition:border-color .2s var(--ease),box-shadow .2s var(--ease);
+}
+.answer textarea::placeholder{color:var(--text-3)}
+.answer textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-wash)}
+.answer .ar-foot{display:flex;align-items:center;gap:10px;margin-top:12px}
+.answer .ar-foot .tip{font-size:12.5px;color:var(--text-3);margin-right:auto}
+
+/* prior turn (diagnosed) */
+.turn-prior{margin-top:22px;border-top:1px dashed var(--line-strong);padding-top:20px}
+.bubble{max-width:88%;padding:13px 15px;border-radius:14px;font-size:14px;line-height:1.6}
+.bubble.me{margin-left:auto;background:var(--accent);color:#fff;border-bottom-right-radius:5px}
+.bubble.tutor{background:var(--card);border:1px solid var(--line);border-bottom-left-radius:5px;margin-top:10px}
+.diagnose{margin-top:12px;background:var(--ok-wash);border:1px solid #cfe6d8;border-radius:12px;padding:13px 14px}
+.diagnose .dh{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--ok);margin-bottom:6px}
+.diagnose p{font-size:13.5px;color:#2f5a45;line-height:1.6}
+
+/* ===================== SCREEN 3 : LOOPASSIST ===================== */
+.loop{display:grid;grid-template-columns:1fr 360px;gap:0;min-height:calc(100dvh - 64px)}
+.stage{
+  position:relative;padding:40px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:radial-gradient(120% 90% at 50% 0%,#f6f4fc 0%,var(--bg) 60%);
+}
+.stage .sess-tag{position:absolute;top:24px;left:28px;display:flex;align-items:center;gap:10px}
+.stage .sess-tag .live{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--ok)}
+.stage .sess-tag .live i{width:8px;height:8px;border-radius:50%;background:var(--ok);animation:livepulse 1.6s var(--ease) infinite}
+@keyframes livepulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+.stage .timer{position:absolute;top:24px;right:28px;font-family:var(--mono);font-size:13px;color:var(--text-2);font-weight:600}
+
+.orb{position:relative;width:188px;height:188px;display:grid;place-items:center}
+.orb .core{
+  width:128px;height:128px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#7a6fe0,var(--accent) 55%,var(--accent-strong));
+  box-shadow:0 18px 50px -14px rgba(83,74,183,.6), inset 0 2px 14px rgba(255,255,255,.35);
+  position:relative;z-index:2;display:grid;place-items:center;color:#fff;font-size:34px;
+  animation:orbfloat 4s var(--ease) infinite;
+}
+@keyframes orbfloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+.orb .ring{position:absolute;inset:0;border-radius:50%;border:1.5px solid var(--accent-line);animation:orbring 3s var(--ease) infinite}
+.orb .ring.r2{animation-delay:1s}
+.orb .ring.r3{animation-delay:2s}
+@keyframes orbring{0%{transform:scale(.7);opacity:.8}100%{transform:scale(1.25);opacity:0}}
+.orb-wave{display:flex;align-items:center;gap:4px;height:30px;margin-top:30px}
+.orb-wave i{width:4px;border-radius:var(--r-pill);background:var(--accent);animation:wave 1.1s var(--ease) infinite;height:30%}
+.orb-wave i:nth-child(1){animation-delay:0s}.orb-wave i:nth-child(2){animation-delay:.1s}
+.orb-wave i:nth-child(3){animation-delay:.2s}.orb-wave i:nth-child(4){animation-delay:.3s}
+.orb-wave i:nth-child(5){animation-delay:.4s}.orb-wave i:nth-child(6){animation-delay:.3s}
+.orb-wave i:nth-child(7){animation-delay:.2s}.orb-wave i:nth-child(8){animation-delay:.1s}
+@keyframes wave{0%,100%{height:25%}50%{height:100%}}
+
+.stage .speaking{margin-top:26px;text-align:center}
+.stage .speaking .who{font-size:13px;font-weight:600;color:var(--accent-strong)}
+.stage .speaking .said{margin-top:9px;font-size:18px;font-weight:600;letter-spacing:-.01em;max-width:30ch;line-height:1.5}
+
+.stage .controls{margin-top:42px;display:flex;align-items:center;gap:14px}
+.ctrl{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;font-size:22px;transition:transform .18s var(--ease),box-shadow .2s var(--ease)}
+.ctrl:active{transform:scale(.94)}
+.ctrl.mic{background:var(--card);border:1px solid var(--line-strong);color:var(--text);box-shadow:var(--shadow-sm)}
+.ctrl.mic:hover{background:var(--bg-sunken)}
+.ctrl.end{width:60px;height:60px;background:#c0432f;color:#fff;box-shadow:0 10px 24px -8px rgba(192,67,47,.55)}
+.ctrl.end:hover{background:#a93826}
+.ctrl.more{background:var(--card);border:1px solid var(--line-strong);color:var(--text-2)}
+.ctrl.more:hover{background:var(--bg-sunken)}
+
+/* side: transcript + coaching */
+.side{background:var(--card);border-left:1px solid var(--line);display:flex;flex-direction:column}
+.side-tabs{display:flex;padding:14px 18px 0;gap:4px;border-bottom:1px solid var(--line)}
+.side-tabs button{padding:9px 14px;font-size:13.5px;font-weight:600;color:var(--text-3);border-radius:9px 9px 0 0;position:relative}
+.side-tabs button.on{color:var(--accent-strong)}
+.side-tabs button.on::after{content:"";position:absolute;left:10px;right:10px;bottom:-1px;height:2px;background:var(--accent);border-radius:2px}
+.side-body{flex:1;overflow:auto;padding:18px}
+.tx{margin-bottom:18px}
+.tx .who{font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:5px;display:flex;align-items:center;gap:6px}
+.tx .who.q{color:var(--accent-strong)}
+.tx p{font-size:14px;color:var(--text);line-height:1.62}
+.tx.me p{color:var(--text-2)}
+.coach{border:1px solid var(--accent-line);background:var(--accent-wash);border-radius:13px;padding:14px;margin-bottom:14px}
+.coach .ch{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--accent-strong);margin-bottom:7px}
+.coach ul{list-style:none;display:flex;flex-direction:column;gap:8px}
+.coach li{font-size:13px;color:#403a73;line-height:1.55;display:flex;gap:8px}
+.coach li i{color:var(--accent);font-size:15px;flex-shrink:0;margin-top:1px}
+
+/* ===================== RESPONSIVE ===================== */
+@media (max-width:920px){
+  .hero-grid{grid-template-columns:1fr;gap:30px}
+  .hero{padding:48px 0 20px}
+  .stat-strip{grid-template-columns:repeat(2,1fr)}
+  .stat-strip .s:nth-child(2){border-right:none}
+  .stat-strip .s:nth-child(-n+2){border-bottom:1px solid var(--line)}
+  .entries{grid-template-columns:1fr}
+  .work{grid-template-columns:1fr}
+  .panel.read{border-right:none;border-bottom:1px solid var(--line)}
+  .loop{grid-template-columns:1fr}
+  .side{border-left:none;border-top:1px solid var(--line)}
+  .nav .nlabel{display:none}
+}
+@media (max-width:560px){
+  .wrap,.topbar{padding-left:16px;padding-right:16px}
+  .row{grid-template-columns:auto 1fr auto}
+  .row .mini-bar{display:none}
+}
+
+/* reduced motion */
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== TOP BAR ===== -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark"><i class="ph-fill ph-infinity"></i></span>
+      <span class="name">Learning Loop<small>AI 面试辅导</small></span>
+    </div>
+    <nav class="nav">
+      <button data-go="home" class="on">主页</button>
+      <button data-go="learn">Learn</button>
+      <button data-go="loop">LoopAssist</button>
+    </nav>
+    <span class="spacer"></span>
+    <button class="icon-btn" title="搜索"><i class="ph ph-magnifying-glass"></i></button>
+    <button class="icon-btn" title="通知"><i class="ph ph-bell"></i></button>
+    <div class="avatar">林</div>
+  </header>
+
+  <!-- ============================================================= -->
+  <!-- SCREEN 1 : HOME                                                -->
+  <!-- ============================================================= -->
+  <main class="screen on" id="home">
+    <section class="hero">
+      <div class="wrap">
+        <div class="hero-grid">
+          <div>
+            <span class="eyebrow">从资料到 offer</span>
+            <h1>把每一份资料,<br>练成一次<em>过</em>的面试。</h1>
+            <p class="lead">上传简历或岗位资料,AI 拆出要点逐个带练,再用语音模拟面试帮你查漏补缺。</p>
+            <div class="cta-row">
+              <button class="btn btn-primary" data-go="learn"><i class="ph ph-upload-simple"></i>上传资料开始</button>
+              <button class="btn btn-ghost" data-go="loop"><i class="ph ph-microphone"></i>进入 LoopAssist</button>
+            </div>
+          </div>
+          <div class="hero-card">
+            <div class="hc-top">
+              <span class="dot" style="background:#e0524a"></span>
+              <span class="dot" style="background:#e7b14b"></span>
+              <span class="dot" style="background:#5fb07e"></span>
+              <span class="chip accent" style="margin-left:auto"><i class="ph ph-graduation-cap"></i>正在带练</span>
+            </div>
+            <div class="hc-body">
+              <div class="q">谈谈你在项目里是怎么定位一次线上接口超时的?</div>
+              <div class="a">先看监控分位,P99 飙升但 QPS 平稳,基本排除流量。再沿调用链看下游 DB 连接池打满 ...</div>
+              <div class="meter">
+                <span class="bar"><i></i></span>
+                <span>要点 11 / 16</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="wrap" style="padding:0;margin-top:34px">
+          <div class="stat-strip">
+            <div class="s"><div class="v">16</div><div class="k">本周练习要点</div></div>
+            <div class="s"><div class="v">3<small> 份</small></div><div class="k">在学资料</div></div>
+            <div class="s"><div class="v">82<small>%</small></div><div class="k">复述通过率</div></div>
+            <div class="s"><div class="v">5<small> 场</small></div><div class="k">模拟面试</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap">
+        <div class="section-head">
+          <div><h2>两种练法</h2><p>读懂要点,再开口表达。</p></div>
+        </div>
+        <div class="entries">
+          <div class="entry learn" data-go="learn">
+            <i class="ph ph-cards-three ph-glow"></i>
+            <span class="eb"><i class="ph ph-book-open-text"></i></span>
+            <h3>Learn 学习工作台</h3>
+            <p>左边读资料,右边逐个要点问答。讲解后复述、追问、回访,把知识真正记牢。</p>
+            <span class="go">开始逐点带练 <i class="ph ph-arrow-right"></i></span>
+          </div>
+          <div class="entry loop" data-go="loop">
+            <i class="ph ph-waveform ph-glow"></i>
+            <span class="eb"><i class="ph ph-microphone-stage"></i></span>
+            <h3>LoopAssist 语音陪练</h3>
+            <p>真人语速的语音面试官,实时转写你的回答并即时给出表达建议。</p>
+            <span class="go">开始模拟面试 <i class="ph ph-arrow-right"></i></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" style="padding-top:8px">
+      <div class="wrap">
+        <div class="section-head">
+          <div><h2>继续学习</h2></div>
+          <a class="see-all">全部资料 <i class="ph ph-arrow-right"></i></a>
+        </div>
+        <div class="card" style="padding:6px 18px">
+          <div class="rows">
+            <div class="row">
+              <span class="thumb"><i class="ph ph-file-pdf"></i></span>
+              <div class="meta"><h4>后端工程师 · 系统设计资料</h4><span>16 个要点 · 最近练于今天</span></div>
+              <span class="mini-bar"><i style="width:68%"></i></span>
+              <span class="pct">68%</span>
+            </div>
+            <div class="row">
+              <span class="thumb"><i class="ph ph-file-text"></i></span>
+              <div class="meta"><h4>我的简历 · 项目经历深挖</h4><span>9 个要点 · 昨天</span></div>
+              <span class="mini-bar"><i style="width:100%"></i></span>
+              <span class="pct">100%</span>
+            </div>
+            <div class="row">
+              <span class="thumb"><i class="ph ph-presentation-chart"></i></span>
+              <div class="meta"><h4>产品经理 · 行为面常见题</h4><span>12 个要点 · 3 天前</span></div>
+              <span class="mini-bar"><i style="width:25%"></i></span>
+              <span class="pct">25%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================================================= -->
+  <!-- SCREEN 2 : LEARN                                               -->
+  <!-- ============================================================= -->
+  <main class="screen" id="learn">
+    <div class="work">
+      <div class="work-head">
+        <i class="ph ph-book-open-text" style="font-size:20px;color:var(--accent)"></i>
+        <div>
+          <div class="title">后端工程师 · 系统设计资料</div>
+          <div class="crumb">Learn / 当前要点：缓存一致性</div>
+        </div>
+        <div class="progress-pts">
+          <div class="track">
+            <span class="pt done"></span><span class="pt done"></span><span class="pt done"></span>
+            <span class="pt now"></span><span class="pt"></span><span class="pt"></span>
+          </div>
+          <span class="lbl">要点 11 / 16</span>
+        </div>
+      </div>
+
+      <!-- reading panel -->
+      <section class="panel read">
+        <div class="panel-label">资料原文</div>
+        <div class="doc">
+          <h3>缓存与数据库的一致性</h3>
+          <div class="src">来源：系统设计资料.pdf · 第 3 章</div>
+          <p>在读多写少的场景里,缓存能显著降低数据库压力。但一旦数据更新,<span class="anchor">缓存与数据库之间就会出现短暂的不一致窗口</span>,需要用合适的更新策略去收敛。</p>
+          <p>常见做法是 <span class="anchor">Cache Aside</span>:读时回填,写时先更新数据库再删除缓存。删除而不是更新,是为了避免并发写下脏数据长期驻留。</p>
+          <p>当对一致性要求更高时,可以引入 <span class="anchor">延迟双删</span> 或基于 binlog 的异步失效,用一点额外延迟换取更小的不一致窗口。</p>
+
+          <div class="anchor-list">
+            <div class="al-title">本资料拆出的要点</div>
+            <div class="anchor-row done"><i class="ph-fill ph-check-circle"></i>缓存的适用场景</div>
+            <div class="anchor-row done"><i class="ph-fill ph-check-circle"></i>读写穿透与击穿</div>
+            <div class="anchor-row now"><i class="ph-fill ph-circle-half-tilt"></i>缓存一致性策略</div>
+            <div class="anchor-row todo"><i class="ph ph-circle"></i>延迟双删的代价</div>
+            <div class="anchor-row todo"><i class="ph ph-circle"></i>热点 key 与雪崩</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- qa panel -->
+      <section class="panel qa">
+        <div class="panel-label">逐点带练</div>
+
+        <div class="turn-meta">
+          <span class="chip accent"><i class="ph ph-chats-circle"></i>追问</span>
+          <span class="chip"><i class="ph ph-target"></i>缓存一致性策略</span>
+        </div>
+
+        <div class="question">
+          <div class="q-from">
+            <span class="tutor"><i class="ph-fill ph-sparkle"></i></span>
+            <span>AI 导师</span>
+          </div>
+          <div class="q-text">Cache Aside 写操作为什么是「删除缓存」而不是「更新缓存」?如果改成更新会有什么问题?</div>
+          <div class="q-hint"><i class="ph ph-lightbulb"></i><span>提示：想一想两个并发写请求,谁先谁后会怎样影响缓存里最终留下的值。</span></div>
+        </div>
+
+        <div class="answer">
+          <textarea placeholder="用你自己的话回答，说清「为什么」比背结论更重要 ..."></textarea>
+          <div class="ar-foot">
+            <span class="tip">回答后会即时诊断,薄弱处会自动追问。</span>
+            <button class="btn btn-soft"><i class="ph ph-microphone"></i>语音作答</button>
+            <button class="btn btn-primary"><i class="ph ph-paper-plane-tilt"></i>提交</button>
+          </div>
+        </div>
+
+        <div class="turn-prior">
+          <div class="panel-label" style="margin-bottom:12px">上一轮</div>
+          <div class="bubble me">Cache Aside 就是读的时候缓存没有就去数据库查,然后写回缓存。</div>
+          <div class="bubble tutor">方向对了。你说清了「读」的路径,但写路径还没提到。我们就从写路径继续追问。</div>
+          <div class="diagnose">
+            <div class="dh"><i class="ph-fill ph-check-circle"></i>这一轮诊断</div>
+            <p>读路径表述准确;写路径与一致性这一块还没覆盖,已为你切到对应追问。</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ============================================================= -->
+  <!-- SCREEN 3 : LOOPASSIST                                          -->
+  <!-- ============================================================= -->
+  <main class="screen" id="loop">
+    <div class="loop">
+      <section class="stage">
+        <div class="sess-tag">
+          <span class="live"><i></i>面试进行中</span>
+          <span class="chip">后端 · 模拟终面</span>
+        </div>
+        <div class="timer">12:48</div>
+
+        <div class="orb">
+          <span class="ring"></span><span class="ring r2"></span><span class="ring r3"></span>
+          <span class="core"><i class="ph-fill ph-user-sound"></i></span>
+        </div>
+        <div class="orb-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+        <div class="speaking">
+          <div class="who">面试官正在提问</div>
+          <div class="said">"如果这个缓存方案上线后命中率不及预期,你会怎么排查?"</div>
+        </div>
+
+        <div class="controls">
+          <button class="ctrl more" title="字幕"><i class="ph ph-closed-captioning"></i></button>
+          <button class="ctrl mic" title="静音"><i class="ph ph-microphone"></i></button>
+          <button class="ctrl end" title="结束面试"><i class="ph-fill ph-phone-x"></i></button>
+          <button class="ctrl more" title="更多"><i class="ph ph-dots-three"></i></button>
+        </div>
+      </section>
+
+      <aside class="side">
+        <div class="side-tabs">
+          <button class="on" data-side="tx">实时转写</button>
+          <button data-side="coach">表达建议</button>
+        </div>
+        <div class="side-body" id="side-tx">
+          <div class="coach">
+            <div class="ch"><i class="ph-fill ph-sparkle"></i>即时建议</div>
+            <ul>
+              <li><i class="ph ph-check"></i>先给排查思路的框架,再展开细节,面试官更容易跟上。</li>
+              <li><i class="ph ph-warning-circle"></i>刚才"那个东西"指代不清,换成具体名词。</li>
+            </ul>
+          </div>
+          <div class="tx">
+            <div class="who q"><i class="ph-fill ph-user-sound"></i>面试官</div>
+            <p>那我们换个角度,假设命中率只有六成,你的第一步是什么?</p>
+          </div>
+          <div class="tx me">
+            <div class="who"><i class="ph ph-user"></i>你</div>
+            <p>我会先确认是 key 设计的问题还是过期策略的问题,先看监控里不同 key 前缀的命中分布 ...</p>
+          </div>
+          <div class="tx">
+            <div class="who q"><i class="ph-fill ph-user-sound"></i>面试官</div>
+            <p>好,那如果发现是某一类 key 几乎不命中呢?</p>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+</div>
+
+<script>
+  // page switcher
+  const screens = document.querySelectorAll('.screen');
+  const navBtns = document.querySelectorAll('.nav button');
+  function go(id){
+    screens.forEach(s=>s.classList.toggle('on', s.id===id));
+    navBtns.forEach(b=>b.classList.toggle('on', b.dataset.go===id));
+    window.scrollTo({top:0,behavior:'instant'});
+  }
+  document.querySelectorAll('[data-go]').forEach(el=>{
+    el.addEventListener('click', ()=>go(el.dataset.go));
+  });
+  // side tab toggle (cosmetic)
+  document.querySelectorAll('.side-tabs button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('.side-tabs button').forEach(x=>x.classList.toggle('on',x===b));
+    });
+  });
+</script>
+</body>
+</html>

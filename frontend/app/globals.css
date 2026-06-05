@@ -12811,6 +12811,7 @@ button {
   position: relative;
   z-index: 1;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(520px, calc(100vw - 32px));
   max-height: min(680px, calc(100vh - 32px));
   margin: 60px auto 0;
@@ -12869,7 +12870,10 @@ button {
 }
 
 .loopassist-rescue-modal-list {
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 0 16px;
 }
 

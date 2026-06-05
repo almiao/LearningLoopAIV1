@@ -1976,11 +1976,7 @@ export function LoopAssistWorkspace() {
 
         <div className="loopassist-topbar-actions" ref={panelRef}>
           {status === "review" || status === "reviewing" ? (
-            <>
-              <button type="button" className="loopassist-ghost-button" onClick={() => setStatus("outline")}>← 回到大纲</button>
-              <button type="button" className="loopassist-ghost-button">导出 PDF</button>
-              <button type="button" className="loopassist-primary-action" onClick={resetWorkspace}>＋ 新建面试</button>
-            </>
+            <button type="button" className="loopassist-primary-action" onClick={resetWorkspace}>＋ 新建面试</button>
           ) : status === "interview" ? (
             <button
               type="button"

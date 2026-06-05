@@ -64,148 +64,17 @@ function uniqueStrings(values = []) {
   );
 }
 
-function inferSourceMode(question = {}) {
-  const haystack = [
-    question.topic,
-    question.questionText,
-    ...(question.misses || []),
-    ...(question.keyPoints || []),
-  ].join(" ");
-  if (/(mysql|redis|mq|消息队列|kafka|rabbitmq|rocketmq|redisson|索引|sql|grpc|rest|ttl|缓存|锁)/i.test(haystack)) {
-    return "checked";
-  }
-  return "generate";
-}
-
-function scoreQuestionPriority(question = {}) {
-  const statusWeight = question.status === "miss" ? 100 : question.status === "warn" ? 60 : 10;
-  const numericScore = Number(question.score);
-  const penalty = Number.isFinite(numericScore) ? Math.max(0, 100 - numericScore) : 35;
-  return statusWeight + penalty;
-}
-
-function extractKeywords(question = {}) {
-  const values = [
-    question.topic,
-    question.questionText,
-    ...(question.misses || []),
-    ...(question.keyPoints || []),
-  ]
-    .join(" ")
-    .toLowerCase();
-  const keywords = [];
-  if (/hashmap/.test(values)) {
-    keywords.push("hashmap");
-  }
-  if (/synchronized/.test(values)) {
-    keywords.push("synchronized");
-  }
-  if (/redis/.test(values)) {
-    keywords.push("redis");
-  }
-  if (/(消息队列|mq|kafka|rabbitmq|rocketmq)/.test(values)) {
-    keywords.push("message-queue");
-  }
-  if (/(mysql|索引|sql)/.test(values)) {
-    keywords.push("mysql-index");
-  }
-  if (/(锁|redisson|setnx)/.test(values)) {
-    keywords.push("distributed-lock");
-  }
-  if (/(ttl|缓存)/.test(values)) {
-    keywords.push("cache");
-  }
-  if (/(并发|juc|monitor|mark word)/.test(values)) {
-    keywords.push("java-concurrent");
-  }
-  return keywords;
-}
-
-function matchExistingDocument(question = {}, documents = []) {
-  const keywords = extractKeywords(question);
-  if (!keywords.length) {
-    return null;
-  }
-  const docList = safeArray(documents).map((document) => ({
-    ...document,
-    searchText: `${document.title || ""} ${document.path || ""}`.toLowerCase(),
-  }));
-  const candidates = [
-    {
-      keyword: "hashmap",
-      test: (doc) => /hashmap/.test(doc.searchText),
-    },
-    {
-      keyword: "synchronized",
-      test: (doc) => /synchronized|并发常见面试题/.test(doc.searchText),
-    },
-    {
-      keyword: "redis",
-      test: (doc) => /redis常见面试题总结|缓存基础常见面试题总结|redis-stream-mq/.test(doc.searchText),
-    },
-    {
-      keyword: "message-queue",
-      test: (doc) => /消息队列基础知识总结|redis-stream-mq|rabbitmq常见问题总结|rocketmq常见问题总结/.test(doc.searchText),
-    },
-    {
-      keyword: "mysql-index",
-      test: (doc) => /mysql索引详解|mysql执行计划分析|sql语句在mysql中的执行过程/.test(doc.searchText),
-    },
-    {
-      keyword: "distributed-lock",
-      test: (doc) => /分布式锁常见实现方案总结|分布式锁入门介绍/.test(doc.searchText),
-    },
-    {
-      keyword: "cache",
-      test: (doc) => /缓存基础常见面试题总结|缓存读写策略/.test(doc.searchText),
-    },
-    {
-      keyword: "java-concurrent",
-      test: (doc) => /java并发常见面试题总结|java 常见并发容器总结/.test(doc.searchText),
-    },
-  ];
-  for (const candidate of candidates) {
-    if (!keywords.includes(candidate.keyword)) {
-      continue;
-    }
-    const matched = docList.find(candidate.test);
-    if (matched) {
-      return matched;
-    }
-  }
-  return null;
-}
-
-function getFallbackTrainingDocPath(question = {}, documents = []) {
-  const matched = matchExistingDocument(question, documents);
-  if (matched?.path) {
-    return matched.path;
-  }
-  const keywords = extractKeywords(question);
-  const fallbackCandidates = [];
-  if (keywords.includes("hashmap")) {
-    fallbackCandidates.push("docs/java/collection/hashmap-source-code.md");
-  }
-  if (keywords.includes("java-concurrent") || keywords.includes("synchronized")) {
-    fallbackCandidates.push("docs/java/concurrent/java-concurrent-questions-01.md");
-  }
-  if (keywords.includes("mysql-index")) {
-    fallbackCandidates.push("docs/database/mysql/mysql-index.md");
-  }
-  if (keywords.includes("message-queue")) {
-    fallbackCandidates.push("docs/high-performance/message-queue/message-queue.md");
-  }
-  if (keywords.includes("distributed-lock")) {
-    fallbackCandidates.push("docs/distributed-system/distributed-lock-implementations.md");
-  }
-  if (keywords.includes("cache")) {
-    fallbackCandidates.push("docs/database/redis/cache-basics.md");
-  }
-  if (keywords.includes("redis")) {
-    fallbackCandidates.push("docs/database/redis/redis-questions-01.md");
-  }
-  const existingPaths = new Set(safeArray(documents).map((item) => item.path));
-  return fallbackCandidates.find((candidate) => existingPaths.has(candidate)) || safeArray(documents)[0]?.path || "";
+function buildPlanItemId(planItem = {}, index = 0) {
+  const hash = createHash("sha1")
+    .update(JSON.stringify({
+      title: normalizeText(planItem.title),
+      reuseDocPath: normalizeText(planItem.reuseDocPath),
+      questionNumbers: uniqueNumbers(planItem.questionNumbers),
+    }))
+    .digest("hex")
+    .slice(0, 10);
+  const base = slugify(planItem.title) || `item-${index + 1}`;
+  return `${base}-${hash}`.slice(0, 120);
 }
 
 function buildSyntheticDocument(playlist = {}, item = {}, documentPath = "") {
@@ -240,100 +109,6 @@ function buildSyntheticDocument(playlist = {}, item = {}, documentPath = "") {
       url: "",
     },
   };
-}
-
-function buildMaterialCacheKey(question = {}, suffix = "") {
-  const hash = createHash("sha1")
-    .update(JSON.stringify({
-      topic: question.topic || "",
-      questionText: question.questionText || "",
-      misses: safeArray(question.misses).slice(0, 4),
-      keyPoints: safeArray(question.keyPoints).slice(0, 4),
-      suffix,
-    }))
-    .digest("hex")
-    .slice(0, 12);
-  return `${slugify(question.topic || question.questionText || "rescue") || "rescue"}-${suffix || "main"}-${hash}`;
-}
-
-function buildGeneratedTitle(question = {}, mode = "generate") {
-  const topic = normalizeText(question.topic) || "这块知识";
-  const seed = normalizeText(question.questionText || "");
-  if (/hashmap/i.test(seed)) {
-    return "HashMap 底层与面试表达拆解";
-  }
-  if (/synchronized/i.test(seed)) {
-    return "synchronized 原理与锁升级";
-  }
-  if (/(mysql|索引|sql)/i.test(seed)) {
-    return "MySQL 索引执行路径拆解";
-  }
-  if (/(mq|消息队列|kafka|rabbitmq|rocketmq|stream)/i.test(seed)) {
-    return "消息队列选型与追问拆解";
-  }
-  if (/(锁|redisson|setnx)/i.test(seed)) {
-    return "分布式锁取舍与 Redisson 价值";
-  }
-  if (/(ttl|缓存)/i.test(seed)) {
-    return "TTL 缓存设计与边界处理";
-  }
-  return mode === "checked" ? `${topic} · 核对版讲解` : `${topic} · 面试补救讲解`;
-}
-
-function mergeQuestionIntoItem(item, question) {
-  item.questionNumbers = uniqueNumbers((item.questionNumbers || []).concat([question.questionNumber]));
-  item.sourceQuestionTexts = uniqueStrings((item.sourceQuestionTexts || []).concat([question.questionText]));
-  item.misses = uniqueStrings((item.misses || []).concat(question.misses || []));
-  item.keyPoints = uniqueStrings((item.keyPoints || []).concat(question.keyPoints || []));
-  item.likelyFollowups = uniqueStrings((item.likelyFollowups || []).concat(question.likelyFollowups || []));
-  const summaries = uniqueStrings([item.summary, question.performanceSummary].filter(Boolean));
-  item.summary = summaries[0] || item.summary || "";
-  item.priority = Math.max(Number(item.priority || 0), scoreQuestionPriority(question));
-}
-
-function buildCandidateItems(question = {}, documents = []) {
-  const candidates = [];
-  const matchedDocument = matchExistingDocument(question, documents);
-  if (matchedDocument) {
-    candidates.push({
-      id: `reuse-${slugify(matchedDocument.path || matchedDocument.title)}`,
-      cacheKey: `reuse:${matchedDocument.path}`,
-      title: matchedDocument.title || buildGeneratedTitle(question, "reuse"),
-      topic: normalizeText(question.topic),
-      source: "reuse",
-      docPath: matchedDocument.path || "",
-      summary: normalizeText(question.performanceSummary) || normalizeText(question.coachingTip) || "这篇现成材料能直接补上当前缺口。",
-      questionNumbers: [question.questionNumber],
-      sourceQuestionTexts: [question.questionText],
-      misses: safeArray(question.misses),
-      keyPoints: safeArray(question.keyPoints),
-      likelyFollowups: safeArray(question.likelyFollowups),
-      priority: scoreQuestionPriority(question) + 8,
-      trainingDocPath: matchedDocument.path || "",
-    });
-  }
-
-  const mode = inferSourceMode(question);
-  const shouldAddSupplement = !matchedDocument || question.status === "miss";
-  if (shouldAddSupplement) {
-    candidates.push({
-      id: `${mode}-${buildMaterialCacheKey(question, matchedDocument ? "supplement" : "main")}`,
-      cacheKey: `${mode}:${buildMaterialCacheKey(question, matchedDocument ? "supplement" : "main")}`,
-      title: matchedDocument ? `${normalizeText(question.topic) || "这块"} · 面试回答拆解` : buildGeneratedTitle(question, mode),
-      topic: normalizeText(question.topic),
-      source: mode,
-      docPath: "",
-      summary: normalizeText(question.coachingTip) || normalizeText(question.performanceSummary) || "系统会补一份更贴近这道题的讲解与答法。",
-      questionNumbers: [question.questionNumber],
-      sourceQuestionTexts: [question.questionText],
-      misses: safeArray(question.misses),
-      keyPoints: safeArray(question.keyPoints),
-      likelyFollowups: safeArray(question.likelyFollowups),
-      priority: scoreQuestionPriority(question),
-      trainingDocPath: getFallbackTrainingDocPath(question, documents),
-    });
-  }
-  return candidates;
 }
 
 function normalizeItemStatus(item = {}) {
@@ -457,7 +232,7 @@ export function createLoopAssistRescuePlaylistStore({ playlistsDir = defaultPlay
       return playlists;
     },
 
-    async prepare({ sessionId, scope = {}, review = {}, documents = [] } = {}) {
+    async prepare({ sessionId, scope = {}, review = {}, documents = [], generatePlan } = {}) {
       const playlistId = buildPlaylistId(sessionId);
       const existing = await readExisting(playlistId);
       if (existing?.items?.length) {
@@ -466,43 +241,68 @@ export function createLoopAssistRescuePlaylistStore({ playlistsDir = defaultPlay
         return persisted;
       }
 
-      const questionReviews = safeArray(review.questionReviews)
-        .filter((item) => item && item.status !== "good")
-        .sort((left, right) => scoreQuestionPriority(right) - scoreQuestionPriority(left));
+      // The whole rescue plan — which gaps to cover, the titles, and whether to
+      // reuse an existing library doc or generate fresh — is decided by the LLM.
+      // This store only turns that plan into persisted, trackable playlist items.
+      const planItems = typeof generatePlan === "function" ? safeArray(await generatePlan()) : [];
 
-      const itemMap = new Map();
+      const documentByPath = new Map(
+        safeArray(documents)
+          .filter((document) => normalizeText(document?.path))
+          .map((document) => [normalizeText(document.path), document])
+      );
+      const questionTextByNumber = new Map(
+        safeArray(review.questionReviews)
+          .filter((item) => item && normalizeText(item.questionText))
+          .map((item) => [Number(item.questionNumber), normalizeText(item.questionText)])
+      );
+
+      const now = Date.now();
+      const seenIds = new Set();
       const questionItemMap = {};
-      for (const question of questionReviews) {
-        const candidates = buildCandidateItems(question, documents);
-        questionItemMap[String(question.questionNumber || "")] = [];
-        for (const candidate of candidates) {
-          const key = candidate.docPath ? `doc:${candidate.docPath}` : candidate.cacheKey;
-          const existingItem = itemMap.get(key);
-          if (existingItem) {
-            mergeQuestionIntoItem(existingItem, question);
-            questionItemMap[String(question.questionNumber || "")].push(existingItem.id);
-            continue;
-          }
-          const source = candidate.source;
-          const now = Date.now();
-          const item = {
-            ...candidate,
-            source,
-            priority: Number(candidate.priority || 0),
-            questionNumbers: uniqueNumbers(candidate.questionNumbers),
-            sourceQuestionTexts: uniqueStrings(candidate.sourceQuestionTexts),
-            misses: uniqueStrings(candidate.misses),
-            keyPoints: uniqueStrings(candidate.keyPoints),
-            likelyFollowups: uniqueStrings(candidate.likelyFollowups),
-            status: source === "reuse" ? "ready" : "gen",
-            readyAt: source === "reuse" ? now : now + sourceDelaysMs[source],
-            learnedAt: "",
-            scopeRole: normalizeText(scope.role),
-          };
-          itemMap.set(key, item);
-          questionItemMap[String(question.questionNumber || "")].push(item.id);
+      const items = planItems.map((planItem, index) => {
+        const reuseDocPath = normalizeText(planItem.reuseDocPath);
+        const matchedDocument = reuseDocPath ? documentByPath.get(reuseDocPath) : null;
+        const source = matchedDocument
+          ? "reuse"
+          : (planItem.source === "checked" ? "checked" : "generate");
+        const questionNumbers = uniqueNumbers(planItem.questionNumbers);
+        const sourceQuestionTexts = uniqueStrings([
+          ...safeArray(planItem.sourceQuestionTexts),
+          ...questionNumbers.map((number) => questionTextByNumber.get(number)),
+        ]);
+
+        let id = buildPlanItemId(planItem, index);
+        while (seenIds.has(id)) {
+          id = `${id}-${index}`;
         }
-      }
+        seenIds.add(id);
+        for (const number of questionNumbers) {
+          const key = String(number);
+          questionItemMap[key] = (questionItemMap[key] || []).concat(id);
+        }
+
+        const docPath = matchedDocument ? normalizeText(matchedDocument.path) : "";
+        return {
+          id,
+          source,
+          title: normalizeText(planItem.title) || `补救材料 ${index + 1}`,
+          topic: normalizeText(planItem.topic),
+          docPath,
+          summary: normalizeText(planItem.summary),
+          questionNumbers,
+          sourceQuestionTexts,
+          misses: uniqueStrings(planItem.misses),
+          keyPoints: uniqueStrings(planItem.keyPoints),
+          likelyFollowups: uniqueStrings(planItem.likelyFollowups),
+          priority: Number(planItem.priority) || 0,
+          status: source === "reuse" ? "ready" : "gen",
+          readyAt: source === "reuse" ? now : now + (sourceDelaysMs[source] || sourceDelaysMs.generate),
+          learnedAt: "",
+          trainingDocPath: docPath,
+          scopeRole: normalizeText(scope.role),
+        };
+      });
 
       const playlist = hydratePlaylist({
         id: playlistId,
@@ -514,7 +314,7 @@ export function createLoopAssistRescuePlaylistStore({ playlistsDir = defaultPlay
         reviewSummary: normalizeText(review.summary),
         createdAt: new Date().toISOString(),
         questionItemMap,
-        items: Array.from(itemMap.values()),
+        items,
       });
       await ensureDir();
       await enqueueWrite(playlist);

@@ -1186,6 +1186,14 @@ const server = http.createServer(async (request, response) => {
           scope: body.scope || {},
           review: body.review || {},
           documents,
+          generatePlan: async () => {
+            const { data } = await proxyJson("POST", "/api/loopassist/rescue-plan", {
+              scope: body.scope || {},
+              review: body.review || {},
+              documents,
+            });
+            return Array.isArray(data?.items) ? data.items : [];
+          },
         }),
       });
       return;
