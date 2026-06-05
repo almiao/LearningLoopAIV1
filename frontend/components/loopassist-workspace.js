@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Room, RoomEvent } from "livekit-client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { postJson } from "../lib/api";
@@ -12,6 +13,8 @@ import {
 import {
   getLoopAssistResumeVersions,
   getLoopAssistOptions,
+  getLoopAssistRescuePlaylist,
+  prepareLoopAssistRescuePlaylist,
   previewLoopAssistScope,
   reviewLoopAssistQuestion,
   reviewLoopAssistSummary,
@@ -35,6 +38,11 @@ const defaultScope = {
 
 const waveHeights = [18, 28, 38, 24, 42, 30, 20, 36, 48, 32, 22, 34, 26, 40, 28, 18];
 const interviewRecordStorageKey = "loopassist-latest-interview-record";
+const rescueSourceCopy = {
+  reuse: "复用已有资料",
+  generate: "AI 生成讲解",
+  checked: "生成 · 已联网核对",
+};
 
 const helpSteps = [
   "点击右上角的面试信息按钮，先完成岗位、简历和 JD 配置，再生成可编辑的大纲。",
@@ -307,6 +315,34 @@ function uniqueValues(values = []) {
 
 function formatCount(value) {
   return String(Math.max(Number(value) || 0, 0)).padStart(2, "0");
+}
+
+function getRescueItemSourceLabel(source = "") {
+  return rescueSourceCopy[String(source || "").toLowerCase()] || rescueSourceCopy.generate;
+}
+
+function getRescueItemStatusLabel(item = {}) {
+  if (item?.status === "learned") {
+    return "已学完";
+  }
+  if (item?.status === "ready") {
+    return "已就绪";
+  }
+  if (item?.source === "reuse") {
+    return "读取中…";
+  }
+  return "生成中…";
+}
+
+function pickQuestionLabel(questionNumbers = []) {
+  const numbers = Array.from(
+    new Set(
+      (Array.isArray(questionNumbers) ? questionNumbers : [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
+    )
+  ).sort((left, right) => left - right);
+  return numbers.length ? `来自第 ${numbers.join("、")} 题` : "来源题目待补充";
 }
 
 function summarizeDocument(value) {
@@ -617,6 +653,7 @@ function buildReviewLiveProgress(cards = []) {
 }
 
 export function LoopAssistWorkspace() {
+  const router = useRouter();
   const [userId, setUserId] = useState("");
   const [options, setOptions] = useState(null);
   const [scope, setScope] = useState(defaultScope);
@@ -656,6 +693,11 @@ export function LoopAssistWorkspace() {
   const [reviewSummaryState, setReviewSummaryState] = useState("idle");
   const [isReviewSummaryInView, setIsReviewSummaryInView] = useState(true);
   const [showReviewSummaryToast, setShowReviewSummaryToast] = useState(false);
+  const [rescuePlaylist, setRescuePlaylist] = useState(null);
+  const [rescueModalOpen, setRescueModalOpen] = useState(false);
+  const [rescueModalFocusItemId, setRescueModalFocusItemId] = useState("");
+  const [rescuePlaylistState, setRescuePlaylistState] = useState("idle");
+  const [rescueError, setRescueError] = useState("");
   const roomRef = useRef(null);
   const audioRef = useRef(null);
   const audioCacheRef = useRef(new Map());
@@ -671,6 +713,7 @@ export function LoopAssistWorkspace() {
   const reviewQuestionsRef = useRef(null);
   const reviewSummaryRef = useRef(null);
   const reviewRunIdRef = useRef(0);
+  const rescuePreparedSessionIdRef = useRef("");
 
   useEffect(() => {
     latestSessionRef.current = session;
@@ -856,6 +899,66 @@ export function LoopAssistWorkspace() {
   }, [review]);
 
   useEffect(() => {
+    if (status !== "review" || reviewSummaryState !== "done" || !review || !session?.sessionId) {
+      return;
+    }
+    if (rescuePreparedSessionIdRef.current === session.sessionId && rescuePlaylist?.id) {
+      return;
+    }
+    let cancelled = false;
+    rescuePreparedSessionIdRef.current = session.sessionId;
+    setRescuePlaylistState("loading");
+    prepareLoopAssistRescuePlaylist({
+      sessionId: session.sessionId,
+      userId,
+      scope,
+      review,
+    })
+      .then((data) => {
+        if (cancelled) {
+          return;
+        }
+        setRescuePlaylist(data?.playlist || null);
+        setRescuePlaylistState("ready");
+        setRescueError("");
+      })
+      .catch((nextError) => {
+        if (cancelled) {
+          return;
+        }
+        setRescuePlaylistState("error");
+        setRescueError(nextError.message || "补救清单准备失败。");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [review, reviewSummaryState, scope, session?.sessionId, status, userId]);
+
+  useEffect(() => {
+    if (!rescuePlaylist?.id) {
+      return undefined;
+    }
+    const hasPendingItems = (rescuePlaylist.items || []).some((item) => item?.status === "pending" || item?.status === "gen");
+    if (!hasPendingItems) {
+      return undefined;
+    }
+    let cancelled = false;
+    const timerId = window.setInterval(() => {
+      getLoopAssistRescuePlaylist(rescuePlaylist.id)
+        .then((data) => {
+          if (!cancelled) {
+            setRescuePlaylist(data?.playlist || null);
+          }
+        })
+        .catch(() => {});
+    }, 1200);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timerId);
+    };
+  }, [rescuePlaylist]);
+
+  useEffect(() => {
     if (!reviewSummaryRef.current || (status !== "review" && status !== "reviewing")) {
       return undefined;
     }
@@ -971,6 +1074,15 @@ export function LoopAssistWorkspace() {
   const reviewFollowupCount = review?.likelyFollowups?.length || 0;
   const reviewScoreGap = Math.max(60 - reviewScore, 0);
   const weakestCapability = capabilityDistribution.slice().sort((left, right) => (Number(left?.score) || 0) - (Number(right?.score) || 0))[0] || null;
+  const rescueItems = rescuePlaylist?.items || [];
+  const rescueReadyCount = Number(rescuePlaylist?.readyCount || 0);
+  const rescueRemainingCount = Number(rescuePlaylist?.remainingCount || 0);
+  const rescueTotalCount = Number(rescuePlaylist?.totalCount || rescueItems.length || 0);
+  const rescueCompleted = Boolean(rescuePlaylist?.completed);
+  const rescueFirstReadyItem = rescueItems.find((item) => item?.status === "ready" || item?.status === "learned") || null;
+  const rescueFocusItem = rescueModalFocusItemId
+    ? rescueItems.find((item) => item?.id === rescueModalFocusItemId) || null
+    : null;
   const shellTitle = getShellTitle(status);
   const hasResumeContext = Boolean(String(scope.resumeText || "").trim());
   const outlineCtaBadge = hasResumeContext ? "贴合你" : "通用";
@@ -1077,6 +1189,61 @@ export function LoopAssistWorkspace() {
     window.requestAnimationFrame(() => {
       reviewQuestionsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  }
+
+  async function ensureRescuePlaylistLoaded() {
+    if (rescuePlaylist?.id) {
+      const latest = await getLoopAssistRescuePlaylist(rescuePlaylist.id).catch(() => rescuePlaylist);
+      const nextPlaylist = latest?.playlist || latest;
+      if (nextPlaylist) {
+        setRescuePlaylist(nextPlaylist);
+        return nextPlaylist;
+      }
+    }
+    if (!session?.sessionId || !review) {
+      throw new Error("复盘结果还没准备好。");
+    }
+    const data = await prepareLoopAssistRescuePlaylist({
+      sessionId: session.sessionId,
+      userId,
+      scope,
+      review,
+    });
+    setRescuePlaylist(data?.playlist || null);
+    return data?.playlist || null;
+  }
+
+  async function openRescuePlaylistModal({ questionNumber = null } = {}) {
+    try {
+      setRescuePlaylistState("loading");
+      const playlist = await ensureRescuePlaylistLoaded();
+      const focusItemId = questionNumber
+        ? (playlist?.questionItemMap?.[String(questionNumber)] || [])[0] || ""
+        : "";
+      setRescueModalFocusItemId(focusItemId);
+      setRescueModalOpen(true);
+      setRescuePlaylistState("ready");
+      setRescueError("");
+    } catch (nextError) {
+      setRescueError(nextError.message || "补救清单准备失败。");
+      setRescuePlaylistState("error");
+    }
+  }
+
+  function closeRescuePlaylistModal() {
+    setRescueModalOpen(false);
+    setRescueModalFocusItemId("");
+  }
+
+  function enterRescueLearning(itemId = "") {
+    const targetItem = (itemId ? rescueItems.find((item) => item?.id === itemId) : null)
+      || (rescueFocusItem?.status === "ready" || rescueFocusItem?.status === "learned" ? rescueFocusItem : null)
+      || rescueFirstReadyItem;
+    if (!rescuePlaylist?.id || !targetItem) {
+      return;
+    }
+    closeRescuePlaylistModal();
+    router.push(`/learn?rescuePlaylist=${encodeURIComponent(rescuePlaylist.id)}&rescueItem=${encodeURIComponent(targetItem.id)}`);
   }
 
   function openSettingsPanel() {
@@ -1192,6 +1359,12 @@ export function LoopAssistWorkspace() {
     setReviewCards([]);
     setReviewSummaryState("idle");
     setShowReviewSummaryToast(false);
+    setRescuePlaylist(null);
+    setRescueModalOpen(false);
+    setRescueModalFocusItemId("");
+    setRescuePlaylistState("idle");
+    setRescueError("");
+    rescuePreparedSessionIdRef.current = "";
     answerSegmentsRef.current = [];
     audioRef.current?.pause?.();
   }
@@ -1201,6 +1374,12 @@ export function LoopAssistWorkspace() {
     setVoiceIssue("");
     setVoiceIssueKind("");
     setReview(null);
+    setRescuePlaylist(null);
+    setRescueModalOpen(false);
+    setRescueModalFocusItemId("");
+    setRescuePlaylistState("idle");
+    setRescueError("");
+    rescuePreparedSessionIdRef.current = "";
     setActivePanel(null);
     setStatus("outlining");
     try {
@@ -1706,6 +1885,12 @@ export function LoopAssistWorkspace() {
     setShowReviewSummaryToast(false);
     setStatus("review");
     setLatestInterviewRecord(record);
+    setRescuePlaylist(null);
+    setRescueModalOpen(false);
+    setRescueModalFocusItemId("");
+    setRescuePlaylistState("idle");
+    setRescueError("");
+    rescuePreparedSessionIdRef.current = "";
   }
 
   async function confirmResetWorkspace() {
@@ -2200,6 +2385,36 @@ export function LoopAssistWorkspace() {
                     </button>
                   </div>
                 </div>
+                <section className="loopassist-review-rescue-handoff">
+                  <div className="loopassist-review-rescue-mark">↯</div>
+                  <div className="loopassist-review-rescue-copy">
+                    <span>立即补救</span>
+                    <h2>
+                      {rescueCompleted
+                        ? "这轮补救已经全部完成"
+                        : rescueRemainingCount > 0 && rescuePlaylist?.id
+                          ? `缺口已拆成 ${rescueTotalCount || "N"} 篇材料，并按重要性排好`
+                          : "把这次答错的，顺着补完一遍"}
+                    </h2>
+                    <p>
+                      {rescueCompleted
+                        ? "已排入后续复习，下轮面试会优先回问这些薄弱点。"
+                        : rescuePlaylist?.id
+                          ? `已就绪 ${rescueReadyCount}/${rescueTotalCount} · 还剩 ${rescueRemainingCount} 篇未学完。第一篇就绪即可进入，不必等整份清单。`
+                          : rescuePlaylistState === "loading"
+                            ? "正在整理补救清单，复用已有资料的会先秒开，需生成的材料稍后补上。"
+                            : "系统会把缺口拆成多份材料，复盘页和学习页之间都通过同一份 playlist 串起来。"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="loopassist-review-rescue-button"
+                    onClick={() => openRescuePlaylistModal()}
+                    disabled={reviewSummaryState !== "done" || rescuePlaylistState === "loading"}
+                  >
+                    {rescueCompleted ? "查看补救清单" : rescuePlaylist?.id && rescueRemainingCount < rescueTotalCount ? "继续补救" : "开始补救"}
+                  </button>
+                </section>
                 <div className="section-head">
                   <div className="eyebrow">能力分布</div>
                   <h2>哪一块最薄弱，一眼看清</h2>
@@ -2351,7 +2566,16 @@ export function LoopAssistWorkspace() {
                             </div>
                           ) : null}
                           <div className="qactions">
-                            <button type="button" className="qa qa-learn" onClick={(event) => { event.stopPropagation(); focusRescueQuestions(item?.status === "good" ? "all" : item?.status || "miss"); }}>⚡ 立即深入学习</button>
+                            <button
+                              type="button"
+                              className="qa qa-learn"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void openRescuePlaylistModal({ questionNumber: card?.questionNumber });
+                              }}
+                            >
+                              ⚡ 深入学习这块
+                            </button>
                             <button type="button" className="qa qa-master" onClick={(event) => { event.stopPropagation(); markReviewQuestionMastered(card?.questionNumber); }}>
                               {card?.mastered ? "✓ 已掌握" : "✓ 标记已掌握"}
                             </button>
@@ -2378,6 +2602,59 @@ export function LoopAssistWorkspace() {
           <button type="button" className="tgo" onClick={scrollToReviewSummary}>查看 ↑</button>
           <button type="button" className="tx" aria-label="关闭到达提示" onClick={() => setShowReviewSummaryToast(false)}>✕</button>
         </div>
+      ) : null}
+
+      {rescueModalOpen ? (
+        <section className="loopassist-rescue-modal" role="dialog" aria-modal="true" aria-label="立即补救">
+          <button type="button" className="loopassist-rescue-modal-backdrop" aria-label="关闭立即补救" onClick={closeRescuePlaylistModal} />
+          <article className="loopassist-rescue-modal-card">
+            <div className="loopassist-rescue-modal-head">
+              <div>
+                <p>立即补救</p>
+                <h2>正在为你的缺口准备材料</h2>
+                <span>复用已有的秒就绪，需生成或核对的会继续在后台完成。</span>
+              </div>
+              <strong>{rescueReadyCount}/{rescueTotalCount || rescueItems.length} 就绪</strong>
+            </div>
+            <div className="loopassist-rescue-modal-list">
+              {rescueItems.map((item, index) => (
+                <div
+                  key={item.id}
+                  className={`loopassist-rescue-modal-row${item.id === rescueModalFocusItemId ? " is-focus" : ""}${item.status === "gen" || item.status === "pending" ? " is-loading" : ""}`}
+                >
+                  <div className={item.status === "ready" || item.status === "learned" ? "loopassist-rescue-modal-icon is-ready" : "loopassist-rescue-modal-icon is-spinning"}>
+                    {item.status === "ready" || item.status === "learned" ? "✓" : ""}
+                  </div>
+                  <div className="loopassist-rescue-modal-copy">
+                    <strong>{`${index + 1}. ${item.title}`}</strong>
+                    <p>{pickQuestionLabel(item.questionNumbers)}</p>
+                    <span>{`${getRescueItemSourceLabel(item.source)} · ${getRescueItemStatusLabel(item)}`}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="loopassist-rescue-modal-foot">
+              {(() => {
+                const targetItem = (rescueFocusItem?.status === "ready" || rescueFocusItem?.status === "learned")
+                  ? rescueFocusItem
+                  : rescueFirstReadyItem;
+                return (
+                  <button
+                    type="button"
+                    className="loopassist-rescue-modal-go"
+                    disabled={!targetItem}
+                    onClick={() => enterRescueLearning(rescueModalFocusItemId)}
+                  >
+                    {targetItem
+                      ? `开始学习 · 第 ${Math.max(1, rescueItems.findIndex((item) => item.id === targetItem.id) + 1)} 篇已就绪`
+                      : "正在准备第一篇…"}
+                  </button>
+                );
+              })()}
+              <p>弹窗只负责生成进度和跳板，真正的学习与训练会在已有页面里继续。</p>
+            </div>
+          </article>
+        </section>
       ) : null}
 
       <ConversationHistoryDrawer

@@ -28,6 +28,14 @@ def _normalize(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
+def _strip_code_fence(text: str) -> str:
+    stripped = str(text or "").strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```[a-zA-Z0-9_-]*\n?", "", stripped)
+        stripped = re.sub(r"\n?```$", "", stripped)
+    return stripped.strip()
+
+
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
@@ -693,6 +701,54 @@ def build_review_summary_prompt(
     ])
 
 
+def build_rescue_material_prompt(*, scope: Dict[str, Any], gap: Dict[str, Any]) -> str:
+    return "\n".join([
+        "你是一位擅长把面试暴露的知识缺口讲透的技术老师。",
+        "你的任务不是教人怎么面试，而是基于这次面试暴露出的知识缺口，写一份能真正补上这块知识的学习讲解。",
+        "输出必须是 Markdown 正文，不要输出 JSON、不要用代码块包裹整篇、不要任何解释性前后缀。",
+        "整篇结构按下面顺序，用二级标题：",
+        "## 知识点讲解 —— 这是正文主体，篇幅要够。要把这块知识从“是什么、为什么需要、底层机制/原理、典型流程”一路讲到一个具体例子，宁可展开讲透也不要只列要点。",
+        "## 常见误区 —— 针对候选人这次答错或答漏的点，先点出错误理解，再给出正确理解。",
+        "## 面试怎么答 —— 用 3-5 步给出清晰的答题骨架，简洁即可，只作为辅助。",
+        "## 高概率追问 —— 列出后续可能的追问，并对每个追问补一句话要点答案，让它也成为学习内容，而不是单纯罗列问题。",
+        "硬性要求：以知识讲解为主体，面试答法只是附带；严禁出现“这篇先补什么”“训练提示”这类元信息或流程说明。",
+        "可以结合可靠的通用技术知识把原理讲透，但不要编造候选人没说过的项目经历或公司。",
+        "全程用中文，把原理讲清楚胜过堆术语。",
+        "",
+        f"选定 scope：{_format_scope(scope)}",
+        "",
+        "本次面试暴露的知识缺口（topic 是主题，misses 是答错/答漏的点，keyPoints 是本该答到的关键点，likelyFollowups 是可能追问）：",
+        json.dumps(gap, ensure_ascii=False),
+    ])
+
+
+def _build_mock_rescue_markdown(gap: Dict[str, Any]) -> str:
+    topic = _normalize(gap.get("topic")) or _normalize(gap.get("title")) or "这块知识"
+    misses = _normalize_list(gap.get("misses"))
+    key_points = _normalize_list(gap.get("keyPoints"))
+    followups = _normalize_list(gap.get("likelyFollowups"))
+    lines = [
+        f"# {topic} 知识补救",
+        "",
+        "## 知识点讲解",
+        "",
+        f"先把 {topic} 真正要解决的问题、底层机制和典型流程讲清楚，再落到一个具体例子上。",
+    ]
+    for point in key_points[:5]:
+        lines.append(f"- {point}")
+    lines += ["", "## 常见误区", ""]
+    if misses:
+        lines += [f"- {point}" for point in misses[:5]]
+    else:
+        lines.append("- 只记结论、说不清机制和适用边界。")
+    lines += ["", "## 面试怎么答", "", "1. 先给结论。", "2. 补机制与适用边界。", "3. 落回项目里的实际选择。", "", "## 高概率追问", ""]
+    if followups:
+        lines += [f"- {point} —— 抓住机制和取舍来回答。" for point in followups[:4]]
+    else:
+        lines.append("- 为什么这样设计而不是另一种？ —— 从代价与场景对比切入。")
+    return "\n".join(lines)
+
+
 def build_interviewer_prompt(
     *,
     scope: Dict[str, Any],
@@ -867,6 +923,9 @@ class MockLoopAssistIntelligence:
     def review_question(self, *, scope: Dict[str, Any], question_record: Dict[str, Any]) -> Dict[str, Any]:
         return _default_question_review(question_record)
 
+    def rescue_material(self, *, scope: Dict[str, Any], gap: Dict[str, Any]) -> Dict[str, Any]:
+        return {"markdown": _build_mock_rescue_markdown(gap)}
+
     def summarize_review(
         self,
         *,
@@ -910,6 +969,22 @@ class ProviderLoopAssistIntelligence:
             base_url=self.base_url,
         ))
         return parse_provider_json_text(text)
+
+    def _complete_text(self, prompt: str) -> str:
+        text = "".join(stream_provider_text_chunks(
+            provider=self.provider,
+            api_key=self.api_key,
+            model=self.model,
+            prompt=prompt,
+            base_url=self.base_url,
+        ))
+        return _strip_code_fence(text)
+
+    def rescue_material(self, *, scope: Dict[str, Any], gap: Dict[str, Any]) -> Dict[str, Any]:
+        markdown = self._complete_text(build_rescue_material_prompt(scope=scope, gap=gap))
+        if not markdown:
+            raise RuntimeError("LoopAssist rescue material returned empty text.")
+        return {"markdown": markdown}
 
     def interview_plan(self, *, scope: Dict[str, Any], seeds: List[Dict[str, Any]]) -> Dict[str, Any]:
         payload = self._complete_json(build_interview_plan_prompt(scope=scope, seeds=seeds))
@@ -1191,3 +1266,8 @@ def summarize_loopassist_review(*, session_id: str, question_reviews: List[Dict[
             interview_plan=session.get("interviewPlan") or {},
         ),
     }
+
+
+def generate_loopassist_rescue_material(*, scope: Dict[str, Any], gap: Dict[str, Any]) -> Dict[str, Any]:
+    intelligence = _require_intelligence()
+    return intelligence.rescue_material(scope=scope or {}, gap=gap or {})

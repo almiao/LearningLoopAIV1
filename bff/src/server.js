@@ -50,14 +50,17 @@ import {
   previewLoopAssistScope,
   selectLoopAssistSeeds,
 } from "../../src/loopassist/corpus.js";
+import { createLoopAssistRescuePlaylistStore } from "../../src/loopassist/rescue-playlist-store.js";
 
 const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
 const ttsServiceUrl = process.env.TTS_SERVICE_URL || "http://127.0.0.1:4300";
+const livekitAgentUrl = process.env.LIVEKIT_AGENT_URL || "http://127.0.0.1:4200";
 const port = Number(process.env.PORT || 4000);
 const memoryProfileStore = createMemoryProfileStore();
 const userProfileStore = createUserProfileStore();
 const userRulesStore = createUserRulesStore();
 const sessionSummariesStore = createSessionSummariesStore();
+const rescuePlaylistStore = createLoopAssistRescuePlaylistStore();
 const superappDemoHandle = process.env.SUPERAPP_DEMO_HANDLE || "learningloop_superapp_demo";
 const superappDemoPin = process.env.SUPERAPP_DEMO_PIN || "1234";
 
@@ -194,6 +197,36 @@ async function proxyJson(method, pathname, payload) {
     data,
     traceId: response.headers.get("x-trace-id") || ""
   };
+}
+
+async function proxyJsonToService(baseUrl, method, pathname, payload) {
+  const response = await fetch(`${baseUrl}${pathname}`, {
+    method,
+    headers: {
+      "content-type": "application/json",
+    },
+    body: payload ? JSON.stringify(payload) : undefined,
+  });
+
+  const rawText = await response.text();
+  let data;
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    data = { error: rawText || "Downstream service returned invalid JSON." };
+  }
+  if (!response.ok) {
+    throw new Error(data.detail || data.error || "Downstream service request failed.");
+  }
+  return data;
+}
+
+async function readRawBody(request) {
+  const chunks = [];
+  for await (const chunk of request) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }
 
 async function proxyBinary(baseUrl, method, pathname, payload) {
@@ -1144,6 +1177,71 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/loopassist/rescue-playlist/prepare") {
+      const body = await readJsonBody(request);
+      const documents = await listSourceDocuments({ userId: body.userId || "" });
+      sendJson(response, 200, {
+        playlist: await rescuePlaylistStore.prepare({
+          sessionId: body.sessionId,
+          scope: body.scope || {},
+          review: body.review || {},
+          documents,
+        }),
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/loopassist/rescue-playlist") {
+      sendJson(response, 200, {
+        playlist: await rescuePlaylistStore.get(url.searchParams.get("playlistId") || ""),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/loopassist/rescue-playlist/learned") {
+      const body = await readJsonBody(request);
+      sendJson(response, 200, {
+        playlist: await rescuePlaylistStore.markLearned({
+          playlistId: body.playlistId,
+          itemId: body.itemId,
+        }),
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/loopassist/rescue-playlist/document") {
+      const playlistId = url.searchParams.get("playlistId") || "";
+      const itemId = url.searchParams.get("itemId") || "";
+      let payload = await rescuePlaylistStore.buildDocumentPayload({ playlistId, itemId });
+      if (payload.needsMaterial) {
+        const item = payload.item || {};
+        const gap = {
+          topic: item.topic || "",
+          title: item.title || "",
+          questionText: (item.sourceQuestionTexts || []).join(" / "),
+          summary: item.summary || "",
+          misses: item.misses || [],
+          keyPoints: item.keyPoints || [],
+          likelyFollowups: item.likelyFollowups || [],
+        };
+        const { data } = await proxyJson("POST", "/api/loopassist/rescue-material", {
+          scope: {
+            role: item.scopeRole || payload.playlist?.scope?.role || "",
+            round: payload.playlist?.scope?.round || "",
+          },
+          gap,
+        });
+        const markdown = typeof data?.markdown === "string" ? data.markdown.trim() : "";
+        if (!markdown) {
+          throw new Error("AI 服务未能生成补救讲解，请稍后重试。");
+        }
+        await rescuePlaylistStore.saveMaterial({ playlistId, itemId, markdown });
+        payload = await rescuePlaylistStore.buildDocumentPayload({ playlistId, itemId });
+      }
+      sendJson(response, 200, payload);
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/loopassist/tts") {
       const result = await proxyBinary(ttsServiceUrl, "POST", "/api/tts", await readJsonBody(request));
       sendBuffer(response, 200, result.body, {
@@ -1152,6 +1250,55 @@ const server = http.createServer(async (request, response) => {
         "x-loopassist-tts-provider": result.provider,
         "x-loopassist-tts-speaker": result.speaker,
       });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/interview-assist/realtime-session") {
+      const { data, traceId } = await proxyJson("POST", "/api/interview-assist/realtime-session", await readJsonBody(request));
+      sendJson(response, 200, { ...data, traceId });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/interview-assist/livekit-transport") {
+      const data = await proxyJsonToService(
+        livekitAgentUrl,
+        "POST",
+        "/api/interview-assist/livekit-transport",
+        await readJsonBody(request),
+      );
+      sendJson(response, 200, data);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/interview-assist/first-screen-rendered") {
+      const { data, traceId } = await proxyJson("POST", "/api/interview-assist/first-screen-rendered", await readJsonBody(request));
+      sendJson(response, 200, { ...data, traceId });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/interview-assist/voice-demo") {
+      const rawBody = await readRawBody(request);
+      const responseUpstream = await fetch(
+        `${aiServiceUrl}/api/interview-assist/voice-demo${url.search || ""}`,
+        {
+          method: "POST",
+          headers: {
+            ...(request.headers["content-type"] ? { "content-type": request.headers["content-type"] } : {}),
+          },
+          body: rawBody,
+        }
+      );
+      const rawText = await responseUpstream.text();
+      let data;
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = { error: rawText || "Downstream AI service returned invalid JSON." };
+      }
+      if (!responseUpstream.ok) {
+        throw new Error(data.detail || data.error || "Downstream AI service request failed.");
+      }
+      sendJson(response, 200, data);
       return;
     }
 

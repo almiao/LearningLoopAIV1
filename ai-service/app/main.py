@@ -46,6 +46,7 @@ from app.interview_assist import (
 from app.loopassist import (
     answer_loopassist,
     create_loopassist_session,
+    generate_loopassist_rescue_material,
     review_loopassist_question,
     review_loopassist_session,
     summarize_loopassist_review,
@@ -326,6 +327,11 @@ class LoopAssistReviewSummaryRequest(BaseModel):
     questionReviews: List[Dict[str, Any]] = []
 
 
+class LoopAssistRescueMaterialRequest(BaseModel):
+    scope: Dict[str, Any] = {}
+    gap: Dict[str, Any] = {}
+
+
 class LoopAssistTtsRequest(BaseModel):
     text: str
     speaker: str = ""
@@ -537,6 +543,11 @@ def loopassist_review_summary(payload: LoopAssistReviewSummaryRequest) -> Dict[s
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/loopassist/rescue-material")
+def loopassist_rescue_material(payload: LoopAssistRescueMaterialRequest) -> Dict[str, Any]:
+    return generate_loopassist_rescue_material(scope=payload.scope, gap=payload.gap)
 
 
 @app.post("/api/loopassist/tts")

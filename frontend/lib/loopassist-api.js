@@ -40,6 +40,24 @@ export function reviewLoopAssistSummary(payload) {
   return postJson("/api/loopassist/review-summary", payload);
 }
 
+export function prepareLoopAssistRescuePlaylist(payload) {
+  return postJson("/api/loopassist/rescue-playlist/prepare", payload);
+}
+
+export function getLoopAssistRescuePlaylist(playlistId) {
+  return apiFetch(`/api/loopassist/rescue-playlist?playlistId=${encodeURIComponent(playlistId)}`);
+}
+
+export function markLoopAssistRescueItemLearned(payload) {
+  return postJson("/api/loopassist/rescue-playlist/learned", payload);
+}
+
+export function getLoopAssistRescueDocument({ playlistId, itemId }) {
+  return apiFetch(
+    `/api/loopassist/rescue-playlist/document?playlistId=${encodeURIComponent(playlistId)}&itemId=${encodeURIComponent(itemId)}`
+  );
+}
+
 export async function synthesizeLoopAssistSpeech(payload) {
   let response;
   try {

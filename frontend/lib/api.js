@@ -1,4 +1,15 @@
-export const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:4000";
+function resolveApiBaseUrl() {
+  const configured = String(process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
+  if (configured) {
+    return configured;
+  }
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+  return "http://127.0.0.1:4000";
+}
+
+export const apiBaseUrl = resolveApiBaseUrl();
 
 function isFetchNetworkError(error) {
   const message = String(error?.message || error || "").toLowerCase();
@@ -21,12 +32,14 @@ export function buildApiUrl(pathname = "") {
 }
 
 export async function apiFetch(pathname, options = {}) {
+  const isFormDataBody = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const defaultHeaders = isFormDataBody ? {} : { "content-type": "application/json" };
   let response;
   try {
     response = await fetch(buildApiUrl(pathname), {
       ...options,
       headers: {
-        "content-type": "application/json",
+        ...defaultHeaders,
         ...(options.headers || {})
       },
       cache: "no-store"

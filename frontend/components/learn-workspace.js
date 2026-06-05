@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, postEventStream, postJson } from "../lib/api";
+import {
+  getLoopAssistRescueDocument,
+  getLoopAssistRescuePlaylist,
+  markLoopAssistRescueItemLearned,
+} from "../lib/loopassist-api";
 import { buildReentryPlan, isReadingAction, isTrainingAction } from "../lib/reentry-actions";
 import { readHeading, renderMarkdownContent, slugifyHeading } from "../lib/render-markdown-content";
 import { getDocumentOutline, getReaderRenderer } from "../lib/document-reader-renderers";
@@ -91,6 +96,16 @@ function splitTextBlocks(value) {
     .split(/\n{2,}/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+const rescueSourceLabels = {
+  reuse: "复用已有资料",
+  generate: "AI 生成讲解",
+  checked: "生成 · 已联网核对",
+};
+
+function getRescueSourceLabel(source = "") {
+  return rescueSourceLabels[String(source || "").toLowerCase()] || rescueSourceLabels.generate;
 }
 
 function resolveInteractionPreferenceFromRules(rules = []) {
@@ -1680,6 +1695,69 @@ function TrainingAssistantRail({ session, currentQuestion, stats, mastery }) {
   );
 }
 
+function RescuePlaylistStrip({
+  playlist = null,
+  activeItemId = "",
+  menuOpen = false,
+  onToggleMenu,
+  onSelectItem,
+  onNextItem,
+}) {
+  const items = playlist?.items || [];
+  const activeIndex = Math.max(0, items.findIndex((item) => item.id === activeItemId));
+  const activeItem = items[activeIndex] || items[0] || null;
+  const readyCount = Number(playlist?.readyCount || 0);
+  const totalCount = Number(playlist?.totalCount || items.length || 0);
+  const nextReadyItem = items.find((item, index) => index > activeIndex && (item.status === "ready" || item.status === "learned")) || null;
+  if (!playlist || !activeItem) {
+    return null;
+  }
+  return (
+    <div className="rescue-playlist-shell">
+      <div className="rescue-playlist-strip">
+        <div className="rescue-playlist-strip-copy">
+          <span>补救清单</span>
+          <strong>{`第 ${activeIndex + 1}/${totalCount} 篇`}</strong>
+          <em>{`已就绪 ${readyCount}/${totalCount}`}</em>
+        </div>
+        <div className="rescue-playlist-strip-actions">
+          <button type="button" onClick={onToggleMenu}>清单</button>
+          <button type="button" className="next" disabled={!nextReadyItem} onClick={onNextItem}>
+            下一篇
+          </button>
+        </div>
+      </div>
+      {menuOpen ? (
+        <div className="rescue-playlist-menu" data-testid="rescue-playlist-menu">
+          {items.map((item, index) => {
+            const clickable = item.status === "ready" || item.status === "learned";
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={[
+                  "rescue-playlist-menu-item",
+                  item.id === activeItemId ? "is-active" : "",
+                  clickable ? "" : "is-disabled",
+                ].filter(Boolean).join(" ")}
+                disabled={!clickable}
+                onClick={() => onSelectItem(item.id)}
+              >
+                <div className="rescue-playlist-menu-index">{index + 1}</div>
+                <div className="rescue-playlist-menu-copy">
+                  <strong>{item.title}</strong>
+                  <span>{getRescueSourceLabel(item.source)}</span>
+                </div>
+                <em>{item.status === "learned" ? "已学" : item.status === "ready" ? "就绪" : "生成中"}</em>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function TrainingWorkspace({
   documentTitle,
   mastery,
@@ -1698,6 +1776,7 @@ function TrainingWorkspace({
   onSkipExplanation,
   onBackToReading,
   currentQuestionHasTeachExplanation = false,
+  rescuePlaylistStrip = null,
 }) {
   const shouldShowNextQuestion = Boolean(currentQuestion.text) || !isPreparingTraining;
   const awaitingExplanation = Boolean(trainingWaitState);
@@ -1713,6 +1792,7 @@ function TrainingWorkspace({
           <button type="button" className="active">训练</button>
         </div>
       </header>
+      {rescuePlaylistStrip}
       <section className="ll-training-main">
         <div className="ll-training-flow">
           {isPreparingTraining ? (
@@ -2181,7 +2261,10 @@ function ReadingAssistantBubble({ entry, onCitationClick }) {
 export function LearnWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const searchParamsString = searchParams.toString();
   const focusParamEnabled = searchParams.get("focus") === "1";
+  const rescuePlaylistId = searchParams.get("rescuePlaylist") || "";
+  const rescueItemIdParam = searchParams.get("rescueItem") || "";
   const autostartRef = useRef(false);
   const entryIntentHandledRef = useRef("");
   const resumePositionAppliedRef = useRef("");
@@ -2189,6 +2272,7 @@ export function LearnWorkspace() {
   const readingProgressRef = useRef("");
   const progressDocumentPathRef = useRef("");
   const trainingAnswerStreamAbortRef = useRef(null);
+  const rescueAutoAdvanceRef = useRef("");
   const readerBodyRef = useRef(null);
   const qaScrollRef = useRef(null);
   const studyMainRef = useRef(null);
@@ -2234,6 +2318,9 @@ export function LearnWorkspace() {
   const [readerMoreOpen, setReaderMoreOpen] = useState(false);
   const [readingPerspective, setReadingPerspective] = useState("面试准备");
   const [locallySkippedTrainingPaths, setLocallySkippedTrainingPaths] = useState([]);
+  const [rescuePlaylist, setRescuePlaylist] = useState(null);
+  const [rescuePlaylistMenuOpen, setRescuePlaylistMenuOpen] = useState(false);
+  const [rescueDocumentPayload, setRescueDocumentPayload] = useState(null);
   const deferredSession = useDeferredValue(session);
   const visibleView = buildVisibleSessionView(deferredSession || {});
   const chatTimeline = visibleView.chatTimeline || [];
@@ -2314,6 +2401,54 @@ export function LearnWorkspace() {
       .catch(() => setStoredUserId(""));
   }, []);
 
+  useEffect(() => {
+    if (!rescuePlaylistId) {
+      setRescuePlaylist(null);
+      setRescueDocumentPayload(null);
+      setRescuePlaylistMenuOpen(false);
+      return;
+    }
+    let cancelled = false;
+    getLoopAssistRescuePlaylist(rescuePlaylistId)
+      .then((data) => {
+        if (!cancelled) {
+          setRescuePlaylist(data?.playlist || null);
+        }
+      })
+      .catch((nextError) => {
+        if (!cancelled) {
+          setError(nextError.message || "补救清单加载失败。");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rescuePlaylistId]);
+
+  useEffect(() => {
+    if (!rescuePlaylist?.id) {
+      return undefined;
+    }
+    const hasPendingItems = (rescuePlaylist.items || []).some((item) => item?.status === "pending" || item?.status === "gen");
+    if (!hasPendingItems) {
+      return undefined;
+    }
+    let cancelled = false;
+    const timerId = window.setInterval(() => {
+      getLoopAssistRescuePlaylist(rescuePlaylist.id)
+        .then((data) => {
+          if (!cancelled) {
+            setRescuePlaylist(data?.playlist || null);
+          }
+        })
+        .catch(() => {});
+    }, 1200);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timerId);
+    };
+  }, [rescuePlaylist]);
+
   const currentCheckpoint = useMemo(
     () => (session?.concepts || []).find((concept) => concept.id === session?.currentCheckpointId) || null,
     [session]
@@ -2323,7 +2458,17 @@ export function LearnWorkspace() {
     [session]
   );
   const currentSource = getSourceRefs(currentCheckpoint)[0] || getSourceRefs(currentTrainingPoint)[0] || session?.summary?.sourceClusters?.[0] || null;
-  const activeDocPath = searchParams.get("doc") || currentSource?.path || knowledgeDocuments[0]?.path || "";
+  const rescueItems = rescuePlaylist?.items || [];
+  const rescueActiveItem = useMemo(() => (
+    rescueItems.find((item) => item.id === rescueItemIdParam)
+    || rescueItems.find((item) => item.id === rescuePlaylist?.firstReadyItemId)
+    || rescueItems[0]
+    || null
+  ), [rescueItemIdParam, rescueItems, rescuePlaylist?.firstReadyItemId]);
+  const rescueDocumentPath = rescueDocumentPayload?.documentPath
+    || rescueActiveItem?.docPath
+    || (rescueActiveItem ? `rescue://${rescuePlaylistId}/${rescueActiveItem.id}` : "");
+  const activeDocPath = rescueDocumentPath || searchParams.get("doc") || currentSource?.path || knowledgeDocuments[0]?.path || "";
   const documentTitle = knowledgeDoc?.title || currentSource?.title || "开始学习";
   const autostart = searchParams.get("autostart") === "1";
   const entryIntent = searchParams.get("intent") || "";
@@ -2725,6 +2870,19 @@ export function LearnWorkspace() {
   }, [activeDocPath]);
 
   useEffect(() => {
+    if (!rescuePlaylistId) {
+      return;
+    }
+    setSession(null);
+    setTrainingUnlocked(false);
+    setWorkspaceMode("reading");
+    setAnswer("");
+    setReadingStreamingTurn(null);
+    setLiveTrainingTurns([]);
+    setReadingChatTimeline([]);
+  }, [rescueActiveItem?.id, rescuePlaylistId]);
+
+  useEffect(() => {
     if (!session?.sessionId || sessionBelongsToDocument(session, activeDocPath)) {
       return;
     }
@@ -2765,10 +2923,115 @@ export function LearnWorkspace() {
   }, [focusMode, activeWorkspaceMode]);
 
   useEffect(() => {
+    if (!rescuePlaylistId || !rescueActiveItem?.id) {
+      setRescueDocumentPayload(null);
+      return;
+    }
+    if (rescueActiveItem.docPath) {
+      setRescueDocumentPayload({
+        item: rescueActiveItem,
+        documentPath: rescueActiveItem.docPath,
+        document: null,
+      });
+      return;
+    }
+    let cancelled = false;
+    getLoopAssistRescueDocument({
+      playlistId: rescuePlaylistId,
+      itemId: rescueActiveItem.id,
+    })
+      .then((data) => {
+        if (!cancelled) {
+          setRescueDocumentPayload(data);
+        }
+      })
+      .catch((nextError) => {
+        if (!cancelled) {
+          setRescueDocumentPayload(null);
+          setError(nextError.message || "补救材料暂时还没准备好。");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rescueActiveItem?.docPath, rescueActiveItem?.id, rescuePlaylistId]);
+
+  useEffect(() => {
+    if (!rescuePlaylistId || !rescueActiveItem?.id || !trainingCompletion) {
+      return;
+    }
+    const signature = `${rescuePlaylistId}:${rescueActiveItem.id}`;
+    if (rescueAutoAdvanceRef.current === signature) {
+      return;
+    }
+    rescueAutoAdvanceRef.current = signature;
+    let cancelled = false;
+    markLoopAssistRescueItemLearned({
+      playlistId: rescuePlaylistId,
+      itemId: rescueActiveItem.id,
+    })
+      .then((data) => {
+        if (cancelled) {
+          return;
+        }
+        const nextPlaylist = data?.playlist || null;
+        setRescuePlaylist(nextPlaylist);
+        setSummaryDismissed(true);
+        setTrainingUnlocked(false);
+        setWorkspaceMode("reading");
+        const items = nextPlaylist?.items || [];
+        const currentIndex = items.findIndex((item) => item.id === rescueActiveItem.id);
+        const nextItem = items.find((item, index) => index > currentIndex && (item.status === "ready" || item.status === "learned"));
+        if (nextItem) {
+          window.setTimeout(() => {
+            if (!cancelled) {
+              const params = new URLSearchParams(searchParamsString);
+              params.set("rescuePlaylist", rescuePlaylistId);
+              params.set("rescueItem", nextItem.id);
+              router.replace(`/learn?${params.toString()}`, { scroll: false });
+            }
+          }, 220);
+        }
+      })
+      .catch((nextError) => {
+        if (!cancelled) {
+          setError(nextError.message || "更新补救进度失败。");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rescueActiveItem?.id, rescuePlaylistId, router, searchParamsString, trainingCompletion]);
+
+  useEffect(() => {
+    if (!rescuePlaylistId || rescueActiveItem?.status !== "learned") {
+      return;
+    }
+    const items = rescuePlaylist?.items || [];
+    const currentIndex = items.findIndex((item) => item.id === rescueActiveItem.id);
+    const nextItem = items.find((item, index) => index > currentIndex && (item.status === "ready" || item.status === "learned"));
+    if (!nextItem || nextItem.id === rescueActiveItem.id) {
+      return;
+    }
+    const params = new URLSearchParams(searchParamsString);
+    params.set("rescuePlaylist", rescuePlaylistId);
+    params.set("rescueItem", nextItem.id);
+    router.replace(`/learn?${params.toString()}`, { scroll: false });
+  }, [rescueActiveItem?.id, rescueActiveItem?.status, rescuePlaylist, rescuePlaylistId, router, searchParamsString]);
+
+  useEffect(() => {
     if (!activeDocPath) {
       setKnowledgeDoc(null);
       setDocError("");
       setDocLoading(false);
+      return;
+    }
+
+    if (rescueDocumentPayload?.document) {
+      setKnowledgeDoc(rescueDocumentPayload.document);
+      setDocError("");
+      setDocLoading(false);
+      setReaderSourceView("learning");
       return;
     }
 
@@ -2804,7 +3067,7 @@ export function LearnWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [activeDocPath, profile?.user?.id]);
+  }, [activeDocPath, profile?.user?.id, rescueDocumentPayload?.document]);
 
   useEffect(() => {
     if (!knowledgeDoc?.path) {
@@ -3188,12 +3451,37 @@ export function LearnWorkspace() {
   }
 
   function clearEntryRoutingParams() {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParamsString);
     params.delete("intent");
     params.delete("composer");
     params.delete("autostart");
     const nextQuery = params.toString();
     router.replace(nextQuery ? `/learn?${nextQuery}` : "/learn", { scroll: false });
+  }
+
+  function navigateToRescueItem(itemId, { replace = true } = {}) {
+    if (!rescuePlaylistId || !itemId) {
+      return;
+    }
+    const params = new URLSearchParams(searchParamsString);
+    params.set("rescuePlaylist", rescuePlaylistId);
+    params.set("rescueItem", itemId);
+    const nextHref = `/learn?${params.toString()}`;
+    if (replace) {
+      router.replace(nextHref, { scroll: false });
+    } else {
+      router.push(nextHref);
+    }
+    setRescuePlaylistMenuOpen(false);
+  }
+
+  function openNextRescueItem() {
+    const items = rescuePlaylist?.items || [];
+    const currentIndex = items.findIndex((item) => item.id === rescueActiveItem?.id);
+    const nextItem = items.find((item, index) => index > currentIndex && (item.status === "ready" || item.status === "learned"));
+    if (nextItem) {
+      navigateToRescueItem(nextItem.id);
+    }
   }
 
   function restoreReaderScrollFromProgress() {
@@ -3829,8 +4117,18 @@ export function LearnWorkspace() {
         "--qa-panel-width": `${qaPanelPercent}%`,
         "--reader-scale": readerScale,
       };
+  const rescuePlaylistStrip = rescuePlaylist?.id && rescueActiveItem ? (
+    <RescuePlaylistStrip
+      playlist={rescuePlaylist}
+      activeItemId={rescueActiveItem.id}
+      menuOpen={rescuePlaylistMenuOpen}
+      onToggleMenu={() => setRescuePlaylistMenuOpen((value) => !value)}
+      onSelectItem={(itemId) => navigateToRescueItem(itemId)}
+      onNextItem={openNextRescueItem}
+    />
+  ) : null;
 
-  if (activeWorkspaceMode === "training" && trainingCompletion && !summaryDismissed && !liveTrainingTimeline.length) {
+  if (activeWorkspaceMode === "training" && trainingCompletion && !summaryDismissed && !liveTrainingTimeline.length && !rescuePlaylistId) {
     return (
       <TrainingCompletionSummaryPage
         summary={trainingSummary}
@@ -3872,6 +4170,7 @@ export function LearnWorkspace() {
           void restartOrAdvanceTrainingGeneration("skip");
         }}
         onBackToReading={() => setWorkspaceMode("reading")}
+        rescuePlaylistStrip={rescuePlaylistStrip}
       />
     );
   }
@@ -3898,6 +4197,7 @@ export function LearnWorkspace() {
               退出
             </button>
           ) : null}
+          {rescuePlaylistStrip}
           <header className="reader-header" data-testid="reader-header">
             <div className="reader-header-main">
               <Link className="back-link header-back-link" href="/">‹</Link>

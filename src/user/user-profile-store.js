@@ -11,6 +11,49 @@ const handlePattern = /^[\p{Letter}\p{Number}_-]{2,40}$/u;
 const pinPattern = /^[0-9]{4,12}$/;
 const safeUserIdPattern = /^[a-zA-Z0-9_-]{1,80}$/;
 
+function extractLeadingJson(raw = "") {
+  let i = 0;
+  while (i < raw.length && /\s/.test(raw[i])) i++;
+  const start = i;
+  const open = raw[i];
+  if (open !== "{" && open !== "[") return null;
+  const close = open === "{" ? "}" : "]";
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (; i < raw.length; i++) {
+    const char = raw[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === "\"") inString = false;
+      continue;
+    }
+    if (char === "\"") inString = true;
+    else if (char === open) depth++;
+    else if (char === close) {
+      depth--;
+      if (depth === 0) return raw.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+// Tolerates legacy files that have valid JSON followed by leftover trailing
+// bytes from an older, longer version (historical in-place-overwrite corruption).
+// Returns { value, repaired }. Throws only if no leading JSON value is recoverable.
+function parseUserJson(raw = "") {
+  try {
+    return { value: JSON.parse(raw), repaired: false };
+  } catch (error) {
+    const leading = extractLeadingJson(raw);
+    if (leading) {
+      return { value: JSON.parse(leading), repaired: true };
+    }
+    throw error;
+  }
+}
+
 function normalizeHandle(handle = "") {
   return String(handle || "").trim();
 }
@@ -151,8 +194,11 @@ export function createUserProfileStore({ usersDir = defaultUsersDir } = {}) {
       }
       try {
         const raw = await readFile(path.join(usersDir, entry.name), "utf8");
-        const parsed = JSON.parse(raw);
+        const { value: parsed, repaired } = parseUserJson(raw);
         validateUserShape(parsed, entry.name.replace(/\.json$/, ""));
+        if (repaired) {
+          await enqueueUserWrite(parsed).catch(() => {});
+        }
         users.push(parsed);
       } catch (error) {
         console.warn(
@@ -190,8 +236,11 @@ export function createUserProfileStore({ usersDir = defaultUsersDir } = {}) {
       assertSafeUserId(userId);
       await ensureDir();
       const raw = await readFile(getUserPath(userId), "utf8");
-      const parsed = JSON.parse(raw);
+      const { value: parsed, repaired } = parseUserJson(raw);
       validateUserShape(parsed, userId);
+      if (repaired) {
+        await enqueueUserWrite(parsed).catch(() => {});
+      }
       return parsed;
     },
 
