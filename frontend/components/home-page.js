@@ -594,36 +594,6 @@ function buildSidebarDocument(document, progressEntries = {}, options = {}) {
   };
 }
 
-function buildRecentActivityMap(recentDocs = []) {
-  const today = new Date();
-  const days = [];
-
-  for (let offset = 6; offset >= 0; offset -= 1) {
-    const date = new Date(today);
-    date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() - offset);
-    const key = date.toISOString().slice(0, 10);
-    days.push({
-      key,
-      label: offset === 0 ? "今天" : `D-${offset}`,
-      today: offset === 0,
-      learned: recentDocs.some((document) => String(document.lastActivityAt || "").startsWith(key)),
-    });
-  }
-
-  return days;
-}
-
-function buildLearningSummary(progress = null) {
-  const stats = progress?.stats || {};
-  const recentDocs = progress?.recentDocs || [];
-  const activeDays = buildRecentActivityMap(recentDocs);
-  return {
-    statsLabel: `已读 ${stats.completedReadingCount || 0} 篇 · 已开训练 ${stats.startedTrainingCount || 0} 篇 · 已完成 ${stats.completedDocumentCount || 0} 篇`,
-    weekActivity: activeDays,
-  };
-}
-
 function DocumentRow({ document, active, onSelect }) {
   const color = getSignalColor(document);
 
@@ -904,7 +874,7 @@ function LibraryTreeNode({ node, currentNodeKey, selectedDocPath, selectedLibrar
   );
 }
 
-function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue, summary, hasProfile, onSnoozeRecommendation }) {
+function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue, materialPool, hasProfile, onSnoozeRecommendation }) {
   const reentryPlan = buildReentryPlan(featuredDocument);
   const action = reentryPlan.primaryAction;
   const color = getSignalColor(featuredDocument);
@@ -912,6 +882,7 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
   const recommendationFacts = buildRecommendationFacts(featuredDocument, reentryPlan);
   const snoozeLabel = getSnoozeLabel(reentryPlan);
   const reviewItems = Array.isArray(reviewDue) ? reviewDue : [];
+  const poolItems = Array.isArray(materialPool) ? materialPool : [];
 
   return (
     <section className="ll-default-view">
@@ -1022,18 +993,37 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
         )}
       </section>
 
-      <section className="ll-stats-bar">
-        <div className="ll-stats-copy">{summary.statsLabel}</div>
-        <div className="ll-week-grid" aria-label="七日学习点阵">
-          {summary.weekActivity.map((day) => (
-            <span
-              key={day.key}
-              className={`ll-week-cell${day.learned ? " is-learned" : ""}${day.today ? " is-today" : ""}`}
-              title={day.label}
-            />
-          ))}
+      <section className="ll-new-source-section">
+        <div className="ll-section-head">
+          <div><h2>学点新的</h2></div>
+          <div className="ll-review-head-actions">
+            <span className="ll-section-hint">丢一篇进来,或从素材池挑</span>
+          </div>
+        </div>
+        <div className="ll-new-source-row">
+          <Link href="/?mode=library&panel=library" className="ll-new-source-drop">
+            <span className="ll-new-source-plus" aria-hidden="true">+</span>
+            <span>丢一篇进来</span>
+          </Link>
+          {poolItems.length ? (
+            <div className="ll-pool-chips" aria-label="素材池">
+              {poolItems.map((document) => (
+                <Link
+                  key={document.path}
+                  href={buildLearningHref(document)}
+                  className="ll-pool-chip"
+                  title={document.title}
+                >
+                  {document.title}
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="ll-pool-empty">素材池是空的。导入一篇,这里就会出现。</p>
+          )}
         </div>
       </section>
+
     </section>
   );
 }
@@ -1226,12 +1216,6 @@ export function HomePage() {
   const [addMaterialOpen, setAddMaterialOpen] = useState(false);
   const [includeIgnoredDocuments, setIncludeIgnoredDocuments] = useState(false);
   const [mobilePane, setMobilePane] = useState("detail");
-  const [expandedGroups, setExpandedGroups] = useState(() => ({
-    reading: groupMeta.reading.defaultExpanded,
-    review: groupMeta.review.defaultExpanded,
-    mastered: groupMeta.mastered.defaultExpanded,
-    unstarted: groupMeta.unstarted.defaultExpanded,
-  }));
 
   const deferredQuery = useDeferredValue(search.trim().toLowerCase());
   const mode = searchParams.get("mode") || "status";
@@ -1418,7 +1402,14 @@ export function HomePage() {
     )) || null;
   }, [featuredDocument?.path, groupedDocuments.unstarted, snoozedRecommendationDocPaths, uiDocuments]);
 
-  const summary = useMemo(() => buildLearningSummary(documentProgress), [documentProgress]);
+  // 素材池(act-led 首页「学点新的」):还没开过的资料(后续 capability-memory 退役时
+  // 这里换成"所有导入但 reading-progress 为空"的派生即可,接口不变)。
+  const materialPool = useMemo(() => (
+    (groupedDocuments.unstarted || [])
+      .filter((document) => !document.ignored && !snoozedRecommendationDocPaths.has(document.path))
+      .slice(0, 6)
+  ), [groupedDocuments.unstarted, snoozedRecommendationDocPaths]);
+
   const libraryTree = useMemo(() => buildLibraryTree(filteredDocuments), [filteredDocuments]);
   const currentNodeKey = selectedNodeKeyParam || rootLibraryKey;
   const currentLibraryNode = libraryTree.nodeMap.get(currentNodeKey) || libraryTree.root;
@@ -1459,13 +1450,6 @@ export function HomePage() {
     });
   }
 
-  function openStatusView() {
-    replaceState({
-      mode: "status",
-      panel: selectedDocPath ? "doc" : "home",
-    });
-    setMobilePane("detail");
-  }
 
   function openDefaultView() {
     replaceState({
@@ -1622,7 +1606,7 @@ export function HomePage() {
           </div>
 
           <div className="ll-sidebar-switcher">
-            <button type="button" className={`ll-library-entry${mode === "library" ? " is-active" : ""}`} onClick={openLibraryRoot}>
+            <button type="button" className="ll-library-entry is-active" onClick={openLibraryRoot}>
               <div className="ll-library-entry-left">
                 <span className="ll-folder-icon" aria-hidden="true">
                   <svg viewBox="0 0 16 16">
@@ -1634,74 +1618,20 @@ export function HomePage() {
               </div>
               <span>{uiDocuments.length}</span>
             </button>
-            {mode === "library" ? (
-              <button type="button" className="ll-view-back-button" onClick={openStatusView}>
-                按状态看
-              </button>
-            ) : null}
           </div>
 
-          {mode !== "library" && ignoredDocumentCount > 0 ? (
-            <IgnoredDocumentToggle
-              checked={includeIgnoredDocuments}
-              count={ignoredDocumentCount}
-              onChange={setIncludeIgnoredDocuments}
-            />
-          ) : null}
-
-          {mode === "library" ? (
-            <div className="ll-tree-shell" data-testid="library-tree">
-              {libraryTree.root.children.map((node) => (
-                <LibraryTreeNode
-                  key={node.key}
-                  node={node}
-                  currentNodeKey={currentLibraryNode.key}
-                  selectedDocPath={selectedDocPath}
-                  selectedLibraryPath={selectedLibraryPath}
-                  onOpenNode={openLibraryNode}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="ll-group-list">
-              {Object.entries(groupMeta).map(([groupKey, meta]) => {
-                const items = groupedDocuments[groupKey];
-                const expanded = expandedGroups[groupKey];
-                const activeDoc = panel === "doc" ? selectedDocPath : "";
-
-                return (
-                  <section key={groupKey} className="ll-group">
-                    <button
-                      type="button"
-                      className="ll-group-toggle"
-                      onClick={() => setExpandedGroups((current) => ({ ...current, [groupKey]: !current[groupKey] }))}
-                    >
-                      <span>{expanded ? "▼" : "▶"}</span>
-                      <span>{meta.label}</span>
-                      <span>({items.length})</span>
-                      {groupKey === "review" && items.length > 0 ? <span className="ll-group-dot" aria-hidden="true" /> : null}
-                    </button>
-                    {expanded ? (
-                      <div className="ll-group-items">
-                        {items.length ? (
-                          items.map((document) => (
-                            <DocumentRow
-                              key={document.path}
-                              document={document}
-                              active={activeDoc === document.path}
-                              onSelect={openDocument}
-                            />
-                          ))
-                        ) : (
-                          <div className="ll-empty-group">没有匹配的材料</div>
-                        )}
-                      </div>
-                    ) : null}
-                  </section>
-                );
-              })}
-            </div>
-          )}
+          <div className="ll-tree-shell" data-testid="library-tree">
+            {libraryTree.root.children.map((node) => (
+              <LibraryTreeNode
+                key={node.key}
+                node={node}
+                currentNodeKey={currentLibraryNode.key}
+                selectedDocPath={selectedDocPath}
+                selectedLibraryPath={selectedLibraryPath}
+                onOpenNode={openLibraryNode}
+              />
+            ))}
+          </div>
 
           <button type="button" className="ll-add-button" onClick={() => setAddMaterialOpen(true)}>
             + 添加材料
@@ -1731,7 +1661,7 @@ export function HomePage() {
               featuredDocument={featuredDocument}
               recommendedNewDocument={recommendedNewDocument}
               reviewDue={reviewDue}
-              summary={summary}
+              materialPool={materialPool}
               hasProfile={Boolean(profile?.user?.id)}
               onSnoozeRecommendation={snoozeFeaturedDocument}
             />
