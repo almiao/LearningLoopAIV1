@@ -12,14 +12,13 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 export const rootDir = path.resolve(scriptDir, "..");
 export const frontendDir = path.join(rootDir, "frontend");
 export const aiServiceDir = path.join(rootDir, "ai-service");
-export const superappServiceDir = path.join(rootDir, "superapp-service");
 export const logDir = path.join(rootDir, ".omx", "logs", "split-services");
 export const pidDir = path.join(rootDir, ".omx", "state", "split-services");
 export const localNodeRuntimeDir = path.join(rootDir, ".tools", "node-runtime");
 export const localLivekitRuntimeDir = path.join(rootDir, ".tools", "livekit-runtime");
 
 const envFiles = [".env", ".env.local"].map((file) => path.join(rootDir, file));
-const trackedServices = ["ai-service", "tts-worker", "bff", "superapp-service", "frontend"];
+const trackedServices = ["ai-service", "tts-worker", "bff", "frontend"];
 
 export const isWindows = process.platform === "win32";
 export const npmCommand = isWindows ? "npm.cmd" : "npm";

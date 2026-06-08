@@ -372,20 +372,6 @@ function buildRecommendationFacts(document = {}, plan = buildReentryPlan(documen
   return facts.slice(0, 2);
 }
 
-function buildRememberedHighlights(document = {}) {
-  const highlights = [];
-  if (document.trainingCheckpointProgressLabel) {
-    highlights.push(`训练停在：${document.trainingCheckpointProgressLabel}`);
-  }
-  if (document.learningStatusLabel && !["未训练", "训练中", "已开启训练"].includes(document.learningStatusLabel)) {
-    highlights.push(`当前状态：${document.learningStatusLabel}`);
-  }
-  if (document.assessedConceptCount > 0) {
-    highlights.push(`已形成 ${document.assessedConceptCount} 个知识点判断`);
-  }
-  return highlights.slice(0, 2);
-}
-
 function getSnoozeLabel(plan = {}) {
   return plan.intent === "resume_reading" ? "今天先不读这个" : "今天先不练这个";
 }
@@ -918,14 +904,14 @@ function LibraryTreeNode({ node, currentNodeKey, selectedDocPath, selectedLibrar
   );
 }
 
-function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDocuments, summary, hasProfile, onSnoozeRecommendation }) {
+function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue, summary, hasProfile, onSnoozeRecommendation }) {
   const reentryPlan = buildReentryPlan(featuredDocument);
   const action = reentryPlan.primaryAction;
   const color = getSignalColor(featuredDocument);
   const heroCopy = buildHeroCopy(featuredDocument, reentryPlan);
   const recommendationFacts = buildRecommendationFacts(featuredDocument, reentryPlan);
-  const rememberedHighlights = buildRememberedHighlights(featuredDocument);
   const snoozeLabel = getSnoozeLabel(reentryPlan);
+  const reviewItems = Array.isArray(reviewDue) ? reviewDue : [];
 
   return (
     <section className="ll-default-view">
@@ -990,16 +976,6 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDocu
                   {snoozeLabel}
                 </button>
               ) : null}
-              {rememberedHighlights.length ? (
-                <div className="ll-hero-memory-panel">
-                  <strong>系统记住了什么</strong>
-                  <ul className="ll-explain-list">
-                    {rememberedHighlights.map((fact) => (
-                      <li key={fact}>{fact}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
               {reentryPlan.secondaryActions?.length ? (
                 <div className="ll-reentry-secondary-links" aria-label="备选动作">
                   {reentryPlan.secondaryActions.map((secondaryAction) => (
@@ -1021,42 +997,29 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDocu
       <section className="ll-review-section">
         <div className="ll-section-head">
           <div>
-            <h2>今日待复习</h2>
+            <h2>今日复习</h2>
           </div>
           <div className="ll-review-head-actions">
-            <span className="ll-danger-badge">{reviewDocuments.length}</span>
-            <span className="ll-inline-link">遗忘曲线临界 · 一起过吗 →</span>
+            <span className="ll-danger-badge">{reviewItems.length}</span>
+            <span className="ll-section-hint">失败账本 · 到期复习项</span>
           </div>
         </div>
-        <div className="ll-review-grid">
-          {reviewDocuments.length ? reviewDocuments.map((document) => {
-            const reviewPlan = buildReentryPlan(document);
-            const reviewFacts = buildRecommendationFacts(document, reviewPlan);
-            return (
-              <article key={document.path} className="ll-review-card">
-                <span className="ll-review-card-bar" style={{ background: getSignalColor(document) }} aria-hidden="true" />
-                <strong title={document.title}>{document.title}</strong>
-                <p>{`${reviewPlan.stageLabel} · 距上次 ${formatDaysAgoLabel(document.lastActivityAt)}`}</p>
-                <p className="ll-review-reason">{reviewPlan.reason}</p>
-                <ul className="ll-review-facts" aria-label="推荐依据">
-                  {reviewFacts.slice(0, 3).map((fact) => (
-                    <li key={`${document.path}:${fact}`}>{fact}</li>
-                  ))}
-                </ul>
-                <Link href={buildLearningHref(document, { autostart: reviewPlan.primaryAction.autostart, intent: reviewPlan.primaryAction.kind })} className="ll-inline-link">
-                  {reviewPlan.primaryAction.label}
-                </Link>
-              </article>
-            );
-          }) : (
-            <article className="ll-review-card">
-              <span className="ll-review-card-bar" style={{ background: "#888780" }} aria-hidden="true" />
-              <strong>暂时没有临界复习材料</strong>
-              <p>继续读一篇 JavaGuide 文档，首页就会自动把它接到这里。</p>
-              <span className="ll-inline-link">从左栏挑一篇开始 →</span>
-            </article>
-          )}
-        </div>
+        {reviewItems.length ? (
+          <ul className="ll-review-list">
+            {reviewItems.map((item) => (
+              <li key={item.id} className="ll-review-row">
+                <span className="ll-review-dot" aria-hidden="true" />
+                <span className="ll-review-handle">{item.handle || "(无标题)"}</span>
+                <span className={`ll-state-tag ll-state-${item.state || "shaky"}`}>{item.state || "shaky"}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <article className="ll-review-empty">
+            <strong>今天没有到期的复习项</strong>
+            <p>做一轮 drill,答崩的点会自动出现在这里。</p>
+          </article>
+        )}
       </section>
 
       <section className="ll-stats-bar">
@@ -1254,6 +1217,7 @@ export function HomePage() {
 
   const [userId, setUserId] = useState("");
   const [knowledgeDocuments, setKnowledgeDocuments] = useState([]);
+  const [reviewDue, setReviewDue] = useState([]);
   const [profile, setProfile] = useState(null);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
@@ -1294,6 +1258,15 @@ export function HomePage() {
           lastProfileSyncRef.current = Date.now();
         } else {
           setProfile(null);
+        }
+
+        try {
+          // Today Queue「今日复习」= 失败账本按 next_due 渲染（全局，不依赖 userId）。
+          const reviewPayload = await apiFetch("/api/review/today");
+          setReviewDue(Array.isArray(reviewPayload?.items) ? reviewPayload.items : []);
+        } catch {
+          // 账本是可选读出口：读失败不拖垮首页其余部分。
+          setReviewDue([]);
         }
       } catch (nextError) {
         setError(nextError.message);
@@ -1444,13 +1417,6 @@ export function HomePage() {
       && !snoozedRecommendationDocPaths.has(document.path)
     )) || null;
   }, [featuredDocument?.path, groupedDocuments.unstarted, snoozedRecommendationDocPaths, uiDocuments]);
-
-  const reviewDocuments = useMemo(() => (
-    groupedDocuments.review
-      .slice()
-      .sort((left, right) => compareIsoTimestamp(right.lastActivityAt, left.lastActivityAt))
-      .slice(0, 3)
-  ), [groupedDocuments.review]);
 
   const summary = useMemo(() => buildLearningSummary(documentProgress), [documentProgress]);
   const libraryTree = useMemo(() => buildLibraryTree(filteredDocuments), [filteredDocuments]);
@@ -1606,10 +1572,6 @@ export function HomePage() {
           <button type="button" className="ll-mobile-nav" onClick={() => setMobilePane((pane) => (pane === "sidebar" ? "detail" : "sidebar"))}>
             {mobilePane === "sidebar" ? "查看详情" : "资料库"}
           </button>
-          <Link href="/interview-assist" className="ll-interview-button">
-            <span aria-hidden="true">⚡</span>
-            <span>面试模式</span>
-          </Link>
           <Link href="/loopassist" className="ll-interview-button">
             <span aria-hidden="true">AI</span>
             <span>LoopAssist</span>
@@ -1624,6 +1586,27 @@ export function HomePage() {
           />
         </div>
       </header>
+
+      {reviewDue.length > 0 ? (
+        <section className="ll-today-review" aria-label="今日复习">
+          <div className="ll-today-review-head">
+            <h2>今日复习</h2>
+            <span className="ll-today-review-count">{reviewDue.length}</span>
+            <span className="ll-today-review-hint">失败账本 · 到期</span>
+          </div>
+          <ul className="ll-today-review-list">
+            {reviewDue.map((item) => (
+              <li key={item.id} className="ll-today-review-row">
+                <span className="ll-today-review-dot" aria-hidden="true" />
+                <span className="ll-today-review-handle">{item.handle}</span>
+                <span className={`ll-today-review-tag is-${item.state === "solid" ? "solid" : "shaky"}`}>
+                  {item.state === "solid" ? "solid" : "shaky"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <div className="ll-workspace">
         <aside className={`ll-sidebar${mobilePane === "sidebar" ? " is-mobile-active" : ""}`}>
@@ -1747,7 +1730,7 @@ export function HomePage() {
             <DefaultFocusView
               featuredDocument={featuredDocument}
               recommendedNewDocument={recommendedNewDocument}
-              reviewDocuments={reviewDocuments}
+              reviewDue={reviewDue}
               summary={summary}
               hasProfile={Boolean(profile?.user?.id)}
               onSnoozeRecommendation={snoozeFeaturedDocument}

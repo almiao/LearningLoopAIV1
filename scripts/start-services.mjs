@@ -16,7 +16,6 @@ import {
   resolveNodeRuntime,
   rootDir,
   spawnDetachedProcess,
-  superappServiceDir,
   stopTrackedServices,
   waitForHealth,
   waitForListeningPort,
@@ -37,7 +36,6 @@ async function main() {
   const runtimeEnv = loadRuntimeEnv();
   const frontendPort = parsePort("FRONTEND_PORT", runtimeEnv.FRONTEND_PORT, 3000);
   const bffPort = parsePort("BFF_PORT", runtimeEnv.BFF_PORT, 4000);
-  const superappPort = parsePort("SUPERAPP_PORT", runtimeEnv.SUPERAPP_PORT, 4100);
   const ttsWorkerPort = parsePort("TTS_WORKER_PORT", runtimeEnv.TTS_WORKER_PORT, 4300);
   const aiPort = parsePort("AI_PORT", runtimeEnv.AI_PORT, 8000);
   const nodeRuntime = resolveNodeRuntime(runtimeEnv);
@@ -46,7 +44,6 @@ async function main() {
   assertPortsAvailable([
     ["frontend", frontendPort],
     ["bff", bffPort],
-    ["superapp-service", superappPort],
     ["tts-worker", ttsWorkerPort],
     ["ai-service", aiPort],
   ]);
@@ -123,23 +120,6 @@ async function main() {
       }),
     });
 
-    console.log("Starting superapp service...");
-    startedServices.push({
-      name: "superapp-service",
-      pid: spawnDetachedProcess({
-        name: "superapp-service",
-        command: nodeRuntime.command,
-        args: [path.join(superappServiceDir, "src", "server.js")],
-        cwd: superappServiceDir,
-        env: {
-          ...serviceEnv,
-          PORT: String(superappPort),
-          BFF_URL: `http://127.0.0.1:${bffPort}`,
-          AI_SERVICE_URL: `http://127.0.0.1:${aiPort}`,
-        },
-      }),
-    });
-
     console.log("Starting frontend...");
     startedServices.push({
       name: "frontend",
@@ -165,7 +145,6 @@ async function main() {
     await waitForHealth("AI service", `http://127.0.0.1:${aiPort}/api/health`);
     await waitForHealth("TTS worker", `http://127.0.0.1:${ttsWorkerPort}/api/health`);
     await waitForHealth("BFF", `http://127.0.0.1:${bffPort}/api/health`);
-    await waitForHealth("Superapp service", `http://127.0.0.1:${superappPort}/api/health`);
     await waitForHealth("Frontend", `http://127.0.0.1:${frontendPort}`);
 
     console.log("");
@@ -173,21 +152,18 @@ async function main() {
     console.log("");
     console.log(`- Frontend: http://127.0.0.1:${frontendPort}`);
     console.log(`- BFF: http://127.0.0.1:${bffPort}`);
-    console.log(`- Superapp service: http://127.0.0.1:${superappPort}`);
     console.log(`- AI service: http://127.0.0.1:${aiPort}`);
     console.log(`- TTS worker: http://127.0.0.1:${ttsWorkerPort}`);
     console.log("");
     console.log("Logs:");
     console.log(`- ${path.join(logDir, "frontend.log")}`);
     console.log(`- ${path.join(logDir, "bff.log")}`);
-    console.log(`- ${path.join(logDir, "superapp-service.log")}`);
     console.log(`- ${path.join(logDir, "ai-service.log")}`);
     console.log(`- ${path.join(logDir, "tts-worker.log")}`);
     console.log("");
     console.log("PID files:");
     console.log(`- ${path.join(pidDir, "frontend.pid")}`);
     console.log(`- ${path.join(pidDir, "bff.pid")}`);
-    console.log(`- ${path.join(pidDir, "superapp-service.pid")}`);
     console.log(`- ${path.join(pidDir, "ai-service.pid")}`);
     console.log(`- ${path.join(pidDir, "tts-worker.pid")}`);
     console.log("");

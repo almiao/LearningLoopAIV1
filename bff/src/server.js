@@ -18,7 +18,6 @@ import {
   convertRemoteMaterialUrl,
   convertUploadedMaterial,
 } from "../../src/ingestion/material-converter.js";
-import { buildReminderCandidate } from "../../src/superapp/reminder-candidate.js";
 import { createMemoryProfileStore } from "../../src/tutor/memory-profile-store.js";
 import {
   applyDocumentReadingEvent,
@@ -51,18 +50,40 @@ import {
   selectLoopAssistSeeds,
 } from "../../src/loopassist/corpus.js";
 import { createLoopAssistRescuePlaylistStore } from "../../src/loopassist/rescue-playlist-store.js";
+import { createReviewItemStore } from "../../src/ledger/review-item-store.js";
+import { createDrillPassthrough } from "../../src/ledger/drill-passthrough.js";
+import { extractLastDrillRound } from "../../src/ledger/extract-drill-round.js";
 
 const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
 const ttsServiceUrl = process.env.TTS_SERVICE_URL || "http://127.0.0.1:4300";
-const livekitAgentUrl = process.env.LIVEKIT_AGENT_URL || "http://127.0.0.1:4200";
 const port = Number(process.env.PORT || 4000);
 const memoryProfileStore = createMemoryProfileStore();
 const userProfileStore = createUserProfileStore();
 const userRulesStore = createUserRulesStore();
 const sessionSummariesStore = createSessionSummariesStore();
 const rescuePlaylistStore = createLoopAssistRescuePlaylistStore();
-const superappDemoHandle = process.env.SUPERAPP_DEMO_HANDLE || "learningloop_superapp_demo";
-const superappDemoPin = process.env.SUPERAPP_DEMO_PIN || "1234";
+// 失败账本（PRODUCT.md §4）。写端 = 穿透适配器（阶段 3），读端 = Today Queue「今日复习」（阶段 4）。
+const reviewItemStore = createReviewItemStore();
+const drillPassthrough = createDrillPassthrough({ store: reviewItemStore });
+
+// loopassist 复盘里每道题就是一轮 drill。逐题喂一次性锚点判分、答崩写账本。
+// detached：每条是一次 LLM 判分，不阻塞复盘响应；passthrough 自带兜底吞错。
+function recordLoopAssistDrillRounds(review = {}) {
+  const reviews = Array.isArray(review?.questionReviews) ? review.questionReviews : [];
+  for (const item of reviews) {
+    const question = String(item?.questionText || "").trim();
+    const answer = String(item?.answerText || "").trim();
+    if (!question || !answer) {
+      continue;
+    }
+    void drillPassthrough({
+      handle: String(item.objective || item.topic || "").trim(),
+      question,
+      answer,
+      sourceRef: String(item.sourceLabel || "").trim(),
+    });
+  }
+}
 
 function withCorsHeaders(response, statusCode, extraHeaders = {}) {
   response.writeHead(statusCode, {
@@ -640,23 +661,21 @@ async function handleAnswer(body) {
     await userProfileStore.save(user);
   }
   await persistSessionSummaryIfCompleted(result);
+  // 失败账本（阶段 3）：把刚答完的这一轮 drill 喂给一次性锚点判分，答崩就写复习项。
+  // passthrough 自带旁路兜底——判分/写盘任何报错都吞掉，绝不影响这次 answer 的返回。
+  const drillRound = extractLastDrillRound(result.turns);
+  if (drillRound) {
+    await drillPassthrough({
+      handle: drillRound.handle,
+      question: drillRound.question,
+      answer: drillRound.answer,
+      sourceRef: result.source?.metadata?.docPath || "",
+    });
+  }
   return stripSessionPayload({
     ...result,
     traceId,
   });
-}
-
-async function handleReminderCandidate(userId) {
-  if (!userId) {
-    throw new Error("userId is required.");
-  }
-  const user = await getUserProfile(userId);
-  const memoryProfile = await getMemoryProfile(user.memoryProfileId);
-  const candidate = buildReminderCandidate({ user, memoryProfile });
-  if (!candidate) {
-    throw new Error("No reminder candidate available.");
-  }
-  return candidate;
 }
 
 async function handleReadingProgress(body) {
@@ -858,20 +877,6 @@ async function handleKnowledgeAnswer(body) {
       fallbackReason: error.message,
     };
   }
-}
-
-async function ensureSuperappDemoUser() {
-  const { user, created } = await userProfileStore.loginOrCreate({
-    handle: superappDemoHandle,
-    pin: superappDemoPin,
-  });
-  const profile = await buildProfilePayload(user);
-  return {
-    userId: user.id,
-    handle: user.handle,
-    created,
-    profile,
-  };
 }
 
 function parseSseEvent(rawEvent) {
@@ -1132,6 +1137,13 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    // Today Queue「今日复习」块（阶段 4 最小读出口）：账本按 next_due 渲染。
+    if (request.method === "GET" && url.pathname === "/api/review/today") {
+      const items = await reviewItemStore.listDue({});
+      sendJson(response, 200, { items, count: items.length });
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/api/loopassist/options") {
       sendJson(response, 200, buildLoopAssistOptions());
       return;
@@ -1161,6 +1173,7 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/loopassist/review") {
       const { data, traceId } = await proxyJson("POST", "/api/loopassist/review", await readJsonBody(request));
+      recordLoopAssistDrillRounds(data);
       sendJson(response, 200, { ...data, traceId });
       return;
     }
@@ -1258,55 +1271,6 @@ const server = http.createServer(async (request, response) => {
         "x-loopassist-tts-provider": result.provider,
         "x-loopassist-tts-speaker": result.speaker,
       });
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/api/interview-assist/realtime-session") {
-      const { data, traceId } = await proxyJson("POST", "/api/interview-assist/realtime-session", await readJsonBody(request));
-      sendJson(response, 200, { ...data, traceId });
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/api/interview-assist/livekit-transport") {
-      const data = await proxyJsonToService(
-        livekitAgentUrl,
-        "POST",
-        "/api/interview-assist/livekit-transport",
-        await readJsonBody(request),
-      );
-      sendJson(response, 200, data);
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/api/interview-assist/first-screen-rendered") {
-      const { data, traceId } = await proxyJson("POST", "/api/interview-assist/first-screen-rendered", await readJsonBody(request));
-      sendJson(response, 200, { ...data, traceId });
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/api/interview-assist/voice-demo") {
-      const rawBody = await readRawBody(request);
-      const responseUpstream = await fetch(
-        `${aiServiceUrl}/api/interview-assist/voice-demo${url.search || ""}`,
-        {
-          method: "POST",
-          headers: {
-            ...(request.headers["content-type"] ? { "content-type": request.headers["content-type"] } : {}),
-          },
-          body: rawBody,
-        }
-      );
-      const rawText = await responseUpstream.text();
-      let data;
-      try {
-        data = rawText ? JSON.parse(rawText) : {};
-      } catch {
-        data = { error: rawText || "Downstream AI service returned invalid JSON." };
-      }
-      if (!responseUpstream.ok) {
-        throw new Error(data.detail || data.error || "Downstream AI service request failed.");
-      }
-      sendJson(response, 200, data);
       return;
     }
 
@@ -1435,23 +1399,6 @@ const server = http.createServer(async (request, response) => {
         "content-disposition": buildSafeContentDisposition(rendered.filename || "rendered.html"),
         "content-type": rendered.mimeType,
       });
-      return;
-    }
-
-    if (request.method === "GET" && url.pathname.startsWith("/api/superapp/reminder-candidate/")) {
-      const userId = url.pathname.split("/").at(-1);
-      sendJson(response, 200, await handleReminderCandidate(userId));
-      return;
-    }
-
-    if (request.method === "GET" && url.pathname === "/api/superapp/demo-user") {
-      sendJson(response, 200, await ensureSuperappDemoUser());
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/api/superapp/reminder-outcome") {
-      const body = await readJsonBody(request);
-      sendJson(response, 200, { ok: true, recordedAt: new Date().toISOString(), ...body });
       return;
     }
 

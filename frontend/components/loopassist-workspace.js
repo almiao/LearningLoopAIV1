@@ -2,14 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Room, RoomEvent } from "livekit-client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { postJson } from "../lib/api";
 import { getStoredUserId } from "../lib/user-session";
-import {
-  createLivekitTransport,
-  createRealtimeSession,
-} from "../lib/interview-assist-api";
 import {
   getLoopAssistResumeVersions,
   getLoopAssistOptions,
@@ -36,7 +31,6 @@ const defaultScope = {
   jobDescription: "",
 };
 
-const waveHeights = [18, 28, 38, 24, 42, 30, 20, 36, 48, 32, 22, 34, 26, 40, 28, 18];
 const interviewRecordStorageKey = "loopassist-latest-interview-record";
 const rescueSourceCopy = {
   reuse: "复用已有资料",
@@ -46,7 +40,7 @@ const rescueSourceCopy = {
 
 const helpSteps = [
   "点击右上角的面试信息按钮，先完成岗位、简历和 JD 配置，再生成可编辑的大纲。",
-  "确认大纲后进入批次面试，听完问题再点击“开始作答”。",
+  "确认大纲后进入批次面试，听完问题后直接输入回答。",
   "历史记录默认收起，结束面试后再查看完整复盘。",
 ];
 
@@ -117,15 +111,6 @@ function HistoryIcon() {
   );
 }
 
-function MicIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="9" y="3.5" width="6" height="11" rx="3" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M5.8 11.5a6.2 6.2 0 0 0 12.4 0M12 17.8v2.7M9 20.5h6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
-    </svg>
-  );
-}
-
 function ProgressDots({ current = 1, total = 4 }) {
   const dotCount = Math.min(Math.max(Number(total) || 4, 4), 10);
   const activeIndex = Math.min(Math.max(Number(current) || 1, 1), dotCount) - 1;
@@ -144,27 +129,6 @@ function formatTurnTime(value) {
     return "";
   }
   return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-}
-
-function VoiceOrb({ state = "idle" }) {
-  const thinking = state === "thinking";
-  return (
-    <div
-      className={`loopassist-voice-orb is-${state}`}
-      data-testid="loopassist-voice-orb"
-      aria-hidden="true"
-    >
-      <span className="loopassist-orb-wave" aria-hidden="true">
-        {waveHeights.slice(0, 18).map((height, index) => (
-          <i key={`${height}-${index}`} style={{ "--wave-height": `${Math.max(12, height + (index % 2 ? 6 : 0))}px` }} />
-        ))}
-      </span>
-      <span className="loopassist-orb-core" aria-hidden="true">
-        <MicIcon />
-      </span>
-      {thinking ? <span className="loopassist-orb-pulse" aria-hidden="true" /> : null}
-    </div>
-  );
 }
 
 function readFileAsBase64(file) {
@@ -284,18 +248,6 @@ function decodeAssistPayload(payload) {
     return JSON.parse(payload);
   }
   return payload || {};
-}
-
-function describeMicError(error) {
-  const text = String(error?.message || error || "").toLowerCase();
-  if (text.includes("permission") || text.includes("notallowederror")) {
-    return "麦克风权限被拒绝。LoopAssist 当前仅支持语音回答，请允许麦克风后重试。";
-  }
-  if (text.includes("failed to fetch") || text.includes("networkerror") || text.includes("load failed")) {
-    return "麦克风服务暂时连接不上，请检查设备后重试。";
-  }
-  const detail = error?.message ? `（${error.message}）` : "";
-  return `实时语音连接失败${detail}。LoopAssist 当前仅支持语音回答，请检查设备后重试。`;
 }
 
 function describeTtsError(error) {
@@ -664,11 +616,7 @@ export function LoopAssistWorkspace() {
   const [error, setError] = useState("");
   const [voiceIssue, setVoiceIssue] = useState("");
   const [voiceIssueKind, setVoiceIssueKind] = useState("");
-  const [partialTranscript, setPartialTranscript] = useState("");
-  const [capturedAnswer, setCapturedAnswer] = useState("");
-  const [answerInputMode, setAnswerInputMode] = useState("voice");
   const [textAnswer, setTextAnswer] = useState("");
-  const [answerState, setAnswerState] = useState("idle");
   const [lastInterviewerText, setLastInterviewerText] = useState("");
   const [ttsStatus, setTtsStatus] = useState("idle");
   const [activePanel, setActivePanel] = useState(null);
@@ -681,10 +629,8 @@ export function LoopAssistWorkspace() {
   const [jdFileName, setJdFileName] = useState("");
   const [isJdExpanded, setIsJdExpanded] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [isInterviewPaused, setIsInterviewPaused] = useState(false);
   const [latestInterviewRecord, setLatestInterviewRecord] = useState(null);
   const [activeSourcePreview, setActiveSourcePreview] = useState(null);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [focusedQuestionIndex, setFocusedQuestionIndex] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [reviewFilter, setReviewFilter] = useState("all");
@@ -698,17 +644,13 @@ export function LoopAssistWorkspace() {
   const [rescueModalFocusItemId, setRescueModalFocusItemId] = useState("");
   const [rescuePlaylistState, setRescuePlaylistState] = useState("idle");
   const [rescueError, setRescueError] = useState("");
-  const roomRef = useRef(null);
   const audioRef = useRef(null);
   const audioCacheRef = useRef(new Map());
-  const answerSegmentsRef = useRef([]);
-  const isCapturingRef = useRef(false);
   const latestSessionRef = useRef(null);
   const panelRef = useRef(null);
   const settingsPanelRef = useRef(null);
   const resumeInputRef = useRef(null);
   const jdInputRef = useRef(null);
-  const recordingTimerRef = useRef(null);
   const autoOpenedSettingsRef = useRef(false);
   const reviewQuestionsRef = useRef(null);
   const reviewSummaryRef = useRef(null);
@@ -800,11 +742,7 @@ export function LoopAssistWorkspace() {
   }, [scope]);
 
   useEffect(() => () => {
-    roomRef.current?.disconnect?.();
     audioRef.current?.pause?.();
-    if (recordingTimerRef.current) {
-      window.clearInterval(recordingTimerRef.current);
-    }
     for (const url of audioCacheRef.current.values()) {
       URL.revokeObjectURL(url);
     }
@@ -867,29 +805,6 @@ export function LoopAssistWorkspace() {
     document.addEventListener("keydown", handleInterviewShortcuts);
     return () => document.removeEventListener("keydown", handleInterviewShortcuts);
   }, [status]);
-
-  useEffect(() => {
-    if (answerState !== "listening") {
-      setRecordingSeconds(0);
-      if (recordingTimerRef.current) {
-        window.clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
-      return undefined;
-    }
-
-    setRecordingSeconds(0);
-    recordingTimerRef.current = window.setInterval(() => {
-      setRecordingSeconds((current) => current + 1);
-    }, 1000);
-
-    return () => {
-      if (recordingTimerRef.current) {
-        window.clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
-    };
-  }, [answerState]);
 
   useEffect(() => {
     const reviewQuestions = normalizeReviewQuestions(review);
@@ -1091,22 +1006,8 @@ export function LoopAssistWorkspace() {
     voiceIssue ? (voiceIssueKind === "tts" ? "loopassist-inline-note" : "loopassist-inline-error") : "",
     error ? "loopassist-inline-error" : "",
   ].filter(Boolean).join(" ");
-  const voiceVisualState = isAwaitingFollowup || answerState === "submitting" || answerState === "connecting"
-    ? "thinking"
-    : answerState === "listening"
-      ? "listening"
-      : answerState === "paused" || isInterviewPaused
-        ? "paused"
-        : "idle";
-  const voiceStatusText = voiceVisualState === "listening"
-    ? "正在聆听…"
-    : voiceVisualState === "paused"
-      ? "已暂停"
-      : voiceVisualState === "thinking"
-        ? "正在思考你的回答…"
-        : "点击麦克风开始作答";
   const questionEyebrow = currentPlanStage?.theme || sampleTopics[0] || "综合面试";
-  const canReplayInterviewer = ttsStatus !== "idle" && answerState !== "listening" && Boolean(lastInterviewerText || currentQuestion);
+  const canReplayInterviewer = ttsStatus !== "idle" && Boolean(lastInterviewerText || currentQuestion);
 
   useEffect(() => {
     if (autoOpenedSettingsRef.current || !options || hasGeneratedOutline || status !== "setup") {
@@ -1343,18 +1244,12 @@ export function LoopAssistWorkspace() {
     setError("");
     setVoiceIssue("");
     setVoiceIssueKind("");
-    setIsInterviewPaused(false);
-    setAnswerInputMode("voice");
     setTextAnswer("");
-    setPartialTranscript("");
-    setCapturedAnswer("");
-    setAnswerState("idle");
     setLastInterviewerText("");
     setTtsStatus("idle");
     setActivePanel(null);
     setIsHistoryOpen(false);
     setActiveSourcePreview(null);
-    setRecordingSeconds(0);
     setFocusedQuestionIndex(null);
     setReviewCards([]);
     setReviewSummaryState("idle");
@@ -1365,7 +1260,6 @@ export function LoopAssistWorkspace() {
     setRescuePlaylistState("idle");
     setRescueError("");
     rescuePreparedSessionIdRef.current = "";
-    answerSegmentsRef.current = [];
     audioRef.current?.pause?.();
   }
 
@@ -1402,7 +1296,6 @@ export function LoopAssistWorkspace() {
     setStatus("interview");
     setIsHistoryOpen(false);
     setActivePanel(null);
-    setIsInterviewPaused(false);
     const interviewerText = session?.interviewerMessage?.text || session?.transcript?.at(-1)?.text || lastInterviewerText || "";
     setLastInterviewerText(interviewerText);
     await playInterviewerAudio(interviewerText);
@@ -1451,186 +1344,23 @@ export function LoopAssistWorkspace() {
     }
   }
 
-  async function ensureVoiceRoom() {
-    setVoiceIssue("");
-    setVoiceIssueKind("");
-    const currentRoom = roomRef.current;
-    if (currentRoom?.state === "connected") {
-      return currentRoom;
-    }
-    currentRoom?.disconnect?.();
-    try {
-      const realtimeSession = await createRealtimeSession({
-        selfRole: "candidate",
-        mode: "assist_interviewer",
-        resumeText: "",
-      });
-      const transport = await createLivekitTransport({ sessionId: realtimeSession.sessionId });
-      if (!transport.livekitConfigured || !transport.participantToken || !transport.livekitUrl) {
-        throw new Error("LiveKit 传输层未配置完成。");
-      }
-      const room = new Room();
-      roomRef.current = room;
-      room.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
-        if (topic !== "interview-assist") {
-          return;
-        }
-        const message = decodeAssistPayload(payload);
-        const event = message.event || message.type;
-        const data = message.data || {};
-        if (event === "transcript_partial") {
-          if (isCapturingRef.current) {
-            setPartialTranscript(data.transcript || "");
-          }
-        }
-        if (event === "transcript_final") {
-          const finalText = data.transcript || "";
-          setPartialTranscript("");
-          if (isCapturingRef.current && finalText.trim()) {
-            answerSegmentsRef.current = [...answerSegmentsRef.current, finalText.trim()];
-            setCapturedAnswer(answerSegmentsRef.current.join(" "));
-          }
-        }
-        if (event === "error") {
-          setVoiceIssue(data.error || "实时语音识别异常。请检查麦克风后重试。");
-          setVoiceIssueKind("mic");
-        }
-      });
-      await room.connect(transport.livekitUrl, transport.participantToken);
-      await room.localParticipant.setMicrophoneEnabled(false);
-      return room;
-    } catch (nextError) {
-      setVoiceIssue(describeMicError(nextError));
-      setVoiceIssueKind("mic");
-      throw nextError;
-    }
-  }
-
-  async function startAnswering() {
-    if (answerState === "listening" || isSubmitting || status !== "interview") {
-      return;
-    }
-    setAnswerState("connecting");
-    setIsInterviewPaused(false);
-    setCapturedAnswer("");
-    setPartialTranscript("");
-    answerSegmentsRef.current = [];
-    try {
-      const room = await ensureVoiceRoom();
-      isCapturingRef.current = true;
-      await room.localParticipant.setMicrophoneEnabled(true);
-      setAnswerState("listening");
-    } catch {
-      isCapturingRef.current = false;
-      setAnswerState("idle");
-    }
-  }
-
-  async function reconnectVoiceRoom() {
-    try {
-      await ensureVoiceRoom();
-    } catch {}
-  }
-
-  async function pauseAnswering() {
-    if (answerState !== "listening") {
-      return;
-    }
-    isCapturingRef.current = false;
-    try {
-      await roomRef.current?.localParticipant?.setMicrophoneEnabled(false);
-    } catch {}
-    setPartialTranscript("");
-    setAnswerState("paused");
-    setIsInterviewPaused(true);
-  }
-
-  async function resumeAnswering() {
-    if (answerState !== "paused") {
-      return;
-    }
-    try {
-      const room = await ensureVoiceRoom();
-      isCapturingRef.current = true;
-      await room.localParticipant.setMicrophoneEnabled(true);
-      setAnswerState("listening");
-      setIsInterviewPaused(false);
-    } catch {
-      isCapturingRef.current = false;
-      setAnswerState("idle");
-    }
-  }
-
-  async function toggleMicrophone() {
-    if (answerState === "listening") {
-      await pauseAnswering();
-      return;
-    }
-    if (answerState === "paused") {
-      await resumeAnswering();
-      return;
-    }
-    await startAnswering();
-  }
-
-  async function switchAnswerInputMode(nextMode) {
-    if (nextMode === answerInputMode) {
-      return;
-    }
-    if (answerState === "listening") {
-      await pauseAnswering();
-    }
-    setAnswerInputMode(nextMode);
-    setVoiceIssue("");
-    setVoiceIssueKind("");
-  }
-
   async function submitTextAnswer() {
     const answer = textAnswer.trim();
     if (!answer || isSubmitting || status !== "interview") {
       return;
     }
     setTextAnswer("");
-    setAnswerState("submitting");
-    await submitVoiceAnswer(answer);
-    setAnswerState("idle");
-  }
-
-  async function finishAnswering() {
-    if (answerState !== "listening" && answerState !== "paused") {
-      return;
-    }
-    setAnswerState("submitting");
-    isCapturingRef.current = false;
-    try {
-      await roomRef.current?.localParticipant?.setMicrophoneEnabled(false);
-    } catch {}
-    const answer = [...answerSegmentsRef.current, partialTranscript]
-      .map((item) => String(item || "").trim())
-      .filter(Boolean)
-      .join(" ");
-    setPartialTranscript("");
-    setCapturedAnswer("");
-    answerSegmentsRef.current = [];
-    if (!answer) {
-      setVoiceIssue("还没有识别到你的回答。请点击“开始作答”后再说一遍。");
-      setVoiceIssueKind("mic");
-      setAnswerState("idle");
-      return;
-    }
-    await submitVoiceAnswer(answer);
-    setAnswerState("idle");
-    setIsInterviewPaused(false);
+    await submitCandidateAnswer(answer);
   }
 
   async function skipQuestion() {
     if (!session?.sessionId || isSubmitting || status !== "interview") {
       return;
     }
-    await submitVoiceAnswer("这题我先跳过，请继续下一题。");
+    await submitCandidateAnswer("这题我先跳过，请继续下一题。");
   }
 
-  async function submitVoiceAnswer(answerText) {
+  async function submitCandidateAnswer(answerText) {
     const answer = String(answerText || "").trim();
     const activeSession = latestSessionRef.current;
     if (!answer || !activeSession?.sessionId || isSubmitting) {
@@ -1753,9 +1483,7 @@ export function LoopAssistWorkspace() {
     setReview(null);
     setReviewSummaryState("progress");
     setShowReviewSummaryToast(false);
-    roomRef.current?.disconnect?.();
     audioRef.current?.pause?.();
-    isCapturingRef.current = false;
     try {
       const runId = Date.now();
       reviewRunIdRef.current = runId;
@@ -1908,49 +1636,6 @@ export function LoopAssistWorkspace() {
     await finishAndReview();
   }
 
-  const shouldShowPrimaryStart = status === "setup" || status === "starting" || status === "review";
-  const primaryActionLabel = shouldShowPrimaryStart
-    ? status === "starting"
-      ? "正在开始..."
-      : "开始面试"
-    : answerInputMode === "text"
-      ? isAwaitingFollowup || answerState === "submitting"
-        ? "等待下一问..."
-        : "语音作答"
-    : answerState === "listening"
-      ? "结束作答"
-      : answerState === "paused"
-        ? "结束作答"
-      : isAwaitingFollowup
-        ? "等待下一问..."
-      : answerState === "connecting"
-        ? "正在连接麦克风..."
-        : "开始作答";
-  const primaryActionHandler = shouldShowPrimaryStart
-    ? status === "review"
-      ? resetWorkspace
-      : beginInterview
-    : answerInputMode === "text"
-      ? () => switchAnswerInputMode("voice")
-    : answerState === "listening"
-      ? finishAnswering
-      : answerState === "paused"
-        ? finishAnswering
-      : startAnswering;
-  const primaryActionDisabled = shouldShowPrimaryStart
-    ? !options || status === "starting"
-    : isSubmitting || status !== "interview" || answerState === "connecting";
-  const primaryActionTestId = shouldShowPrimaryStart
-    ? "loopassist-start"
-    : answerInputMode === "text"
-      ? "loopassist-switch-voice"
-    : answerState === "listening"
-      ? "loopassist-finish-answer"
-      : "loopassist-start-answer";
-  const primaryActionClassName = `loopassist-primary-action${
-    !shouldShowPrimaryStart && isAwaitingFollowup ? " is-busy" : ""
-  }`;
-
   return (
     <main className={`loopassist-shell${isHistoryOpen && status === "interview" ? " is-history-open" : ""}`} data-testid="loopassist-shell">
       <header className="loopassist-nav">
@@ -2033,9 +1718,8 @@ export function LoopAssistWorkspace() {
 
           {activePanel === "more" ? (
             <section className="loopassist-popover loopassist-more-menu" role="menu">
-              <button type="button" onClick={() => { setIsInterviewPaused(true); pauseAnswering(); setActivePanel(null); }}>暂停面试</button>
+              <button type="button" onClick={() => setActivePanel(null)}>暂停面试</button>
               <button type="button" onClick={() => { setActivePanel(null); confirmFinishAndReview(); }}>退出本轮</button>
-              <button type="button" onClick={() => { setActivePanel(null); reconnectVoiceRoom(); }}>麦克风设置</button>
             </section>
           ) : null}
 
@@ -2250,22 +1934,12 @@ export function LoopAssistWorkspace() {
             <h1>{questionTitle}</h1>
           </section>
 
-          {answerInputMode === "text" ? (
-            <TextAnswerComposer
-              value={textAnswer}
-              disabled={isSubmitting || isAwaitingFollowup}
-              onChange={setTextAnswer}
-              onSubmit={submitTextAnswer}
-            />
-          ) : (
-            <section className={`loopassist-voice-zone is-${voiceVisualState}`}>
-              <VoiceOrb state={voiceVisualState} />
-              <p>{voiceStatusText}</p>
-              {partialTranscript || capturedAnswer ? (
-                <span className="loopassist-voice-partial">{partialTranscript || capturedAnswer}</span>
-              ) : null}
-            </section>
-          )}
+          <TextAnswerComposer
+            value={textAnswer}
+            disabled={isSubmitting || isAwaitingFollowup}
+            onChange={setTextAnswer}
+            onSubmit={submitTextAnswer}
+          />
 
           {questionTone ? <p className={questionToneClassName}>{questionTone}</p> : null}
 
@@ -2284,28 +1958,6 @@ export function LoopAssistWorkspace() {
                 ↺ 重播
               </button>
             ) : null}
-            <button type="button" className="loopassist-mode-weak-button" onClick={() => switchAnswerInputMode(answerInputMode === "voice" ? "text" : "voice")} data-testid="loopassist-toggle-text-mode">
-              {answerInputMode === "voice" ? "文字模式" : "语音模式"}
-            </button>
-            {answerInputMode === "voice" ? (
-              <button type="button" className={primaryActionClassName} onClick={primaryActionHandler} disabled={primaryActionDisabled} data-testid={primaryActionTestId}>{primaryActionLabel}</button>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
-
-      {status === "interview" && scope.interviewMode === "realtime" ? (
-        <section className="loopassist-realtime">
-          <div className="loopassist-live-badge">● 实时语音</div>
-          <div className="loopassist-wave is-recording">{waveHeights.slice(0, 11).map((height, index) => <span key={`${height}-${index}`} style={{ "--wave-height": `${height}px` }} />)}</div>
-          <h1>正在听你说</h1>
-          <div className="loopassist-transcript-stream" data-testid="loopassist-transcript">
-            {transcript.map((turn) => <p key={turn.turnId} className={turn.role === "candidate" ? "is-me" : ""}>{turn.text}</p>)}
-          </div>
-          <div className="loopassist-bottom-dock">
-            <button type="button" className="loopassist-ghost-button">静音</button>
-            <span className="loopassist-topic-pill">● 讨论：{sampleTopics[0] || "综合项目"}</span>
-            <button type="button" className="loopassist-danger-primary" onClick={confirmFinishAndReview}>结束面试</button>
           </div>
         </section>
       ) : null}

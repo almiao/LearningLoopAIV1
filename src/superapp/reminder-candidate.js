@@ -1,3 +1,6 @@
+// DEPRECATED (phase-1 superapp cut): no longer imported by BFF. Kept in-tree as a reusable
+// reminder-candidate generator for a future Today Queue / reminder view (see labs/superapp/README.md).
+// Only consumer now: tests/unit/superapp/reminder-candidate.test.js.
 import { createBaselinePackDecomposition, defaultBaselinePackId, getBaselinePackById } from "../baseline/baseline-packs.js";
 import { getSourceRefs } from "../knowledge/source-refs.js";
 import { buildTrainingPointsFromDecomposition } from "../training/training-model.js";

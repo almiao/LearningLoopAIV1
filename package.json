@@ -23,7 +23,6 @@
     "validate:cases": "node scripts/project-tools.mjs validate:cases",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev:bff": "npm run dev --prefix bff",
-    "dev:superapp": "npm run dev --prefix superapp-service",
     "dev:ai": "python3 -m uvicorn app.main:app --reload --port 8000 --app-dir ai-service",
     "dev:tts": "python3 -m uvicorn app.loopassist.tts_worker:app --reload --port 4300 --app-dir ai-service",
     "smoke:split": "node scripts/project-tools.mjs smoke:split"

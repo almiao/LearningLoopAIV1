@@ -63,19 +63,11 @@ button {
   padding: 20px 48px 32px;
 }
 
-.interview-assist-shell {
-  min-height: 100vh;
-  max-width: 1680px;
-  margin: 0 auto;
-  padding: 0 56px 38px;
-  background: #ffffff;
-}
+
 
 .home-topbar,
 .auth-strip,
-.interview-assist-topbar {
-  width: 100%;
-}
+
 
 .home-topbar {
   display: flex;
@@ -85,17 +77,7 @@ button {
   min-height: 44px;
 }
 
-.interview-assist-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  min-height: 76px;
-}
 
-.interview-assist-topbar h1 {
-  margin: 0;
-}
 
 .brand-mark {
   display: inline-flex;
@@ -111,11 +93,7 @@ button {
   gap: 10px;
 }
 
-.interview-assist-topbar-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
+
 
 .profile-entry-pill {
   gap: 8px;
@@ -8323,24 +8301,9 @@ button {
 }
 
 @media (max-width: 980px) {
-  .interview-assist-shell,
-  .home-shell {
-    padding-left: 20px;
-    padding-right: 20px;
-  }
 
-  .interview-assist-topbar,
-  .assist-recognition-header,
-  .assist-bottom-controls {
-    align-items: flex-start;
-    flex-direction: column;
-    height: auto;
-  }
 
-  .interview-assist-topbar {
-    gap: 12px;
-    padding: 14px 0;
-  }
+
 
   .assist-header-actions {
     flex-wrap: wrap;
@@ -9989,31 +9952,6 @@ button {
   padding-top: 12px;
 }
 
-.loopassist-wave {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 74px;
-  padding: 0 16px;
-  border-radius: 8px;
-  background: var(--surface-subtle);
-}
-
-.loopassist-wave span {
-  width: 8px;
-  height: var(--wave-height);
-  border-radius: 999px;
-  background: #b8b4ab;
-}
-
-.loopassist-wave span:nth-child(3n) {
-  background: #4b5563;
-}
-
-.loopassist-wave span:nth-child(5n) {
-  background: #111111;
-}
-
 .loopassist-answer-preview {
   padding: 12px 14px;
   border-radius: 8px;
@@ -10279,12 +10217,6 @@ button {
 .loopassist-brand-copy span {
   color: #71717a;
   font-size: 12px;
-}
-
-.loopassist-live-badge {
-  color: #16a34a;
-  font-size: 12px;
-  font-weight: 500;
 }
 
 .loopassist-icon-button {
@@ -10952,8 +10884,7 @@ button {
   line-height: 1.5;
 }
 
-.loopassist-interview,
-.loopassist-realtime {
+.loopassist-interview {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -11031,14 +10962,6 @@ button {
   line-height: 1.6;
 }
 
-.loopassist-voice-zone {
-  display: grid;
-  justify-items: center;
-  gap: 12px;
-  width: 100%;
-  margin-top: clamp(72px, 10vh, 112px);
-}
-
 .loopassist-text-answer {
   display: grid;
   justify-items: center;
@@ -11072,137 +10995,6 @@ button {
   min-width: 120px;
 }
 
-.loopassist-voice-zone > p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.loopassist-voice-partial {
-  display: -webkit-box;
-  max-width: 520px;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  color: var(--text-soft);
-  font-size: 11px;
-  line-height: 1.5;
-  text-align: center;
-}
-
-.loopassist-voice-orb {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 112px;
-  height: 112px;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-}
-
-.loopassist-orb-core {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  width: 88px;
-  height: 88px;
-  border: 0.5px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-muted);
-}
-
-.loopassist-orb-core svg {
-  width: 26px;
-  height: 26px;
-}
-
-.loopassist-voice-orb.is-listening .loopassist-orb-core,
-.loopassist-voice-orb.is-thinking .loopassist-orb-core {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--surface);
-}
-
-.loopassist-orb-wave {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
-}
-
-.loopassist-orb-wave i {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 3px;
-  height: var(--wave-height);
-  border-radius: 999px;
-  background: var(--line-strong);
-  transform: translate(-50%, -50%) rotate(calc(var(--index, 0) * 20deg)) translateY(-52px);
-  transform-origin: center;
-}
-
-.loopassist-orb-wave i:nth-child(1) { --index: 0; }
-.loopassist-orb-wave i:nth-child(2) { --index: 1; }
-.loopassist-orb-wave i:nth-child(3) { --index: 2; }
-.loopassist-orb-wave i:nth-child(4) { --index: 3; }
-.loopassist-orb-wave i:nth-child(5) { --index: 4; }
-.loopassist-orb-wave i:nth-child(6) { --index: 5; }
-.loopassist-orb-wave i:nth-child(7) { --index: 6; }
-.loopassist-orb-wave i:nth-child(8) { --index: 7; }
-.loopassist-orb-wave i:nth-child(9) { --index: 8; }
-.loopassist-orb-wave i:nth-child(10) { --index: 9; }
-.loopassist-orb-wave i:nth-child(11) { --index: 10; }
-.loopassist-orb-wave i:nth-child(12) { --index: 11; }
-.loopassist-orb-wave i:nth-child(13) { --index: 12; }
-.loopassist-orb-wave i:nth-child(14) { --index: 13; }
-.loopassist-orb-wave i:nth-child(15) { --index: 14; }
-.loopassist-orb-wave i:nth-child(16) { --index: 15; }
-.loopassist-orb-wave i:nth-child(17) { --index: 16; }
-.loopassist-orb-wave i:nth-child(18) { --index: 17; }
-
-.loopassist-voice-orb.is-listening .loopassist-orb-wave i {
-  background: var(--danger);
-  animation: loopassistRadialWave 0.9s ease-in-out infinite alternate;
-}
-
-.loopassist-voice-orb.is-listening .loopassist-orb-wave i:nth-child(2n) {
-  animation-duration: 0.7s;
-}
-
-.loopassist-voice-orb.is-listening .loopassist-orb-wave i:nth-child(3n) {
-  animation-duration: 1.1s;
-}
-
-.loopassist-orb-pulse {
-  position: absolute;
-  inset: 12px;
-  border: 0.5px solid var(--line-strong);
-  border-radius: 999px;
-  animation: loopassistOrbPulse 1.2s ease-out infinite;
-}
-
-@keyframes loopassistRadialWave {
-  from { opacity: 0.45; scale: 0.82; }
-  to { opacity: 1; scale: 1; }
-}
-
-@keyframes loopassistOrbPulse {
-  from {
-    opacity: 0.5;
-    transform: scale(0.8);
-  }
-  to {
-    opacity: 0;
-    transform: scale(1.18);
-  }
-}
-
 .loopassist-inline-message {
   width: fit-content;
   max-width: 760px;
@@ -11226,30 +11018,6 @@ button {
   border-color: #e4e4e7;
   background: #fafafa;
   color: #52525b;
-}
-
-.loopassist-transcript-stream {
-  max-width: 880px;
-  margin-top: 24px;
-  color: #0a0a0a;
-  font-size: 18px;
-  line-height: 1.65;
-}
-
-.loopassist-transcript-stream p {
-  margin: 0 0 12px;
-}
-
-.loopassist-transcript-stream .is-me {
-  color: #0a0a0a;
-}
-
-.loopassist-transcript-stream span {
-  display: inline-block;
-  width: 8px;
-  height: 18px;
-  background: #71717a;
-  animation: loopassistCursor 1s steps(1) infinite;
 }
 
 .loopassist-recognition-strip {
@@ -11278,43 +11046,6 @@ button {
   position: absolute;
   right: 18px;
   bottom: 18px;
-}
-
-@keyframes loopassistCursor {
-  50% { opacity: 0; }
-}
-
-.loopassist-wave {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: auto;
-  padding: 0;
-  background: transparent;
-}
-
-.loopassist-wave span {
-  width: 3px;
-  height: var(--wave-height);
-  border-radius: 999px;
-  background: #e24b4a;
-}
-
-.loopassist-wave.is-recording span {
-  animation: loopassistWave 0.9s ease-in-out infinite alternate;
-}
-
-.loopassist-wave.is-recording span:nth-child(2n) {
-  animation-duration: 0.7s;
-}
-
-.loopassist-wave.is-recording span:nth-child(3n) {
-  animation-duration: 1.1s;
-}
-
-@keyframes loopassistWave {
-  from { transform: scaleY(0.45); }
-  to { transform: scaleY(1); }
 }
 
 .loopassist-history-backdrop {
@@ -11451,8 +11182,7 @@ button {
 }
 
 @media (max-width: 1024px) {
-  .loopassist-interview,
-  .loopassist-realtime {
+  .loopassist-interview {
     max-width: 720px;
     transform: translateY(-6%);
   }
@@ -11494,8 +11224,7 @@ button {
     transform: none;
   }
 
-  .loopassist-interview,
-  .loopassist-realtime {
+  .loopassist-interview {
     min-height: calc(100vh - 92px);
     padding: 20px 16px 176px;
     transform: none;
@@ -11543,10 +11272,6 @@ button {
 
   .loopassist-question-stage h1 {
     font-size: 22px;
-  }
-
-  .loopassist-voice-zone {
-    margin-top: 56px;
   }
 
   .loopassist-history-button span {
@@ -11607,8 +11332,7 @@ button {
   .loopassist-nav,
   .loopassist-history-drawer,
   .loopassist-bottom-dock,
-  .loopassist-more-trigger,
-  .loopassist-orb-core {
+  .loopassist-more-trigger {
     background: var(--text);
     color: var(--surface);
   }
@@ -11622,8 +11346,6 @@ button {
 
   .loopassist-question-eyebrow,
   .loopassist-question-hint,
-  .loopassist-voice-zone > p,
-  .loopassist-voice-partial,
   .loopassist-history-button,
   .loopassist-mode-weak-button {
     color: var(--line-strong);
@@ -11638,9 +11360,7 @@ button {
     background: var(--text-muted);
   }
 
-  .loopassist-history-drawer .loopassist-transcript-line.is-candidate p,
-  .loopassist-voice-orb.is-listening .loopassist-orb-core,
-  .loopassist-voice-orb.is-thinking .loopassist-orb-core {
+  .loopassist-history-drawer .loopassist-transcript-line.is-candidate p {
     background: var(--surface);
     color: var(--accent);
   }
@@ -12218,103 +11938,6 @@ button {
   color: var(--loop-ink-2);
   font-size: 15.5px;
   line-height: 1.65;
-}
-
-.loopassist-voice-zone {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  width: 100%;
-  margin-top: 0;
-}
-
-.loopassist-voice-orb {
-  width: 140px;
-  height: 140px;
-}
-
-.loopassist-orb-wave {
-  inset: 0;
-  animation: loopassistRaysSpin 26s linear infinite;
-}
-
-.loopassist-orb-wave i {
-  left: 50%;
-  top: 50%;
-  width: 2px;
-  height: 24px;
-  border-radius: 2px;
-  background: var(--loop-line-2);
-  transform: translate(-50%, -50%) rotate(calc(var(--index, 0) * 20deg)) translateY(-70px);
-  transform-origin: center;
-}
-
-.loopassist-orb-core {
-  width: 96px;
-  height: 96px;
-  border: 1px solid var(--loop-line);
-  background: var(--loop-surface);
-  color: var(--loop-ink-2);
-  box-shadow: var(--loop-shadow);
-  transition: background 0.25s ease, color 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
-}
-
-.loopassist-orb-core svg {
-  width: 30px;
-  height: 30px;
-}
-
-.loopassist-voice-orb.is-listening .loopassist-orb-wave {
-  animation-duration: 7s;
-}
-
-.loopassist-voice-orb.is-listening .loopassist-orb-wave i {
-  height: 30px;
-  background: var(--loop-brand);
-  animation: loopassistRayBeat 1.1s ease-in-out infinite;
-}
-
-.loopassist-voice-orb.is-listening .loopassist-orb-core,
-.loopassist-voice-orb.is-thinking .loopassist-orb-core {
-  border-color: var(--loop-brand);
-  background: var(--loop-brand);
-  color: #ffffff;
-  box-shadow: 0 0 0 8px var(--loop-brand-soft);
-}
-
-.loopassist-voice-orb.is-thinking .loopassist-orb-core {
-  animation: loopassistMicPulse 1.6s ease-in-out infinite;
-}
-
-@keyframes loopassistRaysSpin {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes loopassistRayBeat {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 1; }
-}
-
-@keyframes loopassistMicPulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.06); }
-}
-
-.loopassist-voice-zone > p {
-  margin: 0;
-  color: var(--loop-muted);
-  font-family: var(--loop-font-mono);
-  font-size: 14.5px;
-  letter-spacing: 0.02em;
-}
-
-.loopassist-voice-partial {
-  max-width: 520px;
-  color: var(--loop-muted);
-  font-size: 12px;
 }
 
 .loopassist-text-answer {
@@ -15526,4 +15149,147 @@ button {
   .loopassist-shell.is-history-open .loopassist-bottom-dock {
     right: 12px;
   }
+}
+
+/* Today Queue「今日复习」块 — 失败账本读出口（阶段 4 最小 reader） */
+.ll-today-review {
+  margin: 16px 24px 0;
+  padding: 16px 20px;
+  background: var(--ll-card);
+  border: 1px solid var(--ll-border-soft);
+  border-radius: 14px;
+}
+.ll-today-review-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.ll-today-review-head h2 {
+  font-size: 14px;
+  margin: 0;
+  color: var(--ll-text);
+}
+.ll-today-review-count {
+  font-size: 12px;
+  color: var(--ll-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ll-today-review-hint {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--ll-text-muted);
+}
+.ll-today-review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ll-today-review-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid var(--ll-border-soft);
+}
+.ll-today-review-row:first-child {
+  border-top: 0;
+}
+.ll-today-review-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ll-text-muted);
+  flex: none;
+}
+.ll-today-review-handle {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  color: var(--ll-text);
+}
+.ll-today-review-tag {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ll-today-review-tag.is-shaky {
+  background: #fbf0dd;
+  color: #8a5d12;
+}
+.ll-today-review-tag.is-solid {
+  background: var(--accent-green-bg);
+  color: var(--accent-green);
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   Today Queue · 失败账本派生视图(act-led 首页 P1)
+   shaky/solid 是账本 state 的唯二状态(PRODUCT.md §4)。
+   ────────────────────────────────────────────────────────────────── */
+.ll-section-hint {
+  font-size: 12px;
+  color: var(--ll-text-muted);
+}
+.ll-review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--ll-border-soft);
+  border-radius: 14px;
+  background: var(--ll-card);
+  overflow: hidden;
+}
+.ll-review-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 18px;
+  border-top: 1px solid var(--ll-border-soft);
+  font-size: 14px;
+  color: var(--ll-text);
+}
+.ll-review-row:first-child { border-top: 0; }
+.ll-review-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ll-text-muted);
+  flex: none;
+}
+.ll-review-handle {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ll-state-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.ll-state-shaky { background: #fbf0dd; color: #8a5d12; }
+.ll-state-solid { background: var(--accent-green-bg); color: var(--accent-green); }
+
+.ll-review-empty {
+  padding: 22px 24px;
+  border: 1px dashed var(--ll-border-soft);
+  border-radius: 14px;
+  background: var(--ll-bg-secondary);
+  color: var(--ll-text-secondary);
+}
+.ll-review-empty strong {
+  display: block;
+  color: var(--ll-text);
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.ll-review-empty p {
+  margin: 0;
+  font-size: 13px;
 }

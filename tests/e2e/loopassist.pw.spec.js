@@ -130,9 +130,6 @@ async function mockLoopAssistSetup(page, options = {}) {
       ),
     });
   });
-  await page.route("**/api/interview-assist/realtime-session", async (route) => {
-    await route.abort("failed");
-  });
   const questionReviews = [
     {
       questionNumber: 1,

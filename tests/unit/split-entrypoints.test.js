@@ -22,9 +22,7 @@ test("root package scripts default to split entrypoints without legacy aliases",
   assert.equal(pkg.scripts["eval:auto"], "node scripts/project-tools.mjs eval:auto");
   assert.equal(pkg.scripts["validate:cases"], "node scripts/project-tools.mjs validate:cases");
   assert.equal(pkg.scripts["smoke:split"], "node scripts/project-tools.mjs smoke:split");
-  assert.equal(pkg.scripts["dev:superapp"], "npm run dev --prefix superapp-service");
   assert.match(projectToolsSource, /bff\/src\/server\.js/);
-  assert.match(projectToolsSource, /superapp-service\/src\/server\.js/);
   assert.match(projectToolsSource, /split-services\.spec\.js/);
   assert.match(projectToolsSource, /parity-flow\.test\.js/);
   assert.match(projectToolsSource, /runAutomatedEval/);

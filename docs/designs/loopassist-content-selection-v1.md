@@ -70,7 +70,6 @@ The repo already has most of the runtime pieces:
 5. `newcode-craw`
    Already provides real interview reports with title, content, job context, metrics, URL, publish time, and source list URL.
 
-6. `interview-assist`
    Already has realtime session, ASR transcript, voice demo, LiveKit transport, and answer streaming surfaces that LoopAssist can reuse.
 
 The system does not need a fresh tutor engine. It needs a new "assessment scope" layer before session creation, plus a question-seed corpus generated from real reports.
@@ -600,7 +599,7 @@ Recommended events:
 
 ### Realtime Voice Transport
 
-LoopAssist should reuse the existing `interview-assist` realtime transport rather than inventing a second voice stack.
+LoopAssist should own its own optional voice stack after the realtime assist extraction.
 
 Target capabilities:
 
@@ -613,10 +612,7 @@ Target capabilities:
 
 The existing surfaces to study first:
 
-1. `/api/interview-assist/realtime-session`
-2. `/ws/interview-assist/{session_id}`
-3. `/api/interview-assist/answer-stream`
-4. LiveKit transport in `livekit-agent`
+LoopAssist no longer depends on the extracted realtime assist transport.
 
 ## AI Flow
 

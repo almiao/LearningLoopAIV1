@@ -1,0 +1,57 @@
+// FROZEN — superapp BFF surface (removed from bff/src/server.js in the phase-1 cut)
+// Revival checklist (4 paste points in bff/src/server.js):
+
+// 1) import — paste near the other src/ imports at top
+import { buildReminderCandidate } from "../../src/superapp/reminder-candidate.js";
+
+// 2) constants — paste near the other store/const declarations
+const superappDemoHandle = process.env.SUPERAPP_DEMO_HANDLE || "learningloop_superapp_demo";
+const superappDemoPin = process.env.SUPERAPP_DEMO_PIN || "1234";
+
+// 3) handler functions — paste among the other async handler fns
+async function handleReminderCandidate(userId) {
+  if (!userId) {
+    throw new Error("userId is required.");
+  }
+  const user = await getUserProfile(userId);
+  const memoryProfile = await getMemoryProfile(user.memoryProfileId);
+  const candidate = buildReminderCandidate({ user, memoryProfile });
+  if (!candidate) {
+    throw new Error("No reminder candidate available.");
+  }
+  return candidate;
+}
+
+async function ensureSuperappDemoUser() {
+  const { user, created } = await userProfileStore.loginOrCreate({
+    handle: superappDemoHandle,
+    pin: superappDemoPin,
+  });
+  const profile = await buildProfilePayload(user);
+  return {
+    userId: user.id,
+    handle: user.handle,
+    created,
+    profile,
+  };
+}
+
+// 4) routes — paste back into the request router
+//    NOTE: /api/superapp/answer-knowledge-question is NOT here — it was KEPT in server.js
+//    because it is the main-product knowledge QA (proxied from /api/knowledge/answer), not superapp.
+if (request.method === "GET" && url.pathname.startsWith("/api/superapp/reminder-candidate/")) {
+  const userId = url.pathname.split("/").at(-1);
+  sendJson(response, 200, await handleReminderCandidate(userId));
+  return;
+}
+
+if (request.method === "GET" && url.pathname === "/api/superapp/demo-user") {
+  sendJson(response, 200, await ensureSuperappDemoUser());
+  return;
+}
+
+if (request.method === "POST" && url.pathname === "/api/superapp/reminder-outcome") {
+  const body = await readJsonBody(request);
+  sendJson(response, 200, { ok: true, recordedAt: new Date().toISOString(), ...body });
+  return;
+}

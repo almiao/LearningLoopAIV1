@@ -1214,7 +1214,7 @@ def _allow_mock() -> bool:
 
 
 def _create_intelligence():
-    provider = str(os.environ.get("LOOPASSIST_LLM_PROVIDER") or os.environ.get("INTERVIEW_ASSIST_LLM_PROVIDER") or os.environ.get("LLAI_LLM_PROVIDER") or "OPENAI").upper()
+    provider = str(os.environ.get("LOOPASSIST_LLM_PROVIDER") or os.environ.get("LLAI_LLM_PROVIDER") or "OPENAI").upper()
     if provider == "MOCK" or _allow_mock():
         return MockLoopAssistIntelligence()
     if provider == "DEEPSEEK":
