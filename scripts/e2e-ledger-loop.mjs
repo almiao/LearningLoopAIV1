@@ -53,9 +53,14 @@ const userId = loginRes?.profile?.user?.id;
 if (!userId) fail("1", `no userId in login response: ${JSON.stringify(loginRes).slice(0,200)}`);
 log("1", `ok: userId=${userId}${loginRes.created ? " (newly created)" : " (existing)"}`);
 
-// 2. start-target with default baseline pack. forceNewSession to skip any resumed state.
+// 2. start-target with a real doc — this is the true user path (open a doc in /learn,
+//    answer questions). Without docPath the source is baseline-pack only, source_ref
+//    ends up empty, and the resulting review item is unanchored (correct behavior, but
+//    not a useful E2E target). We pick a known JavaGuide doc.
+const docPath = "docs/ai/agent/agent-basis.md";
 const start = await post(`${bff}/api/interview/start-target`, {
   userId,
+  docPath,
   targetBaselineId: "bigtech-java-backend",
   forceNewSession: true,
   interactionPreference: "balanced",
@@ -102,9 +107,17 @@ try { ledger = JSON.parse(await readFile(ledgerPath, "utf8")); } catch (e) {
 if (!Array.isArray(ledger?.items) || ledger.items.length === 0) fail("5", "ledger has no items");
 const last = ledger.items[ledger.items.length - 1];
 log("5", `ok: ledger has ${ledger.items.length} item(s), latest:`);
-log("5", `    handle: ${last.handle}`);
-log("5", `    state:  ${last.state}, missed anchors: ${last.evidence.missedAnchors.length}`);
+log("5", `    handle:     ${last.handle}`);
+log("5", `    source_ref: ${last.source_ref || "(empty — drill was unsourced)"}`);
+log("5", `    state:      ${last.state}, missed anchors: ${last.evidence.missedAnchors.length}`);
 log("5", `    next_due_at: ${last.next_due_at}`);
+
+// The source_ref should match the docPath we sent — this is the integration point
+// that the home page uses to decide whether the row is clickable.
+if (last.source_ref !== docPath) {
+  fail("5", `source_ref mismatch — expected ${docPath}, got "${last.source_ref}". Re-drill click will not work.`);
+}
+log("5", `ok: source_ref matches docPath — re-drill click from home will land at /learn?doc=${docPath}`);
 
 // 6. /api/review/today — only items due by `now` should appear. A fresh shaky item is +1d.
 const today = await get(`${bff}/api/review/today`);
