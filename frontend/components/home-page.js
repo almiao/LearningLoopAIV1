@@ -397,6 +397,22 @@ function buildLearningHref(document, options = {}) {
   return `/learn?${params.toString()}`;
 }
 
+// ReviewItem 跳 drill 的链接 (§4 session 回路第 2 步:Agent 拿某项 + 原文跑 drill)。
+// source_ref 必须是真实 docPath(用过 /learn?doc= 进过的文档)才能跳;
+// demo://、baseline-pack 出来的空 source_ref、loopassist 出来的 sourceLabel
+// 当前都不可跳,返回 null,UI 显示「来源不可达」。
+function buildReviewItemDrillHref(item = {}) {
+  const ref = String(item.source_ref || "").trim();
+  if (!ref) return null;
+  // 排除非文档 scheme(demo://、rescue:// 等)。真 docPath 形如 "java/concurrency/aqs.md"。
+  if (/^[a-z]+:\/\//i.test(ref)) return null;
+  const params = new URLSearchParams();
+  params.set("doc", ref);
+  params.set("intent", "quick_review");
+  params.set("autostart", "1");
+  return `/learn?${params.toString()}`;
+}
+
 function flattenLibrarySegments(folderLabels = []) {
   if (!folderLabels.length) {
     return [];
@@ -977,13 +993,32 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
         </div>
         {reviewItems.length ? (
           <ul className="ll-review-list">
-            {reviewItems.map((item) => (
-              <li key={item.id} className="ll-review-row">
-                <span className="ll-review-dot" aria-hidden="true" />
-                <span className="ll-review-handle">{item.handle || "(无标题)"}</span>
-                <span className={`ll-state-tag ll-state-${item.state || "shaky"}`}>{item.state || "shaky"}</span>
-              </li>
-            ))}
+            {reviewItems.map((item) => {
+              const handle = item.handle || "(无标题)";
+              const stateClass = `ll-state-tag ll-state-${item.state || "shaky"}`;
+              const stateLabel = item.state || "shaky";
+              const reDrillHref = buildReviewItemDrillHref(item);
+              // 有可跳 docPath → 整行作链接;没有 → 不可点 + 一个解释 chip
+              if (reDrillHref) {
+                return (
+                  <li key={item.id} className="ll-review-row">
+                    <Link href={reDrillHref} className="ll-review-link" title={`重练:${handle}`}>
+                      <span className="ll-review-dot" aria-hidden="true" />
+                      <span className="ll-review-handle">{handle}</span>
+                      <span className={stateClass}>{stateLabel}</span>
+                    </Link>
+                  </li>
+                );
+              }
+              return (
+                <li key={item.id} className="ll-review-row is-unanchored" title="来源不可达 — 这条复习项没有可跳的原文">
+                  <span className="ll-review-dot" aria-hidden="true" />
+                  <span className="ll-review-handle">{handle}</span>
+                  <span className="ll-review-unanchored">来源不可达</span>
+                  <span className={stateClass}>{stateLabel}</span>
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <article className="ll-review-empty">

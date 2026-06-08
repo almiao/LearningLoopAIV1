@@ -66,6 +66,21 @@ const items = [
     last_seen_at: yesterday,
     next_due_at: dueAt,
   },
+  // 一条带真 docPath 的样例,验证点击跳转流程(对接 /learn?doc=...&autostart=1)
+  {
+    id: id("AI Agent 的 agent loop 核心机制"),
+    handle: "AI Agent 的 agent loop 核心机制",
+    source_ref: "docs/ai/agent/agent-basis.md",
+    evidence: {
+      question: "讲清 AI Agent 的 agent loop 是怎么循环的,每一步做什么。",
+      missedAnchors: ["context engineering 的位置", "tools 注册时机", "终止条件"],
+    },
+    state: "shaky",
+    streak: 0,
+    created_at: yesterday,
+    last_seen_at: yesterday,
+    next_due_at: dueAt,
+  },
 ];
 
 // 合并已有 ledger,不要冲掉真账本数据。
