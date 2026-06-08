@@ -1,0 +1,116 @@
+{
+  "_meta": {
+    "purpose": "Anchor-judge quality eval — the gating constraint per the design discussion.",
+    "what_we_measure": [
+      "false_pass: model says pass when answer is empty/cliche/wrong (lenient bias — the §0.1 disaster)",
+      "false_fail: model says fail when answer is correct + complete (overstrict bias)",
+      "low_confidence_rate: how often it bails out on real cases",
+      "miss_recall: when answer is partial, does it correctly name what's missing"
+    ],
+    "how_to_run": "python3 -m ai_service.evals.run_anchor_judge_eval  (set OPENAI_API_KEY for real LLM; otherwise heuristic double runs)",
+    "calibration_targets": {
+      "false_pass_rate_max": 0.10,
+      "false_fail_rate_max": 0.20,
+      "low_confidence_rate_max": 0.30
+    }
+  },
+  "cases": [
+    {
+      "id": "empty",
+      "category": "lenient_trap",
+      "question": "讲清 ReentrantLock 与 synchronized 的区别和取舍。",
+      "answer": "不知道。",
+      "expected_verdict": "fail",
+      "notes": "If LLM passes this, judging is broken."
+    },
+    {
+      "id": "cliche_only",
+      "category": "lenient_trap",
+      "question": "讲清 ReentrantLock 与 synchronized 的区别和取舍。",
+      "answer": "ReentrantLock 更灵活,synchronized 更简单,看场景选择。",
+      "expected_verdict": "fail",
+      "notes": "Pure cliché, zero mechanism. Classic 'sounds smart, says nothing'."
+    },
+    {
+      "id": "off_topic",
+      "category": "lenient_trap",
+      "question": "HTTP/2 的多路复用为什么不解决 HOL blocking?",
+      "answer": "HTTP/2 引入了头部压缩 HPACK,服务端推送,二进制分帧等改进。",
+      "expected_verdict": "fail",
+      "notes": "Answer is technically correct facts about HTTP/2, but does NOT address HOL blocking. Off-topic must fail."
+    },
+    {
+      "id": "memorized_definition",
+      "category": "lenient_trap",
+      "question": "ReAct 中行动失败时,模型靠什么决定回退还是换动作?",
+      "answer": "ReAct 是 Reasoning + Acting,推理和行动交替进行。",
+      "expected_verdict": "fail",
+      "notes": "Recites definition without answering the actual question. 会背不会讲 — the core failure mode the product targets."
+    },
+    {
+      "id": "partial_one_anchor",
+      "category": "miss_detection",
+      "question": "讲清 ReentrantLock 与 synchronized 的区别和取舍。",
+      "answer": "ReentrantLock 可以中断、可以定时尝试,synchronized 没法做到这些。",
+      "expected_verdict": "fail",
+      "expected_misses_include": ["公平", "性能", "释放"],
+      "notes": "Hits 'interruptible', misses fairness/perf/release. Miss recall test."
+    },
+    {
+      "id": "solid_complete",
+      "category": "should_pass",
+      "question": "讲清 ReAct 中推理和行动如何交替。",
+      "answer": "ReAct 让模型在每一步先输出一段推理,决定下一步动作,再实际调用工具执行,把 observation 回灌作为下一轮推理的输入。如果行动失败,observation 里包含错误信息,模型根据它判断回退还是换动作。",
+      "expected_verdict": "pass",
+      "notes": "Mechanism + dynamics + failure handling. Should pass; if fails → overstrict."
+    },
+    {
+      "id": "solid_with_filler",
+      "category": "should_pass",
+      "question": "MySQL InnoDB 在什么情况下索引会失效?",
+      "answer": "嗯,主要几种情况吧:一个是对索引列做了函数或运算,比如 WHERE YEAR(t)=2024,优化器没法用索引。还有就是隐式类型转换,比如字符串列传整数。然后是 LIKE 前缀模糊,'%abc' 这种走不了索引。组合索引不满足最左前缀也是。",
+      "expected_verdict": "pass",
+      "notes": "Conversational with filler words, but covers 4 real mechanisms. Should pass; if fails → punishing register, not substance."
+    },
+    {
+      "id": "transfer_question",
+      "category": "should_pass",
+      "question": "现在不让你用 synchronized,只能用 ReentrantLock,怎么模拟 wait/notify?",
+      "answer": "用 Condition。lock.newCondition() 拿到一个 Condition,await/signal 替代 wait/notify。需要先 lock.lock(),操作完 unlock。",
+      "expected_verdict": "pass",
+      "notes": "Migration / 迁移题. Concrete mechanism named. Should pass."
+    },
+    {
+      "id": "fabricated_facts",
+      "category": "strict_trap",
+      "question": "Redis 的 AOF 持久化怎么工作?",
+      "answer": "AOF 每秒把内存快照压缩后写到 .rdb 文件,通过 LZ4 算法,默认每 1 小时全量重写一次。",
+      "expected_verdict": "fail",
+      "notes": "Confidently wrong — confuses AOF with RDB. Hallucination must fail."
+    },
+    {
+      "id": "shallow_truth",
+      "category": "boundary",
+      "question": "为什么 HTTP/2 不能完全解决队头阻塞?",
+      "answer": "因为 HTTP/2 还是基于 TCP,TCP 层的丢包会阻塞所有流。HTTP/3 用 QUIC 在用户态做流隔离才解决。",
+      "expected_verdict": "pass",
+      "notes": "Short but correct mechanism. If model demands more verbose to pass → it's punishing length not substance."
+    },
+    {
+      "id": "partial_with_hedging",
+      "category": "miss_detection",
+      "question": "Java 中 ConcurrentHashMap 1.8 怎么避免读阻塞?",
+      "answer": "我记得是用了 CAS 还有 synchronized,但具体哪一步用哪个我说不太清。",
+      "expected_verdict": "fail",
+      "notes": "Honest hedging is not the same as knowing. Must fail; misses should call out '哪一步用哪个'."
+    },
+    {
+      "id": "name_drops_only",
+      "category": "lenient_trap",
+      "question": "讲讲 Raft 的 leader election 流程。",
+      "answer": "Raft 选举要靠任期号 term,有 follower、candidate、leader 三种状态,通过投票选出 leader。",
+      "expected_verdict": "fail",
+      "notes": "Lists vocabulary but doesn't describe the actual mechanism (election timeout, vote request, majority). Name-dropping must fail."
+    }
+  ]
+}
