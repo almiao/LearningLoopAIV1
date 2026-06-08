@@ -28,7 +28,8 @@
     "smoke:split": "node scripts/project-tools.mjs smoke:split",
     "smoke:ledger": "node scripts/smoke-ledger-loop.mjs",
     "e2e:ledger": "node scripts/e2e-ledger-loop.mjs",
-    "seed:ledger-demo": "node scripts/seed-ledger-demo.mjs"
+    "seed:ledger-demo": "node scripts/seed-ledger-demo.mjs",
+    "eval:judge": "node scripts/run-judge-eval.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0"

@@ -111,6 +111,112 @@
       "answer": "Raft 选举要靠任期号 term,有 follower、candidate、leader 三种状态,通过投票选出 leader。",
       "expected_verdict": "fail",
       "notes": "Lists vocabulary but doesn't describe the actual mechanism (election timeout, vote request, majority). Name-dropping must fail."
+    },
+
+    {
+      "id": "half_truth_half_hallucination",
+      "category": "lenient_trap",
+      "question": "讲讲 Transformer 的 self-attention 是怎么算的。",
+      "answer": "Self-attention 用 Q K V 三个矩阵,Q 乘 K 转置得到注意力分数,再用 softmax 归一化,最后乘 V 得到输出。注意力分数那一步要除以序列长度做 normalization,否则梯度会爆炸。",
+      "expected_verdict": "fail",
+      "expected_misses_include": ["sqrt", "d_k"],
+      "notes": "Mostly right but the normalization detail is wrong (should divide by sqrt(d_k), not sequence length). Confident wrong details inside mostly-right answers are the most insidious failure mode."
+    },
+    {
+      "id": "markdown_formatted_cliche",
+      "category": "lenient_trap",
+      "question": "讲讲 Kubernetes 的 pod 调度过程。",
+      "answer": "# K8s Scheduling\n\n## 主要步骤\n- 1. **过滤** (Filtering)\n- 2. **打分** (Scoring)\n- 3. **绑定** (Binding)\n\n通过这三个步骤,K8s 可以**高效地**调度 pod 到合适的 node 上。",
+      "expected_verdict": "fail",
+      "notes": "Pretty markdown formatting around content-free three-word bullets. Format must not mask the absence of mechanism (no predicates / priorities / how filtering actually decides node fit)."
+    },
+
+    {
+      "id": "english_question_pass",
+      "category": "should_pass",
+      "question": "Explain how Python's GIL affects multithreaded CPU-bound code.",
+      "answer": "The GIL serializes Python bytecode execution across threads, so CPU-bound threads cannot run in parallel — at any moment only one thread holds the GIL. For CPU-bound work this means threading gives no speedup; you'd use multiprocessing or release the GIL in C extensions like numpy. I/O-bound threads work fine because they release the GIL while waiting.",
+      "expected_verdict": "pass",
+      "notes": "English question, complete mechanism + correct exception path. Should pass; if fails → judge has Chinese-only bias."
+    },
+    {
+      "id": "algorithm_substance_short",
+      "category": "should_pass",
+      "question": "为什么快排平均 O(n log n),最坏 O(n²)?",
+      "answer": "每层 partition 是 O(n),平均情况下 pivot 把数组分成大致相等的两半,递归深度 log n,所以总共 O(n log n)。最坏是 pivot 一直选到极值(比如已排序数组+取首元),每次只少一个元素,递归 n 层,所以 O(n²)。",
+      "expected_verdict": "pass",
+      "notes": "Short but covers both mechanisms with concrete cause (pivot selection). Should pass; if fails → punishing brevity."
+    },
+
+    {
+      "id": "near_miss_one_anchor",
+      "category": "miss_detection",
+      "question": "讲清 TCP 三次握手为什么不能是两次。",
+      "answer": "因为如果两次握手,服务端不知道客户端有没有真的收到 SYN-ACK。第三次 ACK 是客户端告诉服务端「我收到了你的回应」,这样双方才能确认对方都准备好了。",
+      "expected_verdict": "fail",
+      "expected_misses_include": ["历史", "SYN"],
+      "notes": "Initially mislabeled as 'pass — reasonable people disagree'. The canonical textbook reason is preventing delayed/stale SYN segments from establishing zombie connections; the answer hits synchronization but misses that mechanism. §0.1 strictness says fail. Eval surfaced my own prior bias, kept this as a record."
+    },
+    {
+      "id": "right_question_wrong_focus",
+      "category": "boundary",
+      "question": "MySQL 主从复制的延迟是怎么产生的?",
+      "answer": "主从延迟主要看 slave 单线程回放的速度。MySQL 5.6 之前 slave 用单 SQL thread 重放 binlog,主上并发写入但从上串行回放,所以高写场景会拉开延迟。5.7 之后引入并行复制能缓解。",
+      "expected_verdict": "pass",
+      "notes": "Mechanism + concrete version detail. Doesn't mention network/binlog dump latency but that's not the dominant cause. Should pass; if fails → judge over-requires exhaustiveness."
+    },
+    {
+      "id": "hedged_correct",
+      "category": "boundary",
+      "question": "Go 的 GMP 调度模型里 P 的作用是什么?",
+      "answer": "我理解 P 是 processor,它持有 G 的本地运行队列。M(OS 线程)必须绑定 P 才能执行 G。P 的数量决定了 Go 程序的并发并行度上限,通常等于 GOMAXPROCS。具体内部数据结构可能有些细节我说得不全。",
+      "expected_verdict": "pass",
+      "notes": "Hedging on details but the core mechanism is correctly stated. Honest uncertainty about peripherals should NOT fail when the answered question is answered."
+    },
+
+    {
+      "id": "verbose_correct_punish_test",
+      "category": "strict_trap",
+      "question": "什么是 React 的 reconciliation?",
+      "answer": "你好!这是一个非常好的问题。让我来详细解释一下:React 的 reconciliation,简单来说,就是 React 用来更新 DOM 的过程。这个过程涉及到很多有趣的方面。具体来说,当 state 或 props 变化时,React 会重新生成虚拟 DOM,然后通过 diff 算法对比新旧虚拟 DOM 的差异,最后只更新真实 DOM 中变化的部分,从而提升性能。这就是 reconciliation 的核心。希望我的解释对你有帮助!",
+      "expected_verdict": "pass",
+      "notes": "Annoyingly chatty filler but the substance (virtual DOM diff + minimal real DOM update) is correct. Should pass; if fails → punishing register/personality, not knowledge."
+    },
+    {
+      "id": "mixed_lang_pass",
+      "category": "strict_trap",
+      "question": "Explain how a hash table handles collisions.",
+      "answer": "主要两种方式。一种是 chaining,每个 bucket 挂一个链表(or 红黑树,Java HashMap 在链长 > 8 时转 tree),冲突时直接 append。另一种是 open addressing,在表里探测下一个空 slot,比如 linear probing 或 quadratic probing。前者实现简单,后者 cache 更友好。",
+      "expected_verdict": "pass",
+      "notes": "Mixed Chinese+English, correct content. Should pass; if fails → judge is fussy about language consistency rather than substance."
+    },
+
+    {
+      "id": "wrong_question_addressed",
+      "category": "lenient_trap",
+      "question": "为什么需要 BatchNorm,它解决了什么问题?",
+      "answer": "BatchNorm 的实现是对每个 mini-batch 求均值和方差,然后用 (x - mean) / sqrt(var + eps) 做归一化,最后用可学习的 gamma 和 beta 做仿射变换。在 inference 时用训练时累积的 running mean/var。",
+      "expected_verdict": "fail",
+      "expected_misses_include": ["covariate", "梯度", "训练"],
+      "notes": "Question asked WHY (internal covariate shift / training stability) but answer describes HOW (implementation). Different question. Common AI failure mode — answers a related question without noticing."
+    },
+    {
+      "id": "vague_but_voluminous",
+      "category": "lenient_trap",
+      "question": "分布式系统里 CAP 是什么,怎么取舍?",
+      "answer": "CAP 是分布式系统的核心理论之一。它包括三个方面:一致性、可用性和分区容错性。这三者之间需要做权衡和取舍,不同的系统会根据自己的业务场景做不同的选择。比如有些系统更注重一致性,有些系统更注重可用性。这是分布式系统设计中非常重要的考虑。",
+      "expected_verdict": "fail",
+      "notes": "Verbose tautology — restates the question, names the letters, never explains them or the actual tradeoff (P forced under network partition, then C vs A is the real choice). Volume must not mask emptiness."
+    },
+
+    {
+      "id": "missing_one_critical_anchor",
+      "category": "miss_detection",
+      "question": "Java 中 volatile 关键字保证了什么?",
+      "answer": "volatile 保证可见性,一个线程修改 volatile 变量,其他线程立刻能读到最新值,通过 happens-before 关系保证。",
+      "expected_verdict": "fail",
+      "expected_misses_include": ["原子", "禁止"],
+      "notes": "Got visibility correct but missed two critical anchors: doesn't guarantee atomicity (so i++ still broken) and prevents instruction reordering. Common partial answer — needs miss to flag what's missing."
     }
   ]
 }

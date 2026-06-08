@@ -32,7 +32,16 @@ def run() -> int:
     cases = bundle["cases"]
     targets = bundle["_meta"]["calibration_targets"]
 
-    using_heuristic = os.environ.get("APP_ENV") == "test" or not os.environ.get("OPENAI_API_KEY") and not os.environ.get("LLAI_DEEPSEEK_API_KEY")
+    # Match anchor_judge's own _allow_mock() — that's the actual switch.
+    using_heuristic = (
+        os.environ.get("APP_ENV") == "test"
+        or os.environ.get("LLAI_ENABLE_AI_SERVICE_HEURISTIC_TEST_DOUBLE") == "1"
+    )
+    has_key = bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("LLAI_DEEPSEEK_API_KEY"))
+    if not using_heuristic and not has_key:
+        print("\nERROR: real-LLM mode requested but no API key in env.")
+        print("Set OPENAI_API_KEY or LLAI_DEEPSEEK_API_KEY, or APP_ENV=test for the heuristic double.")
+        return 2
     mode = "heuristic-double (smoke test only — NOT a real measurement)" if using_heuristic else "real LLM"
     print(f"\n=== anchor_judge eval · {mode} ===\n")
 
@@ -78,6 +87,7 @@ def run() -> int:
 
     # Aggregate the bias direction — this is the actual point of the eval.
     n = len(results)
+    errored = sum(1 for r in results if r.get("verdict") == "error")
     false_pass = sum(1 for r in results if r["expected_verdict"] == "fail" and r["verdict"] == "pass")
     false_fail = sum(1 for r in results if r["expected_verdict"] == "pass" and r["verdict"] == "fail")
     low_conf = sum(1 for r in results if r["low_confidence"])
@@ -92,6 +102,8 @@ def run() -> int:
 
     print("\n--- summary ---")
     print(f"  cases:               {n}")
+    if errored:
+        print(f"  errored:             {errored}  ← UPSTREAM FAILURE, results below are not measurements")
     print(f"  false_pass:          {false_pass}/{fail_total}  rate={fp_rate:.0%}  (target ≤ {targets['false_pass_rate_max']:.0%})")
     print(f"  false_fail:          {false_fail}/{pass_total}  rate={ff_rate:.0%}  (target ≤ {targets['false_fail_rate_max']:.0%})")
     print(f"  low_confidence:      {low_conf}/{n}  rate={lc_rate:.0%}  (target ≤ {targets['low_confidence_rate_max']:.0%})")
@@ -111,6 +123,10 @@ def run() -> int:
         breached.append(f"low_confidence {lc_rate:.0%} > {targets['low_confidence_rate_max']:.0%} (judge bails too often)")
 
     print()
+    if errored:
+        print("CALIBRATION: INVALID — upstream errors prevented measurement.")
+        print(f"  {errored}/{n} cases errored. Fix the LLM path and re-run before trusting any rates above.")
+        return 2
     if breached:
         print("CALIBRATION: FAIL")
         for b in breached:
