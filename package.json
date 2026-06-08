@@ -25,7 +25,10 @@
     "dev:bff": "npm run dev --prefix bff",
     "dev:ai": "python3 -m uvicorn app.main:app --reload --port 8000 --app-dir ai-service",
     "dev:tts": "python3 -m uvicorn app.loopassist.tts_worker:app --reload --port 4300 --app-dir ai-service",
-    "smoke:split": "node scripts/project-tools.mjs smoke:split"
+    "smoke:split": "node scripts/project-tools.mjs smoke:split",
+    "smoke:ledger": "node scripts/smoke-ledger-loop.mjs",
+    "e2e:ledger": "node scripts/e2e-ledger-loop.mjs",
+    "seed:ledger-demo": "node scripts/seed-ledger-demo.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0"
