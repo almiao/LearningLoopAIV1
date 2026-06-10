@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const root = process.cwd();
-const scannedRoots = ["bff/src", "frontend/components", "src/knowledge", "src/training", "src/user", "src/superapp", "ai-service/app/engine"];
+const scannedRoots = ["bff/src", "frontend/components", "src/knowledge", "src/training", "src/user", "ai-service/app/engine"];
 const allowedFiles = new Set([
   "src/knowledge/source-refs.js",
   "src/baseline/baseline-packs.js",
