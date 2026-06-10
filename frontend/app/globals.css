@@ -5680,8 +5680,8 @@ button {
 .materials-shell {
   min-height: 100vh;
   padding: 0;
-  background: #f8fafc;
-  color: #111827;
+  background: var(--paper-tint);
+  color: var(--ink);
 }
 
 .materials-topbar {
@@ -5694,7 +5694,7 @@ button {
   gap: 18px;
   min-height: 72px;
   padding: 10px 22px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--line-warm);
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(16px);
 }
@@ -5733,7 +5733,7 @@ button {
   gap: 18px;
   min-width: 0;
   padding: 20px;
-  border-right: 1px solid #e5e7eb;
+  border-right: 1px solid var(--line-warm);
   background: var(--paper);
 }
 
@@ -5748,7 +5748,7 @@ button {
 }
 
 .material-source-input > span {
-  color: #334155;
+  color: var(--ink);
   font-size: 13px;
   font-weight: 800;
 }
@@ -5759,7 +5759,7 @@ button {
   gap: 8px;
   min-height: 44px;
   padding: 4px;
-  border: 1px solid #dbe3ee;
+  border: 1px solid var(--line-warm);
   border-radius: 14px;
   background: var(--paper);
 }
@@ -5771,13 +5771,13 @@ button {
   border-radius: 10px;
   padding: 0 10px;
   background: transparent;
-  color: #111827;
+  color: var(--ink);
   font: inherit;
   outline: none;
 }
 
 .material-input-row input[type="url"]:disabled {
-  color: #94a3b8;
+  color: var(--ink-3);
 }
 
 .file-picker-button {
@@ -5789,8 +5789,8 @@ button {
   min-width: 88px;
   padding: 0 12px;
   border-radius: 10px;
-  background: #eef3fb;
-  color: #1f4fa3;
+  background: var(--brand-purple-soft);
+  color: var(--brand-purple);
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
@@ -5820,10 +5820,10 @@ button {
   gap: 12px;
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid #dbe3ee;
+  border: 1px solid var(--line-warm);
   border-radius: 12px;
-  background: #f8fafc;
-  color: #334155;
+  background: var(--paper-tint);
+  color: var(--ink);
   font-size: 13px;
 }
 
@@ -5835,14 +5835,14 @@ button {
 }
 
 .selected-material-file span {
-  color: #64748b;
+  color: var(--ink-2);
   font-size: 12px;
   font-weight: 800;
 }
 
 .material-ingest-status {
   min-height: 20px;
-  color: #64748b;
+  color: var(--ink-2);
   font-size: 12px;
   font-weight: 700;
   line-height: 1.6;
@@ -5852,13 +5852,13 @@ button {
   display: grid;
   gap: 12px;
   padding-top: 18px;
-  border-top: 1px solid #edf1f7;
+  border-top: 1px solid var(--paper-soft);
 }
 
 .material-result-summary h2 {
   margin: 0;
   overflow-wrap: anywhere;
-  color: #0f172a;
+  color: var(--ink);
   font-size: 22px;
   line-height: 1.18;
 }
@@ -5883,7 +5883,7 @@ button {
 }
 
 .material-source-meta dt {
-  color: #64748b;
+  color: var(--ink-2);
   font-size: 12px;
   font-weight: 800;
 }
@@ -5891,7 +5891,7 @@ button {
 .material-source-meta dd {
   margin: 0;
   overflow-wrap: anywhere;
-  color: #111827;
+  color: var(--ink);
   font-size: 12px;
   font-weight: 800;
   text-align: right;
@@ -5902,7 +5902,7 @@ button {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: #f8fafc;
+  background: var(--paper-tint);
 }
 
 .material-preview-toolbar {
@@ -5912,13 +5912,13 @@ button {
   gap: 16px;
   min-height: 78px;
   padding: 14px 24px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--line-warm);
   background: var(--paper);
 }
 
 .material-preview-toolbar h2 {
   margin: 2px 0 0;
-  color: #0f172a;
+  color: var(--ink);
   font-size: 18px;
   line-height: 1.2;
 }
@@ -5933,7 +5933,7 @@ button {
 .material-reader-preview .document-surface {
   min-height: 100%;
   padding: 30px 42px;
-  border: 1px solid #dbe3ee;
+  border: 1px solid var(--line-warm);
   border-radius: 18px;
   background: var(--paper);
   box-shadow: 0 18px 48px rgba(15, 23, 42, 0.07);
@@ -5965,16 +5965,16 @@ button {
   place-content: center;
   min-height: 62vh;
   padding: 32px;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--line-soft);
   border-radius: 18px;
   background: var(--paper);
-  color: #64748b;
+  color: var(--ink-2);
   text-align: center;
 }
 
 .material-empty-preview h3 {
   margin: 0 0 10px;
-  color: #0f172a;
+  color: var(--ink);
   font-size: 24px;
 }
 
