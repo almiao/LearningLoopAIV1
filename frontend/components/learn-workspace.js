@@ -612,48 +612,6 @@ function buildTrainingCompletion(session = null, points = []) {
   };
 }
 
-const demoTrainingSummary = {
-  previousMastery: 62,
-  nextMastery: 78,
-  completedCount: 12,
-  totalCount: 12,
-  averageScore: 82,
-  durationMinutes: 14,
-  reviewInHours: 24,
-  otherReviewDocumentCount: 3,
-  pointRows: [
-    { id: "agent-core", title: "Agent 核心定义", scores: [90, 75] },
-    { id: "agent-workflow", title: "Agent vs Workflow", scores: [95, 90] },
-    { id: "agent-loop", title: "Agent Loop", scores: [55, 40] },
-    { id: "context-engineering", title: "Context Engineering", scores: [78, 85] },
-    { id: "tools-register", title: "Tools 注册", scores: [88, 75] },
-    { id: "reasoning", title: "推理范式", scores: [62, 68] },
-  ],
-  weakPoints: [
-    {
-      id: "agent-loop",
-      title: "Agent Loop",
-      wrongCount: 2,
-      diagnosis: "ReAct 与 Reflection 的区别没说清楚 · 感知-思考-行动循环的触发条件答偏",
-      conceptId: "agent-loop",
-    },
-    {
-      id: "reasoning",
-      title: "推理范式",
-      wrongCount: 1,
-      diagnosis: "CoT、ToT、ReAct 的应用场景边界模糊",
-      conceptId: "reasoning",
-    },
-  ],
-  takeaways: [
-    "AI Agent 核心公式 = LLM + Planning + Memory + Tools",
-    "Workflow 是人在做决策，Agent 是 AI 在做决策",
-    "Context Engineering 解决的是 Token 窗口下的信息管理",
-    "Memory 让 Agent 能跨步骤保持上下文连续性",
-    "Tools 注册决定了 Agent 能调用哪些外部能力",
-  ],
-};
-
 function normalizeScore(value, fallback = 0) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) {
@@ -694,51 +652,40 @@ function uniqueStrings(items = []) {
   return Array.from(new Set(items.map((item) => String(item || "").trim()).filter(Boolean)));
 }
 
+// 收尾只给真实结果与下一步（PRODUCT §3④）：没有判分就显示没有，不用 demo 数据补位。
 function buildTrainingCompletionSummary({
   session = null,
   points = [],
   exchanges = [],
   documentTitle = "",
-  progressEntry = null,
 } = {}) {
   const pointRows = (points || []).map((point, pointIndex) => {
-    const checkpointScores = (point.checkpoints || []).map((checkpoint, checkpointIndex) => {
+    const scores = (point.checkpoints || []).map((checkpoint) => {
       const state = session?.conceptStates?.[checkpoint.id] || {};
       const judgeScore = state?.judge?.score;
       const exchange = exchanges.find((item) => item.checkpointStatement === checkpoint.statement || item.checkpointStatement === checkpoint.checkpointStatement);
-      return normalizeScore(judgeScore ?? exchange?.scoreSummary?.score, demoTrainingSummary.pointRows[pointIndex]?.scores?.[checkpointIndex] ?? 0);
+      return normalizeScore(judgeScore ?? exchange?.scoreSummary?.score, 0);
     }).filter((score) => score > 0);
-    const fallback = demoTrainingSummary.pointRows[pointIndex] || {};
-    const scores = checkpointScores.length ? checkpointScores : (fallback.scores || [0, 0]);
     return {
-      id: point.id || fallback.id || `point-${pointIndex}`,
-      title: point.title || fallback.title || `训练点 ${pointIndex + 1}`,
+      id: point.id || `point-${pointIndex}`,
+      title: point.title || `训练点 ${pointIndex + 1}`,
       conceptIds: (point.checkpoints || []).map((checkpoint) => checkpoint.id).filter(Boolean),
       scores,
       average: scores.length ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : 0,
     };
   });
 
-  const rows = pointRows.length ? pointRows : demoTrainingSummary.pointRows.map((row) => ({
-    ...row,
-    average: Math.round(row.scores.reduce((sum, score) => sum + score, 0) / row.scores.length),
-    conceptIds: [row.id],
-  }));
-  const allScores = rows.flatMap((row) => row.scores).filter((score) => score > 0);
-  const completedCount = allScores.length || demoTrainingSummary.completedCount;
-  const totalCount = Math.max(
-    completedCount,
-    points.flatMap((point) => point.checkpoints || []).length || demoTrainingSummary.totalCount
-  );
+  const rows = pointRows.filter((row) => row.scores.length);
+  const allScores = rows.flatMap((row) => row.scores);
+  const completedCount = allScores.length;
+  const totalCount = Math.max(completedCount, points.flatMap((point) => point.checkpoints || []).length);
   const averageScore = allScores.length
     ? Math.round(allScores.reduce((sum, score) => sum + score, 0) / allScores.length)
-    : demoTrainingSummary.averageScore;
+    : 0;
   const timestamps = (session?.turns || []).map((turn) => Number(turn.timestamp || 0)).filter((value) => value > 0);
   const durationMinutes = timestamps.length >= 2
     ? Math.max(1, Math.round((Math.max(...timestamps) - Math.min(...timestamps)) / 60000))
-    : demoTrainingSummary.durationMinutes;
-  const nextMastery = normalizeScore(progressEntry?.masteryPercentage, demoTrainingSummary.nextMastery);
-  const previousMastery = normalizeScore(progressEntry?.previousMasteryPercentage, Math.max(0, nextMastery - 16 || demoTrainingSummary.previousMastery));
+    : 0;
   const weakRows = rows
     .filter((row) => row.average < 70 || row.scores.some((score) => score < 60))
     .map((row) => {
@@ -748,30 +695,23 @@ function buildTrainingCompletionSummary({
         id: row.id,
         title: row.title,
         wrongCount: row.scores.filter((score) => score < 60).length || 1,
-        diagnosis: reasons.slice(0, 2).join(" · ") || demoTrainingSummary.weakPoints.find((item) => item.id === row.id)?.diagnosis || "关键概念边界还不够稳定，需要用错题再压实一遍。",
+        diagnosis: reasons.slice(0, 2).join(" · ") || "关键点还没讲到位，需要再练一轮压实。",
         conceptId: row.conceptIds[0] || row.id,
       };
     });
-  const takeaways = uniqueStrings([
-    ...exchanges.map((exchange) => exchange.takeaway),
-    ...demoTrainingSummary.takeaways,
-  ]).slice(0, 8);
+  const takeaways = uniqueStrings(exchanges.map((exchange) => exchange.takeaway)).slice(0, 8);
 
   return {
-    documentTitle: documentTitle || "一文搞懂 AI Agent 核心概念",
-    previousMastery,
-    nextMastery,
-    masteryDelta: Math.max(0, nextMastery - previousMastery),
-    masteryGap: Math.max(0, 90 - nextMastery),
+    documentTitle: documentTitle || "本次训练",
+    drilledPointCount: rows.length,
+    passedPointCount: Math.max(0, rows.length - weakRows.length),
     completedCount,
     totalCount,
     averageScore,
     durationMinutes,
     pointRows: rows,
-    weakPoints: weakRows.length ? weakRows : demoTrainingSummary.weakPoints,
+    weakPoints: weakRows,
     takeaways,
-    reviewInHours: demoTrainingSummary.reviewInHours,
-    otherReviewDocumentCount: demoTrainingSummary.otherReviewDocumentCount,
   };
 }
 
@@ -1409,7 +1349,7 @@ function buildTrainingOverview(session = null) {
   };
 }
 
-function TrainingOverviewCard({ session, currentQuestion, mastery }) {
+function TrainingOverviewCard({ session, currentQuestion }) {
   const overview = buildTrainingOverview(session);
   const points = overview.points;
   const states = overview.states;
@@ -1438,10 +1378,6 @@ function TrainingOverviewCard({ session, currentQuestion, mastery }) {
         <div>
           <span>本轮平均</span>
           <strong>{overview.averageScore || "—"}</strong>
-        </div>
-        <div>
-          <span>掌握度</span>
-          <strong className="mastery">{`${mastery}%`}</strong>
         </div>
       </div>
     </section>
@@ -1672,10 +1608,10 @@ function NextQuestionCard({ question, answer, setAnswer, isAnswering, onSubmit, 
   );
 }
 
-function TrainingAssistantRail({ session, currentQuestion, stats, mastery }) {
+function TrainingAssistantRail({ session, currentQuestion, stats }) {
   return (
     <aside className="ll-training-rail" data-testid="qa-panel">
-      <TrainingOverviewCard session={session} currentQuestion={currentQuestion} mastery={mastery} />
+      <TrainingOverviewCard session={session} currentQuestion={currentQuestion} />
       <section className="ll-rail-card">
         <h3>本训练点表现</h3>
         <div className="ll-performance-number">
@@ -1760,7 +1696,6 @@ function RescuePlaylistStrip({
 
 function TrainingWorkspace({
   documentTitle,
-  mastery,
   session,
   exchanges,
   currentQuestion,
@@ -1830,58 +1765,30 @@ function TrainingWorkspace({
           session={session}
           currentQuestion={currentQuestion}
           stats={stats}
-          mastery={mastery}
         />
       </section>
     </main>
   );
 }
 
-function AnimatedMasteryValue({ from, to, onComplete }) {
-  const [value, setValue] = useState(from);
-
-  useEffect(() => {
-    let frameId = 0;
-    const startedAt = performance.now();
-    const duration = 1500;
-    function tick(now) {
-      const progress = Math.min(1, (now - startedAt) / duration);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setValue(Math.round(from + (to - from) * eased));
-      if (progress < 1) {
-        frameId = window.requestAnimationFrame(tick);
-      } else {
-        onComplete?.();
-      }
-    }
-    frameId = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frameId);
-  }, [from, onComplete, to]);
-
-  return (
-    <strong className="ll-summary-new-value">
-      {value}
-      <span>%</span>
-    </strong>
-  );
-}
-
 function TrainingSummaryHero({ summary }) {
-  const [deltaVisible, setDeltaVisible] = useState(false);
   return (
     <section className="ll-summary-hero">
       <div className="ll-summary-chip">
         <MiniIcon name="confetti" />
         本轮训练完成
       </div>
-      <p>这份文档的掌握度</p>
+      <p>{summary.drilledPointCount ? `这轮一共练了 ${summary.drilledPointCount} 个点` : "这轮还没有可判分的回答"}</p>
       <div className="ll-summary-mastery-row">
-        <span className="ll-summary-old-value">{summary.previousMastery}%</span>
-        <MiniIcon name="arrow-right" />
-        <AnimatedMasteryValue from={summary.previousMastery} to={summary.nextMastery} onComplete={() => setDeltaVisible(true)} />
-        <span className={deltaVisible ? "ll-summary-delta visible" : "ll-summary-delta"}>{`+${summary.masteryDelta}`}</span>
+        <strong className="ll-summary-outcome is-passed">{`过线 ${summary.passedPointCount}`}</strong>
+        <span className="ll-summary-outcome-divider" aria-hidden="true">·</span>
+        <strong className="ll-summary-outcome is-review">{`进复习账本 ${summary.weakPoints.length}`}</strong>
       </div>
-      <small>{`距离掌握(90%)还差 ${summary.masteryGap} 分 · 通常 1 轮训练能补上`}</small>
+      <small>
+        {summary.weakPoints.length
+          ? "进账本的点到期后会出现在首页「今日复习」。"
+          : "这轮没有新的薄弱点进账本。"}
+      </small>
     </section>
   );
 }
@@ -1990,7 +1897,7 @@ function TomorrowReviewBanner({ summary, onReviewPlan, onDismiss }) {
       </div>
       <div>
         <h2>明天还有事</h2>
-        <p>{`${summary.weakPoints.length} 处薄弱点会在 ${summary.reviewInHours} 小时后再来一次，趁记忆新鲜补上 · 另有 ${summary.otherReviewDocumentCount} 份其他文档到了复习周期`}</p>
+        <p>{`${summary.weakPoints.length} 处薄弱点已写进复习账本，到期会出现在首页「今日复习」，趁记忆新鲜补上。`}</p>
         <div>
           <button type="button" onClick={onReviewPlan}>查看复习计划</button>
           <button type="button" onClick={onDismiss}>关闭提醒</button>
@@ -2010,7 +1917,7 @@ function TrainingSharePanel({ summary, onClose }) {
         </div>
         <div className="ll-summary-share-card">
           <span>{summary.documentTitle}</span>
-          <strong>{`掌握度 ${summary.previousMastery}% → ${summary.nextMastery}%`}</strong>
+          <strong>{`本轮 ${summary.completedCount} 题 · 过线 ${summary.passedPointCount}/${summary.drilledPointCount} 个点`}</strong>
           <p>{summary.takeaways.slice(0, 3).join(" / ")}</p>
         </div>
         <p>分享内容只展示你的学习成果，不包含产品宣传。</p>
@@ -2039,10 +1946,10 @@ function TrainingCompletionSummaryPage({
       <div className="ll-summary-body">
         <TrainingSummaryHero summary={summary} />
         <TrainingSummaryMetricGrid summary={summary} />
-        <TrainingPointDistribution rows={summary.pointRows} />
-        <WeakPointActions weakPoints={summary.weakPoints} onReviewWeakPoint={onReviewWeakPoint} />
-        <TakeawayCards takeaways={summary.takeaways} />
-        {tomorrowVisible ? (
+        {summary.pointRows.length ? <TrainingPointDistribution rows={summary.pointRows} /> : null}
+        {summary.weakPoints.length ? <WeakPointActions weakPoints={summary.weakPoints} onReviewWeakPoint={onReviewWeakPoint} /> : null}
+        {summary.takeaways.length ? <TakeawayCards takeaways={summary.takeaways} /> : null}
+        {tomorrowVisible && summary.weakPoints.length ? (
           <TomorrowReviewBanner
             summary={summary}
             onReviewPlan={onReviewPlan}
@@ -2572,7 +2479,6 @@ export function LearnWorkspace() {
       trainingCheckpointProgressLabel: activeDocumentProgressEntry?.trainingCheckpointProgressLabel || "",
       trainingAnswerCount: activeDocumentProgressEntry?.trainingAnswerCount || 0,
       assessedConceptCount: activeDocumentProgressEntry?.assessedConceptCount || 0,
-      masteryPercentage: activeDocumentProgressEntry?.masteryPercentage || 0,
       lastActivityAt: activeDocumentProgressEntry?.lastActivityAt || "",
       ignored: isDocumentIgnored,
     }),
@@ -2651,9 +2557,8 @@ export function LearnWorkspace() {
       points: docConcepts,
       exchanges: trainingExchanges,
       documentTitle,
-      progressEntry: activeDocumentProgressEntry,
     }),
-    [activeDocPath, activeDocumentProgressEntry, docConcepts, documentTitle, session, trainingExchanges]
+    [activeDocPath, docConcepts, documentTitle, session, trainingExchanges]
   );
   const trainingSystemStatus = useMemo(() => buildTrainingStatus({
     isStarting: isPreparingTraining,
@@ -4148,7 +4053,6 @@ export function LearnWorkspace() {
     return (
       <TrainingWorkspace
         documentTitle={documentTitle}
-        mastery={Number(activeDocumentProgressEntry?.masteryPercentage || activeDocumentProgressEntry?.progressPercentage || 0)}
         session={session}
         exchanges={trainingExchanges}
         currentQuestion={currentTrainingQuestion}

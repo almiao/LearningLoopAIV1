@@ -3248,47 +3248,23 @@ button {
   min-height: 58px;
 }
 
-.ll-summary-old-value {
+.ll-summary-outcome {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.ll-summary-outcome.is-passed {
+  color: #0f6e56;
+}
+
+.ll-summary-outcome.is-review {
+  color: #ba4747;
+}
+
+.ll-summary-outcome-divider {
   color: #888780;
-  font-size: 13px;
-  text-decoration: line-through;
-}
-
-.ll-summary-mastery-row > svg {
-  color: #63635e;
-}
-
-.ll-summary-new-value {
-  color: #0f6e56;
-  font-size: 38px;
-  font-weight: 600;
-  letter-spacing: -0.04em;
-}
-
-.ll-summary-new-value span {
-  margin-left: 2px;
-  font-size: 18px;
-  letter-spacing: 0;
-}
-
-.ll-summary-delta {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: #e1f5ee;
-  color: #0f6e56;
-  font-size: 13px;
-  font-weight: 600;
-  opacity: 0;
-  transform: translateY(4px);
-  transition: opacity 240ms ease, transform 240ms ease;
-}
-
-.ll-summary-delta.visible {
-  opacity: 1;
-  transform: translateY(0);
+  font-size: 22px;
 }
 
 .ll-summary-hero small {
