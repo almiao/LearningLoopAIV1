@@ -185,9 +185,6 @@ export function ProfileDashboard() {
                   <span className={`goal-pill ${progressTone(document.progressPercentage || 0)}`}>
                     阅读 {document.readingLabel || "未读"}
                   </span>
-                  <span className={`goal-pill ${progressTone(document.masteryPercentage || 0)}`}>
-                    掌握 {document.masteryPercentage || 0}%
-                  </span>
                 </div>
               </article>
             )) : (

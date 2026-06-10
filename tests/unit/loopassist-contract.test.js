@@ -37,21 +37,13 @@ test("LoopAssist interview room keeps side panel transcript-only", async () => {
   const transcriptAside = source.slice(transcriptAsideStart, source.indexOf("</aside>", transcriptAsideStart));
 
   assert.match(source, /synthesizeLoopAssistSpeech/);
-  assert.match(source, /createRealtimeSession/);
-  assert.match(source, /mode: "assist_interviewer"/);
-  assert.match(source, /createLivekitTransport\(\{ sessionId: realtimeSession\.sessionId \}\)/);
-  assert.match(source, /transport\.livekitUrl/);
-  assert.match(source, /transport\.participantToken/);
-  assert.doesNotMatch(source, /transport\.url|transport\.token/);
-  assert.match(source, /仅支持语音回答/);
-  assert.match(source, /loopassist-start-answer/);
-  assert.match(source, /loopassist-finish-answer/);
+  // realtime / livekit 语音链路已按 PRODUCT §7 移出主仓库，禁止回流
+  assert.doesNotMatch(source, /createRealtimeSession|createLivekitTransport|livekitUrl|participantToken/);
+  assert.match(source, /ttsStatus/);
   assert.match(source, /loopassist-scope-toggle/);
   assert.match(source, /loopassist-interview-record/);
   assert.match(source, /loopassist-latest-interview-record/);
   assert.match(source, /loopassist-scope-popover/);
-  assert.match(source, /ttsStatus/);
-  assert.match(source, /answerSegmentsRef/);
   assert.doesNotMatch(source, /submitVoiceAnswer\(finalText\)/);
   assert.match(source, /loopassist-resume-text/);
   assert.match(source, /loopassist-use-saved-resume/);
@@ -62,7 +54,6 @@ test("LoopAssist interview room keeps side panel transcript-only", async () => {
   assert.match(source, /outlineCtaBadge/);
   assert.match(source, /loopassist-plan/);
   assert.doesNotMatch(source, /typedAnswer|manualFallback|文字兜底/);
-  assert.match(source, /loopassist-toggle-text-mode/);
   assert.match(source, /loopassist-text-answer-input/);
   assert.doesNotMatch(source, /即时回答支架|本轮节奏|answerScaffold|prepGoals|loopassist-stage-list|loopassist-mode-panel/);
   assert.match(source, /loopassist-history-drawer/);

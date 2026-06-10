@@ -39,7 +39,6 @@ function buildReasonWithLastActivity(baseReason, timestamp = "") {
 
 export function buildReentryPlan(document = {}) {
   const progressPercentage = clampPercentage(document.progressPercentage);
-  const masteryPercentage = clampPercentage(document.masteryPercentage);
   const checkpointProgressLabel = String(document.trainingCheckpointProgressLabel || "").trim();
   const readingPreview = String(document.readingPreview || "").trim();
   const readingChapter = String(document.readingChapter || "").trim();
@@ -133,7 +132,7 @@ export function buildReentryPlan(document = {}) {
   }
 
   if (document.trainingCompleted) {
-    if (hasTrainingEvidence || masteryPercentage > 0) {
+    if (hasTrainingEvidence) {
       return {
         intent: "quick_review",
         stageLabel: "快速复习",

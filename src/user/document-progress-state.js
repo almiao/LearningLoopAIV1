@@ -132,9 +132,6 @@ function buildLearningStatusLabel(entry = {}) {
     return "仅阅读";
   }
   if ((entry.assessedConceptCount || 0) > 0) {
-    if ((entry.masteryPercentage || 0) >= 75) {
-      return "已掌握";
-    }
     return "训练中";
   }
   if (entry.trainingStarted) {

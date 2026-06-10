@@ -12,8 +12,8 @@ const rootLibraryKey = "root";
 
 const groupMeta = {
   reading: { label: "在读", defaultExpanded: true },
-  review: { label: "待复习", defaultExpanded: true },
-  mastered: { label: "已掌握", defaultExpanded: false },
+  review: { label: "练习中", defaultExpanded: true },
+  finished: { label: "已读完", defaultExpanded: false },
   unstarted: { label: "未学", defaultExpanded: false },
 };
 
@@ -156,21 +156,27 @@ function buildStageState(progress = {}) {
   return { study, practice };
 }
 
+// 源层只许有覆盖事实（读完/收尾），不许有 per-doc 掌握态（PRODUCT §4）。
+// "已掌握" 是旧标签，按"已读完"覆盖事实迁移。
 function getDocumentGroup(progress = {}) {
-  const masteryPercentage = normalizePercentage(progress.masteryPercentage);
   const progressPercentage = normalizePercentage(progress.progressPercentage);
   const learningStatus = progress.learningStatusLabel || "";
 
-  if (masteryPercentage >= 75 || learningStatus === "已掌握" || learningStatus === "训练完成") {
-    return "mastered";
+  if (
+    progress.trainingCompleted
+    || progress.trainingSkipped
+    || learningStatus === "训练完成"
+    || learningStatus === "已跳过"
+    || learningStatus === "已掌握"
+    || (learningStatus === "仅阅读" && progressPercentage >= 100)
+  ) {
+    return "finished";
   }
   if (
     progressPercentage >= 100
     || progress.trainingStarted
     || learningStatus === "训练中"
     || learningStatus === "已开启训练"
-    || learningStatus === "已跳过"
-    || learningStatus === "仅阅读"
   ) {
     return "review";
   }
@@ -184,17 +190,13 @@ function getSignalColor(document) {
   if (document.ignored) {
     return "#888780";
   }
-  if (document.group === "mastered") {
+  if (document.group === "finished") {
     return "#1D9E75";
   }
   if (document.group === "unstarted") {
     return "#888780";
   }
-  const effectivePercentage = document.masteryPercentage > 0
-    ? document.masteryPercentage
-    : document.progressPercentage;
-
-  if (effectivePercentage >= 40) {
+  if (document.progressPercentage >= 40) {
     return "#BA7517";
   }
   return "#E27272";
@@ -203,9 +205,6 @@ function getSignalColor(document) {
 function getSidebarMetric(document) {
   if (document.ignored) {
     return "忽略";
-  }
-  if (document.masteryPercentage > 0) {
-    return `${document.masteryPercentage}%`;
   }
   if (document.progressPercentage > 0) {
     return `${document.progressPercentage}%`;
@@ -217,8 +216,8 @@ function getHeroMetric(document) {
   if (document.ignored) {
     return "已忽略";
   }
-  if (document.masteryPercentage > 0) {
-    return `掌握 ${document.masteryPercentage}%`;
+  if (document.group === "finished") {
+    return "已读完";
   }
   return `阅读 ${document.progressPercentage}%`;
 }
@@ -468,15 +467,15 @@ function sortDocuments(documents = []) {
 
 function aggregateFolderCounts(documents = []) {
   return documents.reduce((summary, document) => {
-    if (document.group === "mastered") {
-      summary.mastered += 1;
+    if (document.group === "finished") {
+      summary.finished += 1;
     } else if (document.group === "unstarted") {
       summary.unstarted += 1;
     } else {
       summary.active += 1;
     }
     return summary;
-  }, { mastered: 0, active: 0, unstarted: 0 });
+  }, { finished: 0, active: 0, unstarted: 0 });
 }
 
 function createLibraryNode({ key, label, path, level }) {
@@ -490,7 +489,7 @@ function createLibraryNode({ key, label, path, level }) {
     allDocuments: [],
     documentCount: 0,
     aggregate: {
-      mastered: 0,
+      finished: 0,
       active: 0,
       unstarted: 0,
     },
@@ -567,13 +566,11 @@ function buildLibraryTree(documents = []) {
 function buildSidebarDocument(document, progressEntries = {}, options = {}) {
   const progress = progressEntries?.[document.path] || {};
   const progressPercentage = normalizePercentage(progress.progressPercentage);
-  const masteryPercentage = normalizePercentage(progress.masteryPercentage);
   const group = getDocumentGroup({
     ...progress,
     progressPercentage,
     readingPreview: progress.readingPreview || "",
     readingChapter: progress.readingChapter || "",
-    masteryPercentage,
   });
   const repoLabel = document.providerLabel || "未命名仓库";
 
@@ -588,7 +585,6 @@ function buildSidebarDocument(document, progressEntries = {}, options = {}) {
     folderLabels: document.folderLabels || [],
     libraryPath: [repoLabel, ...flattenLibrarySegments(document.folderLabels || [])],
     progressPercentage,
-    masteryPercentage,
     learningStatusLabel: progress.learningStatusLabel || "未训练",
     readingLabel: progress.readingLabel || "未读",
     trainingStarted: Boolean(progress.trainingStarted),
@@ -648,13 +644,13 @@ function StageChip({ label, state }) {
 }
 
 function FolderAggregateBar({ aggregate, total }) {
-  const masteredWidth = total ? (aggregate.mastered / total) * 100 : 0;
+  const finishedWidth = total ? (aggregate.finished / total) * 100 : 0;
   const activeWidth = total ? (aggregate.active / total) * 100 : 0;
   const unstartedWidth = total ? (aggregate.unstarted / total) * 100 : 0;
 
   return (
     <div className="ll-folder-progress" aria-hidden="true">
-      <span style={{ width: `${masteredWidth}%`, background: "#1D9E75" }} />
+      <span style={{ width: `${finishedWidth}%`, background: "#1D9E75" }} />
       <span style={{ width: `${activeWidth}%`, background: "#BA7517" }} />
       <span style={{ width: `${unstartedWidth}%`, background: "#DAD9D4" }} />
     </div>
@@ -677,7 +673,7 @@ function FolderCard({ node, onOpen }) {
         </div>
         <strong>{node.label}</strong>
         <FolderAggregateBar aggregate={node.aggregate} total={node.documentCount} />
-        <p>{`已掌握 ${node.aggregate.mastered} · 在读 ${node.aggregate.active} · 未学 ${node.aggregate.unstarted}`}</p>
+        <p>{`已读完 ${node.aggregate.finished} · 在读 ${node.aggregate.active} · 未学 ${node.aggregate.unstarted}`}</p>
       </div>
     </button>
   );
@@ -710,7 +706,7 @@ function LibraryDocumentCard({ document, active, managementMode, onOpen, onToggl
       <p>{`${document.providerLabel} / ${document.folderLabels.join(" / ") || "资料库"}`}</p>
       <div className="ll-library-document-foot">
         <span className={`ll-library-status tone-${document.group}`}>{groupMeta[document.group].label}</span>
-        <span>{document.ignored ? "默认隐藏" : document.masteryPercentage > 0 ? `掌握 ${document.masteryPercentage}%` : document.readingLabel}</span>
+        <span>{document.ignored ? "默认隐藏" : document.readingLabel}</span>
       </div>
       {managementMode ? (
         <button
@@ -1396,7 +1392,7 @@ export function HomePage() {
   const groupedDocuments = useMemo(() => ({
     reading: filteredDocuments.filter((document) => document.group === "reading"),
     review: filteredDocuments.filter((document) => document.group === "review"),
-    mastered: filteredDocuments.filter((document) => document.group === "mastered"),
+    finished: filteredDocuments.filter((document) => document.group === "finished"),
     unstarted: filteredDocuments.filter((document) => document.group === "unstarted"),
   }), [filteredDocuments]);
 
@@ -1418,7 +1414,7 @@ export function HomePage() {
     }
     return candidatePool.find((document) => document.group === "reading")
       || candidatePool.find((document) => document.group === "review")
-      || candidatePool.find((document) => document.group === "mastered")
+      || candidatePool.find((document) => document.group === "finished")
       || candidatePool.find((document) => document.group === "unstarted")
       || filteredDocuments.find((document) => !isRecommendationSnoozed(document))
       || candidatePool[0]
