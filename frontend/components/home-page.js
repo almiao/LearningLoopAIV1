@@ -1589,7 +1589,7 @@ export function HomePage() {
           </button>
           <Link href="/loopassist" className="ll-interview-button">
             <span aria-hidden="true">AI</span>
-            <span>LoopAssist</span>
+            <span>面试模式</span>
           </Link>
           <AvatarMenu
             open={avatarOpen}

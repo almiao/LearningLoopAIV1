@@ -2063,6 +2063,13 @@ export function LoopAssistWorkspace() {
                     {rescueCompleted ? "查看补救清单" : rescuePlaylist?.id && rescueRemainingCount < rescueTotalCount ? "继续补救" : "开始补救"}
                   </button>
                 </section>
+                <section className="loopassist-review-ledger-note" data-testid="loopassist-ledger-note">
+                  <div className="loopassist-review-ledger-copy">
+                    <span>失败账本</span>
+                    <p>这轮没答出的点已写进你的复习账本，到期会出现在首页「今日复习」——面试结束，残渣留下。</p>
+                  </div>
+                  <Link href="/" className="loopassist-review-ledger-link">回首页看今日复习 →</Link>
+                </section>
                 <div className="section-head">
                   <div className="eyebrow">能力分布</div>
                   <h2>哪一块最薄弱，一眼看清</h2>
