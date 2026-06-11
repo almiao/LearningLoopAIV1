@@ -67,13 +67,14 @@ test("LoopAssist interview room keeps side panel transcript-only", async () => {
 test("LoopAssist TTS is proxied through the local worker", async () => {
   const workerSource = await readFile(`${root}/ai-service/app/loopassist/tts_worker.py`, "utf8");
   const bffSource = await readFile(`${root}/bff/src/server.js`, "utf8");
+  const bffProxySource = await readFile(`${root}/bff/src/lib/service-proxy.js`, "utf8");
   const clientSource = await readFile(`${root}/frontend/lib/loopassist-api.js`, "utf8");
   const startScript = await readFile(`${root}/scripts/start-services.mjs`, "utf8");
 
   assert.match(workerSource, /@app\.post\("\/api\/tts"\)/);
   assert.match(workerSource, /@app\.post\("\/api\/warmup"\)/);
   assert.match(workerSource, /synthesize_loopassist_tts/);
-  assert.match(bffSource, /TTS_SERVICE_URL/);
+  assert.match(bffProxySource, /TTS_SERVICE_URL/);
   assert.match(bffSource, /proxyBinary\(ttsServiceUrl, "POST", "\/api\/tts"/);
   assert.match(clientSource, /synthesizeLoopAssistSpeech/);
   assert.match(startScript, /tts-worker/);
