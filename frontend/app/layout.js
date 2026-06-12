@@ -1,3 +1,4 @@
+import "./design-system.css";
 import "./globals.css";
 
 export const metadata = {
