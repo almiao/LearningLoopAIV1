@@ -87,8 +87,8 @@ test("learn workspace shows training preparation feedback immediately", async ({
 
   await expect(page.getByTestId("qa-panel")).toContainText("训练");
   await expect(page.getByTestId("training-prep-card")).toContainText("正在准备训练");
-  await expect(page.locator(".ll-training-rail")).toContainText("系统状态");
-  await expect(page.locator(".ll-training-rail")).toContainText("正在拆解文档训练点");
+  await expect(page.locator(".ll-training-rail")).toContainText("当前进度");
+  await expect(page.locator(".ll-training-rail")).toContainText("总进度");
   await expect(page.locator(".ll-training-rail")).toContainText("本训练点表现");
   await expect(page.locator("body")).not.toContainText("当前没有新的题目。");
 });
@@ -131,16 +131,20 @@ test("learn workspace lets users complete a read document by skipping training",
   expect(progressResponse.ok()).toBeTruthy();
 
   await page.goto(`/learn?doc=${encodeURIComponent(agentDocPath)}`, { waitUntil: "networkidle" });
-  await expect(page.getByTestId("qa-panel")).toContainText("已读完 · 开始训练");
+  // 读完未训练 → 训练提醒卡（已替代旧的「已读完 · 开始训练」横幅）。
+  const reminder = page.getByTestId("reading-reentry-card");
+  await expect(reminder).toBeVisible();
+  await expect(reminder).toContainText("开始这轮训练");
   await page.locator(".reader-body").evaluate((node) => {
     node.scrollTop = node.scrollHeight;
     node.dispatchEvent(new Event("scroll", { bubbles: true }));
   });
-  await expect(page.getByTestId("qa-panel")).toContainText("已读完 · 开始训练");
+  await expect(reminder).toContainText("开始这轮训练");
   await expect(page.getByTestId("qa-panel").getByTestId("document-completion-card")).toHaveCount(0);
   await page.getByRole("button", { name: "更多" }).click();
   await page.getByRole("button", { name: "标记为仅阅读完成" }).click();
-  await expect(page.getByTestId("qa-panel")).toContainText("已按仅阅读完成收尾 · 重新开启训练");
+  // 收尾后提醒变为补练入口。
+  await expect(page.getByTestId("qa-panel")).toContainText("补上这轮训练");
 });
 
 test("learn workspace auto-expands the right panel after interaction and still supports manual resize", async ({ page, request }, testInfo) => {

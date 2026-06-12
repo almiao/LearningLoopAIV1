@@ -158,7 +158,6 @@ test("pdf documents stay in the standard reader workspace instead of switching t
   await expect(page.getByTestId("qa-panel")).toBeVisible();
   await expect(page.getByTestId("pdf-stage")).toBeVisible();
   await expect(page.locator(".react-pdf__Page__canvas").first()).toBeVisible();
-  await expect(page.locator(".reader-zoom-value")).toHaveText("100%");
 
   const widths = await page.evaluate(() => {
     const reader = document.querySelector("[data-testid='reader-panel']");
@@ -181,16 +180,7 @@ test("pdf documents stay in the standard reader workspace instead of switching t
   const initialCanvasWidth = await page.locator(".react-pdf__Page__canvas").first().evaluate((node) => node.getBoundingClientRect().width);
   expect(initialCanvasWidth).toBeGreaterThan(800);
 
-  await page.getByRole("button", { name: "放大阅读内容" }).click();
-  await expect(page.locator(".reader-zoom-value")).toHaveText("110%");
-  await expect.poll(async () => (
-    page.locator(".react-pdf__Page__canvas").first().evaluate((node) => node.getBoundingClientRect().width)
-  )).toBeGreaterThan(initialCanvasWidth);
-
-  for (let index = 0; index < 9; index += 1) {
-    await page.getByRole("button", { name: "放大阅读内容" }).click();
-  }
-  await expect(page.locator(".reader-zoom-value")).toHaveText("200%");
+  // 缩放工具条已从阅读器移除；这里只验证默认布局下画布不溢出阅读面板。
   const overflow = await page.evaluate(() => {
     const reader = document.querySelector("[data-testid='reader-panel']");
     const stage = document.querySelector(".pdf-canvas-stage");
