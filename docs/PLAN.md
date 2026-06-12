@@ -5,9 +5,9 @@
 ## 第一阶段：功能收尾 + 业务流程验收（进行中）
 
 1. ~~修存量失败 e2e~~ ✅ 全量 42 过 0 失败（df4830a）
-2. 出题类型补全：**基于简历 / 基于 JD / 基于面经**是三种独立出题类型（面经类型尚不存在；简历目前只在拆 JD 时交叉，不是独立类型）。方案先与用户对齐再动手
-3. 逐页面走查验收：技术面已过（7 页零报错零失败请求）；交互手感待用户亲验；冲刺全路径补 e2e（campaign.pw.spec.js）
-4. Practice 合并（learn-workspace + loopassist-workspace 合一）：先出方案（组件边界/路由/状态迁移）给用户确认，确认后单独一刀
+2. 出题类型补全：**基于简历 / 基于 JD / 基于面经**三种独立出题类型，随 Practice 合并第 2 步落地（方案见 [designs/practice-merge-v1.md](designs/practice-merge-v1.md) §4）
+3. 逐页面走查验收：技术面已过（7 页零报错零失败请求）；交互手感待用户亲验；~~冲刺全路径补 e2e~~ ✅ campaign.pw.spec.js（e8cacf0）
+4. Practice 合并：方案已定稿（[designs/practice-merge-v1.md](designs/practice-merge-v1.md)，2026-06-12 用户确认）——四步渐进：①拆文件 ②PracticeShell+三种出题类型 ③learn 训练接入 ④模拟面试对接。**模拟面试保持一级产品点**（入口与仪式不动，只换内核）；雷达复盘报告本次不动；1→2 连做，3、4 各单独一刀
 
 ## 第二阶段：UI 整体统一（前置：Practice 合并完成）
 
