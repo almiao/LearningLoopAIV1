@@ -12,7 +12,7 @@
     "restart:full": "bash stop-services.sh && npm run build && bash start-services.sh",
     "build": "node scripts/project-tools.mjs build",
     "migrate:materials:v2": "node scripts/migrate-legacy-materials.mjs",
-    "e2e:web:start-frontend": "npm run build --prefix frontend && sh -c 'cd frontend && node node_modules/next/dist/bin/next start -p ${E2E_FRONTEND_PORT:-13000}'",
+    "e2e:web:start-frontend": "NEXT_DIST_DIR=.next-e2e npm run build --prefix frontend && sh -c 'cd frontend && NEXT_DIST_DIR=.next-e2e node node_modules/next/dist/bin/next start -p ${E2E_FRONTEND_PORT:-13000}'",
     "test:e2e:browser": "playwright test",
     "test:e2e:browser:update": "playwright test --update-snapshots=all",
     "test:e2e:browser:headed": "playwright test --headed",

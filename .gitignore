@@ -9,6 +9,7 @@
 /frontend/node_modules/
 /node_modules/
 /frontend/.next/
+/frontend/.next-e2e/
 /frontend/out/
 /frontend/dist/
 /frontend/build/
@@ -30,3 +31,4 @@ __pycache__/
 playwright-report/
 test-results/
 .gstack/
+.DS_Store
