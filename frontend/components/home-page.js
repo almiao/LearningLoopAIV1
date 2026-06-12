@@ -1,215 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, postJson } from "../lib/api";
 import { buildReentryPlan } from "../lib/reentry-actions";
 import { getStoredUserId, setStoredUserId } from "../lib/user-session";
+import {
+  buildLearningHref,
+  buildSidebarDocument,
+  formatLastActivity,
+  getSignalColor,
+  getTypeIcon,
+} from "./library/shared";
 
 const profileDirtyStorageKey = "learning-loop-profile-dirty-at";
-const rootLibraryKey = "root";
-
-const groupMeta = {
-  reading: { label: "在读", defaultExpanded: true },
-  review: { label: "练习中", defaultExpanded: true },
-  finished: { label: "已读完", defaultExpanded: false },
-  unstarted: { label: "未学", defaultExpanded: false },
-};
-
-const addMaterialOptions = [
-  {
-    key: "upload",
-    title: "上传 PDF",
-    description: "把课件、论文或文档直接放进资料库。",
-    href: "/materials?source=upload",
-  },
-  {
-    key: "link",
-    title: "粘贴链接",
-    description: "保存网页、博客或官方文档，后续继续学。",
-    href: "/materials?source=link",
-  },
-  {
-    key: "note",
-    title: "写笔记",
-    description: "把自己的零散理解先沉淀成一份材料。",
-    href: "/materials?source=note",
-  },
-];
 
 function getInitials(name) {
   return String(name || "L").trim().slice(0, 1).toUpperCase() || "L";
-}
-
-function compareIsoTimestamp(left = "", right = "") {
-  return String(left || "").localeCompare(String(right || ""));
-}
-
-function normalizePercentage(value) {
-  const numericValue = Number(value || 0);
-  if (!Number.isFinite(numericValue)) {
-    return 0;
-  }
-  return Math.max(0, Math.min(100, Math.round(numericValue)));
-}
-
-function daysAgo(timestamp = "") {
-  if (!timestamp) {
-    return null;
-  }
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  const diffMs = Date.now() - date.getTime();
-  return Math.max(0, Math.floor(diffMs / (24 * 60 * 60 * 1000)));
-}
-
-function formatDaysAgoLabel(timestamp = "") {
-  const value = daysAgo(timestamp);
-  if (value === null) {
-    return "刚收进资料库";
-  }
-  if (value <= 0) {
-    return "今天";
-  }
-  return `${value} 天前`;
-}
-
-function formatLastActivity(timestamp = "") {
-  const value = daysAgo(timestamp);
-  if (value === null) {
-    return "未开始";
-  }
-  return `上次学习 ${value <= 0 ? "今天" : `${value} 天前`}`;
-}
-
-function getTitleFromPath(docPath = "") {
-  return decodeURIComponent(String(docPath || ""))
-    .split("/")
-    .at(-1)
-    ?.replace(/\.md$/i, "")
-    .replace(/-/g, " ")
-    || "未命名文档";
-}
-
-function toRouteSlug(docPath = "") {
-  return getTitleFromPath(docPath)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    || "document";
-}
-
-function getTypeLabel(document) {
-  if (document.sourceType === "custom-material") {
-    return "资料";
-  }
-  return "笔记";
-}
-
-function getTypeIcon(document) {
-  if (document.sourceType === "custom-material") {
-    return (
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M4 1.5h5l3 3V14a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 4 14z" fill="none" stroke="currentColor" strokeWidth="1.2" />
-        <path d="M9 1.5V5h3" fill="none" stroke="currentColor" strokeWidth="1.2" />
-        <path d="M5.2 10.8h1.5c.7 0 1.2-.4 1.2-1s-.5-1-1.2-1H5.2zm3.8 0H10c.9 0 1.6-.7 1.6-1.5S10.9 7.8 10 7.8H9zm-3.8 2.2V7.8m3.8 5.2V7.8" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M4 2.5h8a1 1 0 0 1 1 1v9.5l-2.4-1.2L8 13l-2.6-1.2L3 13V3.5a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-      <path d="M5.2 5.5h5.6M5.2 8h5.6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function getFolderIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M2 5.5h5l1.5 1.8H18v7.2a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 2 14.5z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M2 6V4.7A1.7 1.7 0 0 1 3.7 3h3.6L8.5 4.4H16.3A1.7 1.7 0 0 1 18 6.1V6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function buildStageState(progress = {}) {
-  const progressPercentage = normalizePercentage(progress.progressPercentage);
-  const trainingAnswers = Number(progress.trainingAnswerCount || 0);
-
-  const study = progressPercentage >= 100
-    ? { state: "done", value: "✓" }
-    : progressPercentage > 0
-      ? { state: "active", value: `${progressPercentage}%` }
-      : { state: "idle", value: "—" };
-
-  const practice = progress.trainingCompleted
-    ? { state: "done", value: "✓" }
-    : progress.trainingStarted
-      ? { state: "active", value: trainingAnswers > 0 ? `${trainingAnswers} 题` : "进行中" }
-      : { state: "idle", value: "—" };
-
-  return { study, practice };
-}
-
-// 源层只许有覆盖事实（读完/收尾），不许有 per-doc 掌握态（PRODUCT §4）。
-// "已掌握" 是旧标签，按"已读完"覆盖事实迁移。
-function getDocumentGroup(progress = {}) {
-  const progressPercentage = normalizePercentage(progress.progressPercentage);
-  const learningStatus = progress.learningStatusLabel || "";
-
-  if (
-    progress.trainingCompleted
-    || progress.trainingSkipped
-    || learningStatus === "训练完成"
-    || learningStatus === "已跳过"
-    || learningStatus === "已掌握"
-    || (learningStatus === "仅阅读" && progressPercentage >= 100)
-  ) {
-    return "finished";
-  }
-  if (
-    progressPercentage >= 100
-    || progress.trainingStarted
-    || learningStatus === "训练中"
-    || learningStatus === "已开启训练"
-  ) {
-    return "review";
-  }
-  if (progressPercentage > 0 || progress.isCurrent) {
-    return "reading";
-  }
-  return "unstarted";
-}
-
-function getSignalColor(document) {
-  if (document.ignored) {
-    return "#888780";
-  }
-  if (document.group === "finished") {
-    return "#1D9E75";
-  }
-  if (document.group === "unstarted") {
-    return "#888780";
-  }
-  if (document.progressPercentage >= 40) {
-    return "#BA7517";
-  }
-  return "#E27272";
-}
-
-function getSidebarMetric(document) {
-  if (document.ignored) {
-    return "忽略";
-  }
-  if (document.progressPercentage > 0) {
-    return `${document.progressPercentage}%`;
-  }
-  return "新";
 }
 
 function getHeroMetric(document) {
@@ -220,38 +28,6 @@ function getHeroMetric(document) {
     return "已读完";
   }
   return `阅读 ${document.progressPercentage}%`;
-}
-
-function getDocumentPreview(document) {
-  const focus = document.folderLabels.at(-1) || document.folderLabels.at(0) || "这份资料";
-  const resume = String(document.readingPreview || "").trim();
-  const chapter = String(document.readingChapter || "").trim();
-  if (document.ignored) {
-    return "这篇已被标记为忽略，默认不进入日常学习流。需要时可以在包含忽略文档后重新打开。";
-  }
-  if (document.progressPercentage >= 100) {
-    if (document.trainingCompleted) {
-      return `正文和训练都已完成，可以回看 ${focus} 的关键内容，或继续下一份资料。`;
-    }
-    if (document.trainingStarted) {
-      return `正文已读完，当前训练进行中；继续把 ${focus} 的关键问题练完。`;
-    }
-    if (document.trainingSkipped) {
-      return `正文已读完，并已按仅阅读完成收尾；需要时仍可重新训练。`;
-    }
-    return `正文已读完，下一步适合用一轮训练确认 ${focus} 里的概念、边界和常见追问是否真的掌握。`;
-  }
-  if (document.progressPercentage > 0) {
-    if (resume) {
-      return `上次读到 ${document.progressPercentage}%${chapter ? ` · ${chapter}` : ""}：${resume}`;
-    }
-    return `上次读到 ${document.progressPercentage}%，可以从 ${focus} 继续读。`;
-  }
-  return `这篇资料聚焦 ${focus}，先抓住核心概念、典型问题和实践边界；读完后可直接进入训练确认掌握度。`;
-}
-
-function getActionHint(document) {
-  return buildReentryPlan(document).reason;
 }
 
 function buildHeroCopy(document = {}, plan = buildReentryPlan(document)) {
@@ -311,22 +87,6 @@ function formatReviewWindow(nextReviewAt = "") {
   return `${diffDays} 天内适合复习`;
 }
 
-function getPracticeStateLabel(document = {}) {
-  if (document.trainingCompleted) {
-    return "训练已收口";
-  }
-  if (document.trainingStarted) {
-    return "训练进行中";
-  }
-  if (document.trainingSkipped) {
-    return "按仅阅读收尾";
-  }
-  if (document.trainingAvailability === "unavailable") {
-    return "当前只支持阅读";
-  }
-  return "还没开始训练";
-}
-
 function buildRecommendationFacts(document = {}, plan = buildReentryPlan(document)) {
   const facts = [];
 
@@ -375,376 +135,48 @@ function getSnoozeLabel(plan = {}) {
   return plan.intent === "resume_reading" ? "今天先不读这个" : "今天先不练这个";
 }
 
-function buildPrimaryAction(document) {
-  return buildReentryPlan(document).primaryAction;
-}
-
 function isRecommendationSnoozed(document = {}) {
   const until = new Date(document.snoozedRecommendationUntil || "");
   return Number.isFinite(until.getTime()) && until.getTime() > Date.now();
 }
 
-function buildLearningHref(document, options = {}) {
-  const params = new URLSearchParams();
-  params.set("doc", document.path);
-  if (options.intent) {
-    params.set("intent", options.intent);
-  }
-  if (options.autostart) {
-    params.set("autostart", "1");
-  }
-  return `/learn?${params.toString()}`;
-}
-
-function buildReviewItemDrillHref(item = {}) {
+function buildReviewItemPracticeHref(item = {}) {
   const params = new URLSearchParams();
   params.set("reviewItem", item.id || "");
   return `/learn?${params.toString()}`;
 }
 
-function flattenLibrarySegments(folderLabels = []) {
-  if (!folderLabels.length) {
-    return [];
-  }
-  if (folderLabels.length === 1) {
-    return [folderLabels[0]];
-  }
-  return [folderLabels[0], folderLabels.slice(1).join(" / ")];
-}
-
-function encodeNodeKey(path = []) {
-  if (!path.length) {
-    return rootLibraryKey;
-  }
-  return path.map((segment) => encodeURIComponent(segment)).join("/");
-}
-
-function decodeNodeKey(key = "") {
-  if (!key || key === rootLibraryKey) {
-    return [];
-  }
-  return String(key)
-    .split("/")
-    .filter(Boolean)
-    .map((segment) => decodeURIComponent(segment));
-}
-
-function isNodeOnSelectedPath(nodePath = [], selectedPath = []) {
-  if (!nodePath.length) {
-    return false;
-  }
-  return nodePath.every((segment, index) => selectedPath[index] === segment);
-}
-
-function sortDocuments(documents = []) {
-  return documents.slice().sort((left, right) => {
-    if (left.path === right.path) {
-      return 0;
-    }
-    if (left.isCurrent && !right.isCurrent) {
-      return -1;
-    }
-    if (right.isCurrent && !left.isCurrent) {
+function pickActiveCampaign(campaigns = []) {
+  const activeCampaigns = (campaigns || []).filter((campaign) => !campaign.archived_at);
+  return activeCampaigns.sort((left, right) => {
+    const leftDays = left?.readiness?.daysLeft;
+    const rightDays = right?.readiness?.daysLeft;
+    if (leftDays === null && rightDays !== null) {
       return 1;
     }
-    const timeCompare = compareIsoTimestamp(right.lastActivityAt, left.lastActivityAt);
-    if (timeCompare !== 0) {
-      return timeCompare;
+    if (leftDays !== null && rightDays === null) {
+      return -1;
     }
-    return left.title.localeCompare(right.title, "zh-CN");
-  });
+    if (leftDays !== rightDays) {
+      return Number(leftDays ?? Number.MAX_SAFE_INTEGER) - Number(rightDays ?? Number.MAX_SAFE_INTEGER);
+    }
+    return String(right?.created_at || "").localeCompare(String(left?.created_at || ""));
+  })[0] || null;
 }
 
-function aggregateFolderCounts(documents = []) {
-  return documents.reduce((summary, document) => {
-    if (document.group === "finished") {
-      summary.finished += 1;
-    } else if (document.group === "unstarted") {
-      summary.unstarted += 1;
-    } else {
-      summary.active += 1;
-    }
-    return summary;
-  }, { finished: 0, active: 0, unstarted: 0 });
-}
-
-function createLibraryNode({ key, label, path, level }) {
-  return {
-    key,
-    label,
-    path,
-    level,
-    children: [],
-    directDocuments: [],
-    allDocuments: [],
-    documentCount: 0,
-    aggregate: {
-      finished: 0,
-      active: 0,
-      unstarted: 0,
-    },
-  };
-}
-
-function buildLibraryTree(documents = []) {
-  const root = createLibraryNode({
-    key: rootLibraryKey,
-    label: "我的资料",
-    path: [],
-    level: -1,
-  });
-  const nodeMap = new Map([[root.key, root]]);
-
-  function ensureNode(path) {
-    const key = encodeNodeKey(path);
-    if (nodeMap.has(key)) {
-      return nodeMap.get(key);
-    }
-
-    const parentPath = path.slice(0, -1);
-    const parentNode = parentPath.length ? ensureNode(parentPath) : root;
-    const node = createLibraryNode({
-      key,
-      label: path.at(-1) || "未命名",
-      path,
-      level: path.length - 1,
-    });
-    parentNode.children.push(node);
-    nodeMap.set(key, node);
-    return node;
+function getCampaignCountdownLabel(campaign = {}) {
+  const daysLeft = campaign?.readiness?.daysLeft;
+  if (daysLeft === null || daysLeft === undefined) {
+    return "面试日期未设置";
   }
-
-  for (const document of documents) {
-    const repoNode = ensureNode([document.repoLabel]);
-    const branchSegments = flattenLibrarySegments(document.folderLabels);
-    const deepestPath = branchSegments.length
-      ? [document.repoLabel, ...branchSegments]
-      : [document.repoLabel];
-    const deepestNode = ensureNode(deepestPath);
-    deepestNode.directDocuments.push(document);
-    if (!branchSegments.length) {
-      repoNode.directDocuments.push(document);
-    }
+  if (daysLeft <= 0) {
+    return "今天面试";
   }
-
-  function finalizeNode(node) {
-    node.children.sort((left, right) => left.label.localeCompare(right.label, "zh-CN"));
-    node.directDocuments = sortDocuments(
-      node.level >= 0
-        ? node.directDocuments.filter((document, index, items) => items.findIndex((item) => item.path === document.path) === index)
-        : node.directDocuments
-    );
-    for (const child of node.children) {
-      finalizeNode(child);
-    }
-    const allDocuments = sortDocuments([
-      ...node.directDocuments,
-      ...node.children.flatMap((child) => child.allDocuments),
-    ]).filter((document, index, items) => items.findIndex((item) => item.path === document.path) === index);
-    node.allDocuments = allDocuments;
-    node.documentCount = allDocuments.length;
-    node.aggregate = aggregateFolderCounts(allDocuments);
-  }
-
-  finalizeNode(root);
-  return {
-    root,
-    nodeMap,
-  };
+  return `${daysLeft} 天后面试`;
 }
 
-function buildSidebarDocument(document, progressEntries = {}, options = {}) {
-  const progress = progressEntries?.[document.path] || {};
-  const progressPercentage = normalizePercentage(progress.progressPercentage);
-  const group = getDocumentGroup({
-    ...progress,
-    progressPercentage,
-    readingPreview: progress.readingPreview || "",
-    readingChapter: progress.readingChapter || "",
-  });
-  const repoLabel = document.providerLabel || "未命名仓库";
-
-  return {
-    path: document.path,
-    routeSlug: toRouteSlug(document.path),
-    title: document.title || getTitleFromPath(document.path),
-    sidebarTitle: document.title || getTitleFromPath(document.path),
-    sourceType: document.sourceType || "built-in-document",
-    providerLabel: document.providerLabel || "JavaGuide",
-    repoLabel,
-    folderLabels: document.folderLabels || [],
-    libraryPath: [repoLabel, ...flattenLibrarySegments(document.folderLabels || [])],
-    progressPercentage,
-    learningStatusLabel: progress.learningStatusLabel || "未训练",
-    readingLabel: progress.readingLabel || "未读",
-    trainingStarted: Boolean(progress.trainingStarted),
-    trainingCompleted: Boolean(progress.trainingCompleted),
-    trainingSkipped: Boolean(progress.trainingSkipped),
-    trainingAvailability: progress.trainingAvailability || "",
-    trainingCheckpointProgressLabel: progress.trainingCheckpointProgressLabel || "",
-    trainingAnswerCount: Number(progress.trainingAnswerCount || 0),
-    assessedConceptCount: Number(progress.assessedConceptCount || 0),
-    totalConceptCount: Number(progress.totalConceptCount || 0),
-    evidenceCount: Number(progress.evidenceCount || 0),
-    isCurrent: Boolean(progress.isCurrent),
-    lastActivityAt: progress.lastActivityAt || "",
-    ignored: Boolean(options.ignored),
-    ignoredAt: options.ignoredAt || "",
-    snoozedRecommendationUntil: options.snoozedRecommendationUntil || "",
-    group,
-    stageState: buildStageState(progress),
-  };
-}
-
-function DocumentRow({ document, active, onSelect }) {
-  const color = getSignalColor(document);
-
-  return (
-    <button
-      type="button"
-      className={`ll-doc-row${active ? " is-active" : ""}${document.ignored ? " is-ignored" : ""}`}
-      onClick={() => onSelect(document, "status")}
-      aria-pressed={active}
-      data-testid={`status-doc-row-${document.routeSlug}`}
-    >
-      <span className="ll-doc-row-bar" style={{ background: color }} aria-hidden="true" />
-      <span className="ll-doc-row-icon" style={{ color }}>
-        {getTypeIcon(document)}
-      </span>
-      <span className="ll-doc-row-title" title={document.title}>
-        {document.sidebarTitle}
-        {document.ignored ? <span className="ll-ignored-chip">已忽略</span> : null}
-      </span>
-      <span className="ll-doc-row-value" style={{ color }}>
-        {getSidebarMetric(document)}
-      </span>
-    </button>
-  );
-}
-
-function StageChip({ label, state }) {
-  const tone = state.state === "done" ? "success" : state.state === "active" ? "active" : "idle";
-
-  return (
-    <div className={`ll-stage-chip tone-${tone}`}>
-      <span>{label}</span>
-      <strong>{state.value}</strong>
-    </div>
-  );
-}
-
-function FolderAggregateBar({ aggregate, total }) {
-  const finishedWidth = total ? (aggregate.finished / total) * 100 : 0;
-  const activeWidth = total ? (aggregate.active / total) * 100 : 0;
-  const unstartedWidth = total ? (aggregate.unstarted / total) * 100 : 0;
-
-  return (
-    <div className="ll-folder-progress" aria-hidden="true">
-      <span style={{ width: `${finishedWidth}%`, background: "#1D9E75" }} />
-      <span style={{ width: `${activeWidth}%`, background: "#BA7517" }} />
-      <span style={{ width: `${unstartedWidth}%`, background: "#DAD9D4" }} />
-    </div>
-  );
-}
-
-function FolderCard({ node, onOpen }) {
-  return (
-    <button
-      type="button"
-      className="ll-folder-card"
-      onClick={() => onOpen(node.key)}
-      data-testid={`library-folder-card-${encodeURIComponent(node.label)}`}
-    >
-      <div className="ll-folder-card-top" />
-      <div className="ll-folder-card-body">
-        <div className="ll-folder-card-head">
-          <span className="ll-folder-card-icon">{getFolderIcon()}</span>
-          <span className="ll-folder-card-count">{node.documentCount} 篇</span>
-        </div>
-        <strong>{node.label}</strong>
-        <FolderAggregateBar aggregate={node.aggregate} total={node.documentCount} />
-        <p>{`已读完 ${node.aggregate.finished} · 在读 ${node.aggregate.active} · 未学 ${node.aggregate.unstarted}`}</p>
-      </div>
-    </button>
-  );
-}
-
-function LibraryDocumentCard({ document, active, managementMode, onOpen, onToggleIgnored }) {
-  const color = getSignalColor(document);
-
-  return (
-    <article
-      role="button"
-      tabIndex={0}
-      className={`ll-library-document-card${active ? " is-active" : ""}${document.ignored ? " is-ignored" : ""}`}
-      onClick={() => onOpen(document, "library")}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpen(document, "library");
-        }
-      }}
-      data-testid={`library-document-card-${document.routeSlug}`}
-    >
-      <div className="ll-library-document-head">
-        <span className="ll-library-document-kind">{document.ignored ? "已忽略" : getTypeLabel(document)}</span>
-        <span className="ll-library-document-score" style={{ color }}>
-          {getSidebarMetric(document)}
-        </span>
-      </div>
-      <strong>{document.title}</strong>
-      <p>{`${document.providerLabel} / ${document.folderLabels.join(" / ") || "资料库"}`}</p>
-      <div className="ll-library-document-foot">
-        <span className={`ll-library-status tone-${document.group}`}>{groupMeta[document.group].label}</span>
-        <span>{document.ignored ? "默认隐藏" : document.readingLabel}</span>
-      </div>
-      {managementMode ? (
-        <button
-          type="button"
-          className="ll-library-ignore-button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggleIgnored(document);
-          }}
-        >
-          {document.ignored ? "取消忽略" : "忽略"}
-        </button>
-      ) : null}
-    </article>
-  );
-}
-
-function AddMaterialModal({ onClose }) {
-  return (
-    <div className="ll-modal-backdrop" role="presentation" onClick={onClose}>
-      <div
-        className="ll-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label="添加材料"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="ll-modal-head">
-          <div>
-            <p>添加材料</p>
-            <h3>把内容带进来，后续交给 AI 帮你学透</h3>
-          </div>
-          <button type="button" className="ll-icon-button" onClick={onClose} aria-label="关闭">
-            ×
-          </button>
-        </div>
-        <div className="ll-add-grid">
-          {addMaterialOptions.map((option) => (
-            <Link key={option.key} href={option.href} className="ll-add-option" onClick={onClose}>
-              <strong>{option.title}</strong>
-              <p>{option.description}</p>
-              <span>继续 →</span>
-            </Link>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+function getCampaignCoveragePercent(campaign = {}) {
+  return Math.round((Number(campaign?.readiness?.coverageRate || 0) || 0) * 100);
 }
 
 function LoginModal({ onClose, onLoginSuccess }) {
@@ -842,40 +274,6 @@ function AvatarMenu({ open, onToggle, onLogout, onLoginClick, userName, isLogged
   );
 }
 
-function LibraryTreeNode({ node, currentNodeKey, selectedDocPath, selectedLibraryPath, onOpenNode }) {
-  const active = currentNodeKey === node.key;
-  const ancestor = isNodeOnSelectedPath(node.path, selectedLibraryPath);
-  const containsSelectedDoc = Boolean(selectedDocPath) && node.allDocuments.some((document) => document.path === selectedDocPath);
-
-  return (
-    <div className="ll-tree-node">
-      <button
-        type="button"
-        className={`ll-tree-button${active ? " is-active" : ""}${ancestor ? " is-ancestor" : ""}${containsSelectedDoc ? " has-selected-doc" : ""}`}
-        onClick={() => onOpenNode(node.key)}
-        style={{ paddingLeft: `${12 + node.level * 16}px` }}
-      >
-        <span className="ll-tree-button-label">{node.label}</span>
-        <span className="ll-tree-button-count">{node.documentCount}</span>
-      </button>
-      {node.children.length ? (
-        <div className="ll-tree-children">
-          {node.children.map((child) => (
-            <LibraryTreeNode
-              key={child.key}
-              node={child}
-              currentNodeKey={currentNodeKey}
-              selectedDocPath={selectedDocPath}
-              selectedLibraryPath={selectedLibraryPath}
-              onOpenNode={onOpenNode}
-            />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue, materialPool, hasProfile, onSnoozeRecommendation }) {
   const reentryPlan = buildReentryPlan(featuredDocument);
   const action = reentryPlan.primaryAction;
@@ -935,7 +333,7 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
                 {action.label}
               </Link>
               <Link
-                href={recommendedNewDocument ? buildLearningHref(recommendedNewDocument) : "/?mode=library&panel=library"}
+                href={recommendedNewDocument ? buildLearningHref(recommendedNewDocument) : "/library"}
                 className="ll-secondary-button ll-hero-explore-button"
               >
                 开始新的一篇 →
@@ -983,10 +381,10 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
               const handle = item.handle || "(无标题)";
               const stateClass = `ll-state-tag ll-state-${item.state || "shaky"}`;
               const stateLabel = item.state === "solid" ? "扎实" : "生疏";
-              const reDrillHref = buildReviewItemDrillHref(item);
+              const rePracticeHref = buildReviewItemPracticeHref(item);
               return (
                 <li key={item.id} className="ll-review-row">
-                  <Link href={reDrillHref} className="ll-review-link" title={`重练:${handle}`}>
+                  <Link href={rePracticeHref} className="ll-review-link" title={`重练:${handle}`}>
                     <span className="ll-review-dot" aria-hidden="true" />
                     <span className="ll-review-handle">{handle}</span>
                     <span className={stateClass}>{stateLabel}</span>
@@ -1007,11 +405,11 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
         <div className="ll-section-head">
           <div><h2>学点新的</h2></div>
           <div className="ll-review-head-actions">
-            <span className="ll-section-hint">丢一篇进来,或从素材池挑</span>
+            <Link href="/library" className="ll-section-link">浏览我的资料 →</Link>
           </div>
         </div>
         <div className="ll-new-source-row">
-          <Link href="/?mode=library&panel=library" className="ll-new-source-drop">
+          <Link href="/library" className="ll-new-source-drop">
             <span className="ll-new-source-plus" aria-hidden="true">+</span>
             <span>丢一篇进来</span>
           </Link>
@@ -1038,173 +436,33 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
   );
 }
 
-function IgnoredDocumentToggle({ checked, count, onChange, className = "" }) {
-  const toggleClassName = className ? `ll-include-ignored-toggle ${className}` : "ll-include-ignored-toggle";
-
+function ActiveCampaignStrip({ campaign }) {
+  if (!campaign) {
+    return null;
+  }
+  const topGap = campaign?.readiness?.gaps?.[0] || null;
+  const coveragePercent = getCampaignCoveragePercent(campaign);
   return (
-    <label className={toggleClassName}>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      <span>包含忽略文档</span>
-      <strong>{count}</strong>
-    </label>
-  );
-}
-
-function LibraryBrowser({
-  currentNode,
-  selectedDocPath,
-  includeIgnoredDocuments,
-  ignoredDocumentCount,
-  onOpenNode,
-  onOpenDocument,
-  onIncludeIgnoredChange,
-  onToggleIgnored,
-}) {
-  const breadcrumbs = [
-    { key: rootLibraryKey, label: "我的资料" },
-    ...currentNode.path.map((segment, index) => ({
-      key: encodeNodeKey(currentNode.path.slice(0, index + 1)),
-      label: segment,
-    })),
-  ];
-  const hasChildren = currentNode.children.length > 0;
-  const directDocuments = currentNode.directDocuments;
-  const breadcrumbLabel = currentNode.path.length
-    ? `我的资料 / ${currentNode.path.join(" / ")}`
-    : "我的资料";
-  const [managementMode, setManagementMode] = useState(false);
-
-  return (
-    <section className="ll-library-browser">
-      <div className="ll-library-head">
-        <div>
-          <div className="ll-breadcrumbs" data-testid="library-breadcrumbs">
-            {breadcrumbs.map((item, index) => (
-              <span key={item.key} className="ll-breadcrumb-item">
-                <button type="button" onClick={() => onOpenNode(item.key)}>
-                  {item.label}
-                </button>
-                {index < breadcrumbs.length - 1 ? <span>/</span> : null}
-              </span>
-            ))}
-          </div>
-          <h2>{breadcrumbLabel}</h2>
-        </div>
-        <div className="ll-library-head-actions">
-          <span>共 {currentNode.documentCount} 篇</span>
-          {ignoredDocumentCount > 0 ? (
-            <IgnoredDocumentToggle
-              checked={includeIgnoredDocuments}
-              count={ignoredDocumentCount}
-              onChange={onIncludeIgnoredChange}
-              className="is-library-head"
-            />
-          ) : null}
-          <button
-            type="button"
-            className={managementMode ? "ll-library-manage-button is-active" : "ll-library-manage-button"}
-            onClick={() => setManagementMode((value) => !value)}
-          >
-            {managementMode ? "完成" : "管理"}
-          </button>
-        </div>
+    <section className="ll-active-campaign-strip" aria-label="进行中的面试冲刺">
+      <div className="ll-active-campaign-copy">
+        <span className="ll-active-campaign-kicker">进行中的面试冲刺</span>
+        <h2>{campaign.role || "当前岗位"}</h2>
+        <p>
+          {getCampaignCountdownLabel(campaign)}
+          {" · "}
+          覆盖 {coveragePercent}%
+          {" · "}
+          {topGap ? `今天优先补 ${topGap.topic}` : "先做一轮模拟，继续压实高风险话题"}
+        </p>
       </div>
-
-      {hasChildren ? (
-        <section className="ll-library-section">
-          <div className="ll-library-section-title">子文件夹</div>
-          <div className="ll-folder-grid">
-            {currentNode.children.map((child) => (
-              <FolderCard key={child.key} node={child} onOpen={onOpenNode} />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {directDocuments.length ? (
-        <section className="ll-library-section">
-          <div className="ll-library-section-title">{hasChildren ? "当前层级文档" : "文档"}</div>
-          <div className="ll-library-document-grid">
-            {directDocuments.map((document) => (
-              <LibraryDocumentCard
-                key={document.path}
-                document={document}
-                active={document.path === selectedDocPath}
-                managementMode={managementMode}
-                onOpen={onOpenDocument}
-                onToggleIgnored={onToggleIgnored}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {!hasChildren && !directDocuments.length ? (
-        <div className="ll-status-note">当前层级下还没有匹配的文档。</div>
-      ) : null}
-    </section>
-  );
-}
-
-function DocumentPlaceholder({ document }) {
-  const reentryPlan = buildReentryPlan(document);
-  const color = getSignalColor(document);
-  const action = reentryPlan.primaryAction;
-
-  return (
-    <section className="ll-detail-placeholder">
-      <div className="ll-detail-header">
-        <span className="ll-detail-pill">文档预览</span>
+      <div className="ll-active-campaign-metrics">
+        <span>{getCampaignCountdownLabel(campaign)}</span>
+        <span>{coveragePercent}% 覆盖</span>
+        <span>{topGap?.topic || "查看待练清单"}</span>
       </div>
-      <div className="ll-detail-card">
-        <div className="ll-detail-layout">
-          <div className="ll-detail-main">
-            <section className="ll-hero-task ll-detail-task">
-              <div className="ll-reentry-badge">{reentryPlan.stageLabel}</div>
-              <strong className="ll-reentry-title">{reentryPlan.title}</strong>
-              <p className="ll-reentry-reason">{reentryPlan.reason}</p>
-            </section>
-            <div className="ll-detail-card-top">
-              <span className="ll-doc-row-icon" style={{ color }}>
-                {getTypeIcon(document)}
-              </span>
-              <div>
-                <Link href={buildLearningHref(document)} className="ll-title-link">
-                  <h2>{document.title}</h2>
-                </Link>
-                <p>{`来源 ${document.providerLabel} · ${document.folderLabels.join(" / ") || "资料库"} · ${formatLastActivity(document.lastActivityAt)}`}</p>
-              </div>
-            </div>
-            <p className="ll-detail-copy">{getDocumentPreview(document)}</p>
-            <div className="ll-stage-row">
-              <StageChip label="学" state={document.stageState.study} />
-              <StageChip label="练" state={document.stageState.practice} />
-            </div>
-          </div>
-          <aside className="ll-detail-cta">
-            <strong className="ll-detail-score" style={{ color }}>
-              {getHeroMetric(document)}
-            </strong>
-            <Link href={buildLearningHref(document, { autostart: action.autostart, intent: action.kind })} className="ll-primary-button">
-              {action.label}
-            </Link>
-            <span>{getActionHint(document)}</span>
-            {reentryPlan.secondaryActions?.length ? (
-              <div className="ll-reentry-secondary-links" aria-label="备选动作">
-                {reentryPlan.secondaryActions.map((secondaryAction) => (
-                  <Link
-                    key={`${document.path}:${secondaryAction.kind}`}
-                    href={buildLearningHref(document, { autostart: secondaryAction.autostart, intent: secondaryAction.kind })}
-                    className="ll-reentry-secondary-link"
-                  >
-                    {secondaryAction.label}
-                  </Link>
-                ))}
-              </div>
-            ) : null}
-          </aside>
-        </div>
-      </div>
+      <Link href="/campaign" className="ll-active-campaign-link">
+        进入冲刺
+      </Link>
     </section>
   );
 }
@@ -1212,26 +470,24 @@ function DocumentPlaceholder({ document }) {
 export function HomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const searchInputRef = useRef(null);
   const lastProfileSyncRef = useRef(0);
 
   const [userId, setUserId] = useState("");
   const [knowledgeDocuments, setKnowledgeDocuments] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
   const [reviewDue, setReviewDue] = useState([]);
   const [profile, setProfile] = useState(null);
-  const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
-  const [addMaterialOpen, setAddMaterialOpen] = useState(false);
-  const [includeIgnoredDocuments, setIncludeIgnoredDocuments] = useState(false);
-  const [mobilePane, setMobilePane] = useState("detail");
 
-  const deferredQuery = useDeferredValue(search.trim().toLowerCase());
-  const mode = searchParams.get("mode") || "status";
-  const panel = searchParams.get("panel") || (mode === "library" ? "library" : "home");
-  const selectedDocPath = searchParams.get("doc") || "";
-  const selectedNodeKeyParam = searchParams.get("node") || "";
+  // 旧资料库深链（/?mode=library）迁移到二级页 /library。
+  const legacyLibraryMode = searchParams.get("mode") === "library";
+  useEffect(() => {
+    if (legacyLibraryMode) {
+      router.replace("/library");
+    }
+  }, [legacyLibraryMode, router]);
 
   useEffect(() => {
     setUserId(getStoredUserId());
@@ -1246,6 +502,15 @@ export function HomePage() {
         const javaGuideDocs = (docsPayload.documents || []).filter((document) => document.providerLabel === "JavaGuide");
         setKnowledgeDocuments(javaGuideDocs);
 
+        let nextCampaigns = [];
+        try {
+          const campaignPayload = await apiFetch("/api/campaigns");
+          nextCampaigns = Array.isArray(campaignPayload?.campaigns) ? campaignPayload.campaigns : [];
+        } catch {
+          nextCampaigns = [];
+        }
+        setCampaigns(nextCampaigns);
+
         if (userId) {
           const nextProfile = await apiFetch(`/api/profile/${userId}`);
           setProfile(nextProfile);
@@ -1256,7 +521,9 @@ export function HomePage() {
 
         try {
           // Today Queue「今日复习」= 失败账本按 next_due 渲染（全局，不依赖 userId）。
-          const reviewPayload = await apiFetch("/api/review/today");
+          const activeCampaign = pickActiveCampaign(nextCampaigns);
+          const reviewQuery = activeCampaign?.id ? `?campaignId=${encodeURIComponent(activeCampaign.id)}` : "";
+          const reviewPayload = await apiFetch(`/api/review/today${reviewQuery}`);
           setReviewDue(Array.isArray(reviewPayload?.items) ? reviewPayload.items : []);
         } catch {
           // 账本是可选读出口：读失败不拖垮首页其余部分。
@@ -1286,6 +553,22 @@ export function HomePage() {
       }
       try {
         const nextProfile = await apiFetch(`/api/profile/${getStoredUserId()}`);
+        let nextCampaigns = [];
+        try {
+          const campaignPayload = await apiFetch("/api/campaigns");
+          nextCampaigns = Array.isArray(campaignPayload?.campaigns) ? campaignPayload.campaigns : [];
+        } catch {
+          nextCampaigns = [];
+        }
+        setCampaigns(nextCampaigns);
+        try {
+          const activeCampaign = pickActiveCampaign(nextCampaigns);
+          const reviewQuery = activeCampaign?.id ? `?campaignId=${encodeURIComponent(activeCampaign.id)}` : "";
+          const reviewPayload = await apiFetch(`/api/review/today${reviewQuery}`);
+          setReviewDue(Array.isArray(reviewPayload?.items) ? reviewPayload.items : []);
+        } catch {
+          setReviewDue([]);
+        }
         setProfile(nextProfile);
         lastProfileSyncRef.current = Date.now();
       } catch (nextError) {
@@ -1317,19 +600,8 @@ export function HomePage() {
     };
   }, []);
 
-  useEffect(() => {
-    function handleKeydown(event) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        searchInputRef.current?.focus();
-      }
-    }
-
-    window.addEventListener("keydown", handleKeydown);
-    return () => window.removeEventListener("keydown", handleKeydown);
-  }, []);
-
   const documentProgress = profile?.documentProgress || null;
+  const activeCampaign = useMemo(() => pickActiveCampaign(campaigns), [campaigns]);
   const ignoredDocs = documentProgress?.ignoredDocs || {};
   const ignoredDocPaths = useMemo(
     () => new Set(documentProgress?.ignoredDocPaths || []),
@@ -1339,44 +611,22 @@ export function HomePage() {
     () => new Set(documentProgress?.snoozedRecommendationDocPaths || []),
     [documentProgress?.snoozedRecommendationDocPaths]
   );
-  const ignoredDocumentCount = ignoredDocPaths.size;
 
-  const allUiDocuments = useMemo(() => (
-    knowledgeDocuments.map((document) => buildSidebarDocument(document, documentProgress?.docs || {}, {
-      ignored: ignoredDocPaths.has(document.path),
-      ignoredAt: ignoredDocs[document.path]?.ignoredAt || "",
-      snoozedRecommendationUntil: documentProgress?.snoozedRecommendations?.[document.path]?.snoozedUntil || "",
-    }))
+  const uiDocuments = useMemo(() => (
+    knowledgeDocuments
+      .filter((document) => !ignoredDocPaths.has(document.path))
+      .map((document) => buildSidebarDocument(document, documentProgress?.docs || {}, {
+        ignoredAt: ignoredDocs[document.path]?.ignoredAt || "",
+        snoozedRecommendationUntil: documentProgress?.snoozedRecommendations?.[document.path]?.snoozedUntil || "",
+      }))
   ), [documentProgress?.docs, documentProgress?.snoozedRecommendations, ignoredDocPaths, ignoredDocs, knowledgeDocuments]);
 
-  const uiDocuments = useMemo(
-    () => allUiDocuments.filter((document) => includeIgnoredDocuments || !document.ignored),
-    [allUiDocuments, includeIgnoredDocuments]
-  );
-
-  const filteredDocuments = useMemo(() => (
-    uiDocuments.filter((document) => {
-      if (!deferredQuery) {
-        return true;
-      }
-      return [
-        document.title,
-        document.path,
-        document.folderLabels.join(" "),
-        document.repoLabel,
-      ].some((value) => String(value || "").toLowerCase().includes(deferredQuery));
-    })
-  ), [deferredQuery, uiDocuments]);
-
   const groupedDocuments = useMemo(() => ({
-    reading: filteredDocuments.filter((document) => document.group === "reading"),
-    review: filteredDocuments.filter((document) => document.group === "review"),
-    finished: filteredDocuments.filter((document) => document.group === "finished"),
-    unstarted: filteredDocuments.filter((document) => document.group === "unstarted"),
-  }), [filteredDocuments]);
-
-  const selectedDocument = uiDocuments.find((document) => document.path === selectedDocPath) || null;
-  const selectedLibraryPath = selectedDocument?.libraryPath || [];
+    reading: uiDocuments.filter((document) => document.group === "reading"),
+    review: uiDocuments.filter((document) => document.group === "review"),
+    finished: uiDocuments.filter((document) => document.group === "finished"),
+    unstarted: uiDocuments.filter((document) => document.group === "unstarted"),
+  }), [uiDocuments]);
 
   const featuredDocument = useMemo(() => {
     const availableDocuments = uiDocuments.filter((document) => !isRecommendationSnoozed(document));
@@ -1395,10 +645,9 @@ export function HomePage() {
       || candidatePool.find((document) => document.group === "review")
       || candidatePool.find((document) => document.group === "finished")
       || candidatePool.find((document) => document.group === "unstarted")
-      || filteredDocuments.find((document) => !isRecommendationSnoozed(document))
       || candidatePool[0]
       || null;
-  }, [documentProgress?.currentDocPath, documentProgress?.recentDocs, filteredDocuments, groupedDocuments, uiDocuments]);
+  }, [documentProgress?.currentDocPath, documentProgress?.recentDocs, uiDocuments]);
 
   const recommendedNewDocument = useMemo(() => {
     const preferred = groupedDocuments.unstarted.find((document) => !snoozedRecommendationDocPaths.has(document.path));
@@ -1419,102 +668,6 @@ export function HomePage() {
       .filter((document) => !document.ignored && !snoozedRecommendationDocPaths.has(document.path))
       .slice(0, 6)
   ), [groupedDocuments.unstarted, snoozedRecommendationDocPaths]);
-
-  const libraryTree = useMemo(() => buildLibraryTree(filteredDocuments), [filteredDocuments]);
-  const currentNodeKey = selectedNodeKeyParam || rootLibraryKey;
-  const currentLibraryNode = libraryTree.nodeMap.get(currentNodeKey) || libraryTree.root;
-
-  function replaceState(next = {}) {
-    const params = new URLSearchParams(searchParams.toString());
-    const nextMode = next.mode ?? mode;
-    const nextPanel = next.panel ?? panel;
-    const nextDoc = Object.prototype.hasOwnProperty.call(next, "doc") ? next.doc : selectedDocPath;
-    const nextNode = Object.prototype.hasOwnProperty.call(next, "node") ? next.node : selectedNodeKeyParam;
-
-    if (nextMode && nextMode !== "status") {
-      params.set("mode", nextMode);
-    } else {
-      params.delete("mode");
-    }
-
-    if (nextPanel && !(nextMode === "status" && nextPanel === "home")) {
-      params.set("panel", nextPanel);
-    } else {
-      params.delete("panel");
-    }
-
-    if (nextDoc) {
-      params.set("doc", nextDoc);
-    } else {
-      params.delete("doc");
-    }
-
-    if (nextNode && nextNode !== rootLibraryKey) {
-      params.set("node", nextNode);
-    } else {
-      params.delete("node");
-    }
-
-    startTransition(() => {
-      router.replace(params.toString() ? `/?${params.toString()}` : "/", { scroll: false });
-    });
-  }
-
-
-  function openDefaultView() {
-    replaceState({
-      mode: "status",
-      panel: "home",
-      doc: "",
-    });
-    setMobilePane("detail");
-  }
-
-  function openLibraryRoot() {
-    replaceState({
-      mode: "library",
-      panel: "library",
-      node: rootLibraryKey,
-    });
-    setMobilePane("detail");
-  }
-
-  function openLibraryNode(nodeKey) {
-    replaceState({
-      mode: "library",
-      panel: "library",
-      node: nodeKey,
-    });
-    setMobilePane("detail");
-  }
-
-  function openDocument(document, source = "") {
-    router.push(buildLearningHref(document, {
-      autostart: document.trainingStarted || document.progressPercentage >= 100,
-      intent: buildReentryPlan(document).primaryAction.kind,
-    }));
-    setMobilePane("detail");
-  }
-
-  async function toggleIgnoredDocument(document) {
-    if (!userId) {
-      setLoginOpen(true);
-      return;
-    }
-    try {
-      setError("");
-      const nextProfile = await postJson("/api/profile/ignored-document", {
-        userId,
-        docPath: document.path,
-        docTitle: document.title,
-        ignored: !document.ignored,
-      });
-      setProfile(nextProfile);
-      lastProfileSyncRef.current = Date.now();
-    } catch (nextError) {
-      setError(nextError.message);
-    }
-  }
 
   async function snoozeFeaturedDocument(document) {
     const activeUserId = profile?.user?.id || userId;
@@ -1542,7 +695,6 @@ export function HomePage() {
     setUserId("");
     setProfile(null);
     setAvatarOpen(false);
-    openDefaultView();
   }
 
   function handleLoginSuccess(nextProfile) {
@@ -1558,17 +710,17 @@ export function HomePage() {
   return (
     <main className="ll-home-page">
       <header className="ll-topbar">
-        <button type="button" className="ll-brand" onClick={openDefaultView}>
+        <Link href="/" className="ll-brand">
           <span className="ll-brand-mark" aria-hidden="true" />
           <span>LearningLoop</span>
-        </button>
+        </Link>
         <div className="ll-topbar-actions">
-          <button type="button" className="ll-mobile-nav" onClick={() => setMobilePane((pane) => (pane === "sidebar" ? "detail" : "sidebar"))}>
-            {mobilePane === "sidebar" ? "查看详情" : "资料库"}
-          </button>
+          <Link href="/library" className="ll-library-nav-link">
+            我的资料
+          </Link>
           <Link href="/campaign" className="ll-interview-button">
             <span aria-hidden="true">AI</span>
-            <span>面试准备</span>
+            <span>面试冲刺</span>
           </Link>
           <AvatarMenu
             open={avatarOpen}
@@ -1581,105 +733,22 @@ export function HomePage() {
         </div>
       </header>
 
-      {reviewDue.length > 0 ? (
-        <section className="ll-today-review" aria-label="今日复习">
-          <div className="ll-today-review-head">
-            <h2>今日复习</h2>
-            <span className="ll-today-review-count">{reviewDue.length}</span>
-            <span className="ll-today-review-hint">没讲稳的点 · 今天到期</span>
-          </div>
-          <ul className="ll-today-review-list">
-            {reviewDue.map((item) => (
-              <li key={item.id} className="ll-today-review-row">
-                <span className="ll-today-review-dot" aria-hidden="true" />
-                <span className="ll-today-review-handle">{item.handle}</span>
-                <span className={`ll-today-review-tag is-${item.state === "solid" ? "solid" : "shaky"}`}>
-                  {item.state === "solid" ? "扎实" : "生疏"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <ActiveCampaignStrip campaign={activeCampaign} />
 
-      <div className="ll-workspace">
-        <aside className={`ll-sidebar${mobilePane === "sidebar" ? " is-mobile-active" : ""}`}>
-          <div className="ll-search-shell">
-            <input
-              ref={searchInputRef}
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="搜索资料..."
-              aria-label="搜索资料"
-            />
-            <span>⌘K</span>
-          </div>
-
-          <div className="ll-sidebar-switcher">
-            <button type="button" className="ll-library-entry is-active" onClick={openLibraryRoot}>
-              <div className="ll-library-entry-left">
-                <span className="ll-folder-icon" aria-hidden="true">
-                  <svg viewBox="0 0 16 16">
-                    <path d="M1.5 4.5h4l1.2 1.4h7.8v6.6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-                    <path d="M1.5 5V3.7a1 1 0 0 1 1-1h2.7l1 1.1H13.5a1 1 0 0 1 1 1V5" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-                  </svg>
-                </span>
-                <strong>我的资料</strong>
-              </div>
-              <span>{uiDocuments.length}</span>
-            </button>
-          </div>
-
-          <div className="ll-tree-shell" data-testid="library-tree">
-            {libraryTree.root.children.map((node) => (
-              <LibraryTreeNode
-                key={node.key}
-                node={node}
-                currentNodeKey={currentLibraryNode.key}
-                selectedDocPath={selectedDocPath}
-                selectedLibraryPath={selectedLibraryPath}
-                onOpenNode={openLibraryNode}
-              />
-            ))}
-          </div>
-
-          <button type="button" className="ll-add-button" onClick={() => setAddMaterialOpen(true)}>
-            + 添加材料
-          </button>
-        </aside>
-
-        <section className={`ll-detail${mobilePane === "detail" ? " is-mobile-active" : ""}`}>
-          {error ? <p className="ll-status-note">{error}</p> : null}
-
-          {panel === "doc" && selectedDocument ? <DocumentPlaceholder document={selectedDocument} /> : null}
-
-          {panel !== "doc" && mode === "library" ? (
-            <LibraryBrowser
-              currentNode={currentLibraryNode}
-              selectedDocPath={selectedDocPath}
-              includeIgnoredDocuments={includeIgnoredDocuments}
-              ignoredDocumentCount={ignoredDocumentCount}
-              onOpenNode={openLibraryNode}
-              onOpenDocument={openDocument}
-              onIncludeIgnoredChange={setIncludeIgnoredDocuments}
-              onToggleIgnored={toggleIgnoredDocument}
-            />
-          ) : null}
-
-          {panel !== "doc" && mode !== "library" && featuredDocument ? (
-            <DefaultFocusView
-              featuredDocument={featuredDocument}
-              recommendedNewDocument={recommendedNewDocument}
-              reviewDue={reviewDue}
-              materialPool={materialPool}
-              hasProfile={Boolean(profile?.user?.id)}
-              onSnoozeRecommendation={snoozeFeaturedDocument}
-            />
-          ) : null}
-        </section>
+      <div className="ll-home-main">
+        {error ? <p className="ll-status-note">{error}</p> : null}
+        {featuredDocument ? (
+          <DefaultFocusView
+            featuredDocument={featuredDocument}
+            recommendedNewDocument={recommendedNewDocument}
+            reviewDue={reviewDue}
+            materialPool={materialPool}
+            hasProfile={Boolean(profile?.user?.id)}
+            onSnoozeRecommendation={snoozeFeaturedDocument}
+          />
+        ) : null}
       </div>
 
-      {addMaterialOpen ? <AddMaterialModal onClose={() => setAddMaterialOpen(false)} /> : null}
       {loginOpen ? <LoginModal onClose={() => setLoginOpen(false)} onLoginSuccess={handleLoginSuccess} /> : null}
     </main>
   );

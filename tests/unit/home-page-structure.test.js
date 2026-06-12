@@ -6,51 +6,74 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-test("home page supports both status view and hierarchical library view from the same JavaGuide data", async () => {
+test("home page is a single-column act-led view; library lives on its own secondary page", async () => {
   const source = await readFile(`${root}/frontend/components/home-page.js`, "utf8");
+  const librarySource = await readFile(`${root}/frontend/components/library/library-workspace.js`, "utf8");
+  const libraryShared = await readFile(`${root}/frontend/components/library/shared.js`, "utf8");
+  const libraryRoute = await readFile(`${root}/frontend/app/library/page.js`, "utf8");
   const documentRouteSource = await readFile(`${root}/frontend/app/documents/[slug]/page.js`, "utf8");
   const learnSource = await readFile(`${root}/frontend/components/learn-workspace.js`, "utf8");
   const styles = await readFile(`${root}/frontend/app/globals.css`, "utf8");
 
-  assert.match(source, /mode = searchParams\.get\("mode"\) \|\| "status"/);
-  assert.match(source, /panel = searchParams\.get\("panel"\)/);
-  assert.match(source, /buildLibraryTree/);
-  assert.match(source, /flattenLibrarySegments/);
-  assert.match(source, /LibraryTreeNode/);
-  assert.match(source, /LibraryBrowser/);
+  // 首页：单栏 act-led，三件事（继续学 / 今日复习 / 学点新的），不再承载资料树。
   assert.match(source, /LoginModal/);
   assert.match(source, /postJson\("\/api\/auth\/login"/);
-  assert.match(source, /FolderAggregateBar/);
-  assert.match(source, /includeIgnoredDocuments/);
-  assert.match(source, /包含忽略文档/);
-  assert.match(source, /ll-ignored-chip/);
-  assert.match(source, /ll-library-ignore-button/);
-  assert.match(source, /onToggleIgnored/);
-  assert.match(source, /按状态看/);
-  assert.match(source, /登录 \/ 创建账号/);
-  assert.match(source, /isLoggedIn=\{Boolean\(profile\?\.user\?\.id\)\}/);
-  assert.match(source, /子文件夹/);
-  assert.match(source, /当前层级文档/);
-  assert.match(source, /我的资料 \/ /);
-  assert.match(source, /getDocumentPreview/);
   assert.match(source, /buildReentryPlan/);
   assert.match(source, /今天先做什么/);
+  assert.match(source, /今日复习/);
+  assert.match(source, /学点新的/);
   assert.match(source, /备选动作/);
   assert.match(source, /开始新的一篇/);
   assert.match(source, /今天先不练这个/);
   assert.match(source, /今天先不读这个/);
-  assert.match(source, /ll-detail-cta/);
+  assert.match(source, /面试冲刺/);
+  assert.match(source, /登录 \/ 创建账号/);
+  assert.match(source, /isLoggedIn=\{Boolean\(profile\?\.user\?\.id\)\}/);
+  assert.match(source, /href="\/library"/);
+  assert.match(source, /ll-home-main/);
+  // 旧资料库深链迁移。
+  assert.match(source, /searchParams\.get\("mode"\) === "library"/);
+  assert.match(source, /router\.replace\("\/library"\)/);
+  // 资料树/库浏览器不再出现在首页。
+  assert.doesNotMatch(source, /LibraryTreeNode/);
+  assert.doesNotMatch(source, /LibraryBrowser/);
+  assert.doesNotMatch(source, /ll-sidebar/);
+  assert.doesNotMatch(source, /ll-workspace/);
+  assert.doesNotMatch(source, /搜索资料/);
+  assert.doesNotMatch(source, /mode=library/);
   assert.doesNotMatch(source, /打开阅读页/);
   assert.doesNotMatch(source, /buildDetailHref/);
   assert.doesNotMatch(source, /查看准备页/);
   assert.doesNotMatch(source, /Anthropic: Engineering Context for Claude/);
 
+  // /library 二级页：树导航 + 层级浏览 + 管理（忽略）收编于此。
+  assert.match(libraryRoute, /LibraryWorkspace/);
+  assert.match(librarySource, /LibraryTreeNode/);
+  assert.match(librarySource, /LibraryBrowser/);
+  assert.match(librarySource, /FolderAggregateBar/);
+  assert.match(librarySource, /includeIgnoredDocuments/);
+  assert.match(librarySource, /包含忽略文档/);
+  assert.match(librarySource, /ll-library-ignore-button/);
+  assert.match(librarySource, /onToggleIgnored/);
+  assert.match(librarySource, /子文件夹/);
+  assert.match(librarySource, /当前层级文档/);
+  assert.match(librarySource, /我的资料 \/ /);
+  assert.match(librarySource, /搜索资料/);
+  assert.match(librarySource, /添加材料/);
+  assert.match(librarySource, /返回首页/);
+
+  // 资料域共享派生只有一份，首页与二级页共用。
+  assert.match(libraryShared, /export function buildLibraryTree/);
+  assert.match(libraryShared, /export function flattenLibrarySegments/);
+  assert.match(libraryShared, /export function buildSidebarDocument/);
+  assert.match(libraryShared, /export function getDocumentGroup/);
+
   assert.match(documentRouteSource, /redirect\(`\/learn/);
   assert.doesNotMatch(documentRouteSource, /DocumentPrepPage/);
 
-  assert.match(learnSource, /TrainingOverviewCard/);
-  assert.match(learnSource, /TrainingThreadCard/);
-  assert.match(learnSource, /TrainingAssistantRail/);
+  assert.match(learnSource, /TrainingWorkspace/);
+  assert.match(learnSource, /RescuePlaylistStrip/);
+  assert.match(learnSource, /TrainingGenerationPanel/);
   assert.match(learnSource, /TrainingCompletionSummaryPage/);
   assert.match(learnSource, /ReadingDocumentContent/);
   assert.match(learnSource, /ReadingSelectionPopover/);
@@ -58,7 +81,6 @@ test("home page supports both status view and hierarchical library view from the
   assert.match(learnSource, /ReadingReentryCard/);
   assert.match(learnSource, /继续上次训练/);
   assert.match(learnSource, /buildReadingTrainingBanner/);
-  assert.match(learnSource, /Mermaid 图表暂以源码显示/);
   assert.match(learnSource, /visibleReadProgressPercent/);
   assert.match(learnSource, /toggleIgnoredDocument/);
   assert.match(learnSource, /标记为忽略/);
@@ -68,7 +90,7 @@ test("home page supports both status view and hierarchical library view from the
   assert.doesNotMatch(learnSource, /document-completion-card/);
   assert.match(learnSource, /问任何关于这篇的问题/);
   assert.match(learnSource, /reading-composer-starters/);
-  assert.match(learnSource, /normalizeAssistantMarkdown\(entry\.body/);
+  assert.match(learnSource, /normalizeAssistantMarkdown/);
   assert.doesNotMatch(learnSource, /12 道题/);
   assert.doesNotMatch(learnSource, /readingTrainingBannerLabel/);
   assert.doesNotMatch(learnSource, /readingTrainingBannerClickable/);
@@ -76,22 +98,18 @@ test("home page supports both status view and hierarchical library view from the
   assert.doesNotMatch(learnSource, /is-read/);
   assert.doesNotMatch(learnSource, /is-unread/);
   assert.doesNotMatch(learnSource, /<p>\{entry\.body\}<\/p>/);
-  assert.match(learnSource, /AnimatedMasteryValue/);
   assert.match(learnSource, /buildTrainingCompletionSummary/);
-  assert.match(learnSource, /已记住的内容\(系统会基于这些追问\)/);
-  assert.match(learnSource, /正在理解你的回答/);
-  assert.match(learnSource, /明天还有事/);
-  assert.match(learnSource, /立即重练/);
-  assert.match(learnSource, /分享内容只展示你的学习成果/);
 
+  assert.match(styles, /\.ll-home-main\s*\{/);
+  assert.match(styles, /\.ll-library-nav-link\s*\{/);
   assert.match(styles, /\.ll-tree-shell\s*\{/);
   assert.match(styles, /\.ll-folder-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(styles, /\.ll-folder-progress\s*\{/);
   assert.match(styles, /\.ll-include-ignored-toggle\s*\{/);
-  assert.match(styles, /\.ll-ignored-chip\s*\{/);
   assert.match(styles, /\.ll-library-ignore-button\s*\{/);
   assert.match(styles, /\.ll-library-document-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(styles, /\.ll-breadcrumbs\s*\{/);
+  assert.doesNotMatch(styles, /\.ll-today-review\s*\{/);
   assert.doesNotMatch(styles, /\.ll-prep-page\s*\{/);
   assert.doesNotMatch(styles, /\.ll-prep-stage\s*\{/);
   assert.doesNotMatch(styles, /\.ll-prep-popover\s*,\s*\.ll-prep-menu\s*\{/);

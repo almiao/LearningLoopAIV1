@@ -65,7 +65,7 @@ async function seedIgnoredDocument(request, userId, docPath, docTitle, ignored =
   expect(response.ok()).toBeTruthy();
 }
 
-test("home page keeps status view as default and exposes a hierarchical library view", async ({ page, request }) => {
+test("home page keeps a single act-led column and the library lives on its own secondary page", async ({ page, request }) => {
   const userId = await loginAndSeed(page, request);
   await seedReadingProgress(request, userId, reviewDocPath, reviewDocTitle, 0.95);
   await seedSkippedTraining(request, userId, reviewDocPath, reviewDocTitle);
@@ -78,36 +78,32 @@ test("home page keeps status view as default and exposes a hierarchical library 
   await expect(page.getByRole("heading", { name: currentDocTitle })).toBeVisible();
   await expect(page.getByRole("link", { name: "开始新的一篇 →" })).toBeVisible();
   await expect(page.getByRole("button", { name: "今天先不读这个" })).toBeVisible();
-  await expect(page.locator(".ll-review-grid")).toContainText(reviewDocTitle);
-  await expect(page.locator(".ll-group-list")).toContainText("在读");
-  await expect(page.locator(".ll-group-list")).toContainText("待复习");
-  if ((page.viewportSize()?.width || 0) >= 768) {
-    await expect(page.getByLabel("包含忽略文档")).toBeVisible();
-    await page.getByPlaceholder("搜索资料...").fill("Prompt Engineering");
-    await expect(page.getByTestId("status-doc-row-prompt-engineering")).toHaveCount(0);
-    await page.getByLabel("包含忽略文档").check();
-    await page.getByRole("button", { name: /未学/ }).click();
-    await expect(page.getByTestId("status-doc-row-prompt-engineering")).toBeVisible();
-    await expect(page.getByTestId("status-doc-row-prompt-engineering")).toContainText("已忽略");
-    await page.getByPlaceholder("搜索资料...").fill("");
-    await page.getByLabel("包含忽略文档").uncheck();
-  }
+  await expect(page.getByRole("link", { name: "浏览我的资料 →" })).toBeVisible();
+  // 首页不再承载资料树。
+  await expect(page.getByTestId("library-tree")).toHaveCount(0);
 
-  if ((page.viewportSize()?.width || 0) >= 768) {
-    await page.getByTestId("status-doc-row-mcp").click();
-  } else {
-    await page.getByRole("link", { name: "继续阅读 →" }).first().click();
-  }
+  await page.getByRole("link", { name: currentDocTitle }).click();
   await expect(page).toHaveURL(/\/learn\?doc=docs%2Fai%2Fagent%2Fmcp\.md/);
   await expect(page.getByTestId("reader-header")).toContainText(currentDocTitle);
   await page.goBack();
   await expect(page.getByText("今天先做什么")).toBeVisible();
 
+  // 旧资料库深链跳到二级页。
+  await page.goto("/?mode=library&panel=library", { waitUntil: "networkidle" });
+  await expect(page).toHaveURL(/\/library/);
+
   if ((page.viewportSize()?.width || 0) >= 768) {
-    await page.getByRole("button", { name: /我的资料/ }).click();
-    await expect(page).toHaveURL(/mode=library/);
-    await expect(page.getByRole("button", { name: "按状态看" })).toBeVisible();
+    await page.goto("/library", { waitUntil: "networkidle" });
     await expect(page.getByTestId("library-tree")).toContainText("JavaGuide");
+
+    // 被忽略的文档默认不进树；包含后重新出现。
+    await page.getByPlaceholder("搜索资料...").fill("Prompt Engineering");
+    await expect(page.getByTestId("library-tree")).not.toContainText("JavaGuide");
+    await page.getByLabel("包含忽略文档").check();
+    await expect(page.getByTestId("library-tree")).toContainText("JavaGuide");
+    await page.getByPlaceholder("搜索资料...").fill("");
+    await page.getByLabel("包含忽略文档").uncheck();
+
     await expect(page.locator(".ll-library-head")).toContainText("我的资料");
     await expect(page.locator(".ll-library-head-actions").getByLabel("包含忽略文档")).toBeVisible();
     await expect(page.locator(".ll-library-head-actions").getByRole("button", { name: "管理" })).toBeVisible();
