@@ -196,9 +196,14 @@ test("learn workspace auto-expands the right panel after interaction and still s
   });
 
   await expect(page.getByTestId("study-main")).toHaveAttribute("data-layout-mode", "manual");
-  const manualWidths = await getPanelWidths(page);
-  expect(Math.abs(manualWidths.qa - autoExpandedWidths.qa)).toBeGreaterThan(1);
-  expect(Math.abs(manualWidths.reader - autoExpandedWidths.reader)).toBeGreaterThan(1);
+  await expect.poll(async () => {
+    const manualWidths = await getPanelWidths(page);
+    return Math.abs(manualWidths.qa - autoExpandedWidths.qa);
+  }).toBeGreaterThan(1);
+  await expect.poll(async () => {
+    const manualWidths = await getPanelWidths(page);
+    return Math.abs(manualWidths.reader - autoExpandedWidths.reader);
+  }).toBeGreaterThan(1);
 
   await divider.dblclick();
   await expect(page.getByTestId("study-main")).toHaveAttribute("data-layout-mode", "auto");

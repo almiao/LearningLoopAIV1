@@ -1,4 +1,5 @@
 import { getLatestResumeVersion } from "../../../src/user/resume-version-store.js";
+import { selectLoopAssistSeeds } from "../../../src/loopassist/corpus.js";
 import { getUserProfile } from "./profile-domain.js";
 import { proxyJson } from "./service-proxy.js";
 
@@ -11,6 +12,11 @@ import { proxyJson } from "./service-proxy.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const jdExcerptLimit = 2400;
+const topicSourceRisk = {
+  "resume-claim": 3,
+  "jd-topic": 2,
+  "report-seed": 1,
+};
 
 // 就绪度的诚实边界（PRODUCT「面试冲刺」就绪度节）：必须随读数一起返回，否则误导。
 export const READINESS_DISCLAIMER =
@@ -65,6 +71,10 @@ function coverageRisk(coverage = "uncovered") {
   return 0;
 }
 
+function sourceRisk(source = "jd-topic") {
+  return topicSourceRisk[source] || topicSourceRisk["jd-topic"];
+}
+
 // 就绪度读数（PRODUCT：派生视图，不是新实体）。
 // 覆盖率答「碰没碰」，达标度答「会不会」（重要度加权），缺口按 重要度×风险×(1/剩余天数) 排。
 // deadline 可选：没定面试日时 daysLeft 为 null，紧迫度因子取中性值。
@@ -86,7 +96,13 @@ export function buildReadiness(campaign = {}, { now = new Date() } = {}) {
       topic: topic.topic,
       importance: topic.importance,
       coverage: topic.coverage,
-      priority: importanceWeight(topic.importance) * coverageRisk(topic.coverage) * urgency,
+      source: topic.source || "jd-topic",
+      priority: (
+        sourceRisk(topic.source)
+        * importanceWeight(topic.importance)
+        * coverageRisk(topic.coverage)
+        * urgency
+      ),
     }))
     .sort((a, b) => b.priority - a.priority);
 
@@ -99,6 +115,51 @@ export function buildReadiness(campaign = {}, { now = new Date() } = {}) {
     likelyToFail: gaps.slice(0, 3),
     disclaimer: READINESS_DISCLAIMER,
   };
+}
+
+function normalizeTopicList(topics = [], source = "jd-topic") {
+  return (Array.isArray(topics) ? topics : [])
+    .map((topic) => ({
+      topic: normalizeText(topic?.topic || topic?.title || topic),
+      importance: topic?.importance === "secondary" ? "secondary" : "core",
+      source: topic?.source || source,
+      source_id: normalizeText(topic?.source_id || topic?.sourceId),
+      source_excerpt: normalizeText(topic?.source_excerpt || topic?.sourceExcerpt),
+    }))
+    .filter((topic) => topic.topic);
+}
+
+function dedupeAndRankTopics(topicGroups = []) {
+  const seen = new Set();
+  const ranked = [];
+  for (const group of topicGroups) {
+    for (const topic of group) {
+      const key = normalizeText(topic.topic).toLowerCase();
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      ranked.push({
+        ...topic,
+        risk_rank: ranked.length,
+      });
+    }
+  }
+  return ranked;
+}
+
+function buildReportSeedTopics({ role = "", jdText = "" } = {}) {
+  const seeds = selectLoopAssistSeeds({
+    role,
+    topics: jdText ? [jdText.slice(0, 80)] : [],
+  }, undefined, { min: 0, max: 6 });
+  return seeds.map((seed) => ({
+    topic: seed.baseQuestion,
+    importance: "core",
+    source: "report-seed",
+    source_id: seed.seedId || "",
+    source_excerpt: seed.sourceReportText || seed.baseQuestion || "",
+  }));
 }
 
 function withReadiness(campaign, now) {
@@ -160,26 +221,38 @@ export function createCampaignDomain({
   }
 
   // ① 立项 + ② 定范围：建 campaign Goal，JD 当场拆扁平话题（与已存简历交叉）。
-  async function create({ company = "", role = "", deadline = "", jdText = "", userId = "" } = {}) {
+  async function create({ company = "", role = "", deadline = "", jdText = "", resumeText = "", userId = "" } = {}) {
     const cleanJd = normalizeText(jdText);
     if (!cleanJd) {
       throw new Error("jdText is required.");
     }
-    let resumeText = "";
-    if (userId) {
+    let resolvedResumeText = normalizeText(resumeText);
+    if (!resolvedResumeText && userId) {
       try {
         const user = await loadUserProfile(userId);
-        resumeText = normalizeText(getLatestResumeVersion(user.resumeLibrary)?.text);
+        resolvedResumeText = normalizeText(getLatestResumeVersion(user.resumeLibrary)?.text);
       } catch {
-        resumeText = "";
+        resolvedResumeText = "";
       }
     }
     const { data, traceId } = await proxy("POST", "/api/campaign/decompose-jd", {
       jdText: cleanJd,
-      resumeText,
+      resumeText: resolvedResumeText,
       role: normalizeText(role),
     });
-    const topics = Array.isArray(data?.topics) ? data.topics : [];
+    let resumeTopics = [];
+    if (resolvedResumeText) {
+      const { data: resumeData } = await proxy("POST", "/api/campaign/decompose-resume", {
+        resumeText: resolvedResumeText,
+        role: normalizeText(role),
+      });
+      resumeTopics = normalizeTopicList(resumeData?.topics, "resume-claim");
+    }
+    const topics = dedupeAndRankTopics([
+      resumeTopics,
+      normalizeTopicList(data?.topics, "jd-topic"),
+      normalizeTopicList(buildReportSeedTopics({ role, jdText: cleanJd }), "report-seed"),
+    ]);
     if (!topics.length) {
       throw new Error("JD 拆解没有产出任何话题，请检查 JD 内容后重试。");
     }
@@ -188,6 +261,7 @@ export function createCampaignDomain({
       role,
       deadline,
       jdText: cleanJd,
+      resumeText: resolvedResumeText,
       topics,
       now: now().toISOString(),
     });
@@ -216,7 +290,7 @@ export function createCampaignDomain({
         state: topic.coverage === "solid" ? "solid" : "shaky",
         evidence: {},
       },
-      sourceExcerpt: clipText(campaign.jd_text),
+      sourceExcerpt: clipText(topic.source_excerpt || campaign.jd_text || campaign.resume_text),
     });
     const question = normalizeText(data?.question);
     if (!question) {
@@ -225,7 +299,7 @@ export function createCampaignDomain({
     return {
       mode: "campaign_practice",
       campaignId: campaign.id,
-      topic: { id: topic.id, topic: topic.topic, importance: topic.importance, coverage: topic.coverage },
+      topic: { id: topic.id, topic: topic.topic, importance: topic.importance, coverage: topic.coverage, source: topic.source },
       question,
       intent: data?.intent || "campaign_topic_practice",
       traceId,
@@ -248,7 +322,7 @@ export function createCampaignDomain({
     const { data: judgment, traceId } = await proxy("POST", "/api/anchor-judge", {
       question: cleanQuestion,
       answer: cleanAnswer,
-      sourceExcerpt: clipText(campaign.jd_text),
+      sourceExcerpt: clipText(topic.source_excerpt || campaign.jd_text || campaign.resume_text),
     });
     const passed = judgment?.verdict === "pass";
     const nowIso = now().toISOString();
@@ -314,7 +388,7 @@ export function createCampaignDomain({
     return {
       mode: "campaign_practice",
       campaign: withReadiness(updatedCampaign, now()),
-      topic: { id: topic.id, topic: topic.topic, importance: topic.importance, coverage: passed ? "solid" : "shaky" },
+      topic: { id: topic.id, topic: topic.topic, importance: topic.importance, coverage: passed ? "solid" : "shaky", source: topic.source },
       question: cleanQuestion,
       answer: cleanAnswer,
       judgment,

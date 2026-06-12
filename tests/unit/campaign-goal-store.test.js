@@ -25,7 +25,7 @@ test("create persists a campaign with normalized topics", async () => {
       jdText: "负责高并发服务端……",
       topics: [
         { topic: "线程池参数与拒绝策略", importance: "core" },
-        { topic: "Redis 缓存一致性", importance: "secondary" },
+        { topic: "Redis 缓存一致性", importance: "secondary", source: "resume-claim", source_id: "resume-1" },
         { topic: "  ", importance: "core" },
       ],
       now: "2026-06-12T00:00:00.000Z",
@@ -35,6 +35,9 @@ test("create persists a campaign with normalized topics", async () => {
     assert.equal(campaign.topics.length, 2);
     assert.equal(campaign.topics[0].coverage, "uncovered");
     assert.equal(campaign.topics[1].importance, "secondary");
+    assert.equal(campaign.topics[0].source, "jd-topic");
+    assert.equal(campaign.topics[1].source, "resume-claim");
+    assert.equal(campaign.topics[1].source_id, "resume-1");
     assert.equal(campaign.archived_at, "");
 
     const loaded = await store.get(campaign.id);

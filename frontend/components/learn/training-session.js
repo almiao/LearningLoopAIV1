@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { TrainingGenerationPanel } from "../training-generation-panel";
+import { PracticeResult } from "../practice/practice-result";
+import { PracticeShell } from "../practice/practice-shell";
 import { getTurnTimeLabel } from "./shared";
 
 const rescueSourceLabels = {
@@ -517,29 +519,26 @@ function TrainingThreadCard({ exchange }) {
         </div>
       ) : null}
       {exchange.scoreSummary ? (
-        <div
-          className={`ll-thread-score-summary tone-${exchange.scoreSummary.tone.key}`}
-          style={{
-            "--thread-score-color": exchange.scoreSummary.tone.color,
-            "--thread-score-bg": exchange.scoreSummary.tone.background,
-          }}
-        >
-          <div className="ll-thread-score-main">
-            <strong>{`回答评分 ${exchange.scoreSummary.score}`}</strong>
-            <span>{exchange.scoreSummary.label}</span>
-          </div>
-          {exchange.scoreSummary.reason ? <p>{exchange.scoreSummary.reason}</p> : null}
-        </div>
-      ) : null}
-      {supportItems.length ? (
-        <div className="ll-thread-support-grid">
-          {supportItems.map((item) => (
-            <article key={item.key} className={`ll-thread-support-card ${item.tone}`}>
-              <strong>{item.title}</strong>
-              <p>{item.body}</p>
-            </article>
-          ))}
-        </div>
+        <PracticeResult
+          passed={exchange.scoreSummary.score >= 50}
+          passLabel={`回答评分 ${exchange.scoreSummary.score}`}
+          failLabel={`回答评分 ${exchange.scoreSummary.score}`}
+          passDetail={exchange.scoreSummary.reason}
+          failDetail={exchange.scoreSummary.reason}
+          stateLabel={exchange.scoreSummary.label}
+          supportItems={supportItems}
+          toneKey={exchange.scoreSummary.tone.key}
+          scoreColor={exchange.scoreSummary.tone.color}
+          scoreBackground={exchange.scoreSummary.tone.background}
+        />
+      ) : supportItems.length ? (
+        <PracticeResult
+          passed
+          passLabel="本轮反馈"
+          supportItems={supportItems}
+          toneKey="solid"
+          showSummary={false}
+        />
       ) : null}
       <RememberedContent text={exchange.memoryText} />
       <TrainingTransition transition={exchange.transition} />
@@ -590,34 +589,28 @@ function NextQuestionCard({ question, answer, setAnswer, isAnswering, onSubmit, 
     );
   }
   return (
-    <section className="ll-training-card ll-next-question" data-testid="training-next-question">
-      <div className="ll-training-card-chip-row">
-        <span className="ll-training-chip">{`训练点 ${question.pointIndex} · 子项 ${question.checkpointIndex}/${question.checkpointTotal}`}</span>
-      </div>
-      <h2>{question.text}</h2>
-      <form
-        className="ll-next-answer-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSubmit();
-        }}
-      >
-        <textarea
-          rows="4"
-          value={answer}
-          onChange={(event) => setAnswer(event.target.value)}
-          placeholder="写下你的理解。"
-        />
-        <div className="ll-next-answer-actions">
-          <button type="button" className="ll-tool-button" onClick={onExplain}>
-            查看解析
-          </button>
-          <button type="submit" className="ll-training-primary" disabled={isAnswering || !answer.trim()}>
-            提交回答
-          </button>
+    <PracticeShell
+      seed={{ type: "training-checkpoint", payload: question }}
+      practice={{ question: question.text }}
+      answer={answer}
+      setAnswer={setAnswer}
+      loading={isAnswering}
+      onSubmit={onSubmit}
+      onRefreshQuestion={onExplain}
+      className="ll-training-card ll-next-question"
+      testId="training-next-question"
+      answerPlaceholder="写下你的理解。"
+      actions={{
+        retry: "查看解析",
+        retryClassName: "ll-tool-button",
+        submit: "提交回答",
+      }}
+      beforeQuestion={(
+        <div className="ll-training-card-chip-row">
+          <span className="ll-training-chip">{`训练点 ${question.pointIndex} · 子项 ${question.checkpointIndex}/${question.checkpointTotal}`}</span>
         </div>
-      </form>
-    </section>
+      )}
+    />
   );
 }
 

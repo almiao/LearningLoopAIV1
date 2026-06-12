@@ -2254,6 +2254,15 @@ button {
   letter-spacing: 0.03em;
 }
 
+.ll-campaign-topic-source {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(49, 92, 111, 0.1);
+  color: #315c6f;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .ll-campaign-topic-priority {
   padding: 4px 10px;
   border-radius: 999px;

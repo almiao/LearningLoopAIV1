@@ -20,6 +20,7 @@ from app.core.tracing import (
 )
 from app.engine.anchor_judge import judge_anchors
 from app.engine.jd_decompose import decompose_jd
+from app.engine.resume_decompose import decompose_resume
 from app.engine.control_intents import detect_control_intent
 from app.engine.session_engine import (
     answer_session,
@@ -342,6 +343,11 @@ class JdDecomposeRequest(BaseModel):
     role: str = ""
 
 
+class ResumeDecomposeRequest(BaseModel):
+    resumeText: str
+    role: str = ""
+
+
 app = FastAPI(title="Learning Loop AI Service")
 snapshot_store = SnapshotStore()
 app.add_middleware(
@@ -538,6 +544,18 @@ def campaign_decompose_jd(payload: JdDecomposeRequest) -> Dict[str, Any]:
     try:
         return decompose_jd(
             jd_text=payload.jdText,
+            resume_text=payload.resumeText,
+            role=payload.role,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# 简历拆扁平声称点。产出与 JD topic 同形的临时练习种子，不入库到 AI service。
+@app.post("/api/campaign/decompose-resume")
+def campaign_decompose_resume(payload: ResumeDecomposeRequest) -> Dict[str, Any]:
+    try:
+        return decompose_resume(
             resume_text=payload.resumeText,
             role=payload.role,
         )

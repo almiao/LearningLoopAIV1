@@ -2,14 +2,14 @@
 
 > 唯一在用的计划文档（2026-06-12 与用户对齐）。历史进度看 git log，产品原则看 [PRODUCT.md](../PRODUCT.md)，流程看 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
-## 第一阶段：功能收尾 + 业务流程验收（进行中）
+## 第一阶段：功能收尾 + 业务流程验收（完成）
 
 1. ~~修存量失败 e2e~~ ✅ 全量 42 过 0 失败（df4830a）
-2. 出题类型补全：**基于简历 / 基于 JD / 基于面经**三种独立出题类型，随 Practice 合并第 2 步落地（方案见 [designs/practice-merge-v1.md](designs/practice-merge-v1.md) §4）
-3. 逐页面走查验收：技术面已过（7 页零报错零失败请求）；交互手感待用户亲验；~~冲刺全路径补 e2e~~ ✅ campaign.pw.spec.js（e8cacf0）
-4. Practice 合并：方案已定稿（[designs/practice-merge-v1.md](designs/practice-merge-v1.md)，2026-06-12 用户确认）——四步渐进：①拆文件 ②PracticeShell+三种出题类型 ③learn 训练接入 ④模拟面试对接。**模拟面试保持一级产品点**（入口与仪式不动，只换内核）；雷达复盘报告本次不动；1→2 连做，3、4 各单独一刀
+2. ~~出题类型补全：基于简历 / 基于 JD / 基于面经~~ ✅ campaign 清单混排「简历说的 / JD 要的 / 面经常考」，按风险排序
+3. ~~逐页面走查验收~~ ✅ gstack browse 覆盖 campaign / LoopAssist / learn，控制台零错误；全量 e2e 44 过 0 失败（6 skipped）
+4. ~~Practice 合并~~ ✅ PracticeShell / PracticeResult 收口复习练、话题练、learn 训练、LoopAssist 单轮作答；模拟面试仍保持一级产品入口和复盘仪式
 
-## 第二阶段：UI 整体统一（前置：Practice 合并完成）
+## 第二阶段：UI 整体统一（前置已满足：Practice 合并完成）
 
 - design-system.css 收全量 token；learn 蓝 tint 家族收敛（6+ → 2）；语义三色写成明文规范（紫=训练、蓝=阅读、橙=面试）
 - 验收：audit-dead-css 复跑 + 全量截图比对
@@ -17,7 +17,7 @@
 ## 第三阶段：代码/文档/测试精简 → 清洁版本
 
 - capability-memory + src/mastery + memory-profile-store 链退役（首页已不渲染，BFF 还读，是关开关不是重写）
-- learn-workspace 死代码（旧训练横幅 buildReadingTrainingBanner、缩放 changeReaderZoom 及死样式）
+- learn-workspace 剩余死样式复查（旧训练横幅 buildReadingTrainingBanner、缩放 changeReaderZoom 已删）
 - 账本去重 / 陈旧项归档
 - source-regex 型单测（正则匹配源码的）评估转行为测试
 - 三件套文档对齐，全绿打 tag

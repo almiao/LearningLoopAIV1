@@ -80,7 +80,6 @@ test("home page is a single-column act-led view; library lives on its own second
   assert.match(learnSource, /ReadingAssistantBubble/);
   assert.match(learnSource, /ReadingReentryCard/);
   assert.match(learnSource, /继续上次训练/);
-  assert.match(learnSource, /buildReadingTrainingBanner/);
   assert.match(learnSource, /visibleReadProgressPercent/);
   assert.match(learnSource, /toggleIgnoredDocument/);
   assert.match(learnSource, /标记为忽略/);
@@ -92,6 +91,7 @@ test("home page is a single-column act-led view; library lives on its own second
   assert.match(learnSource, /reading-composer-starters/);
   assert.match(learnSource, /normalizeAssistantMarkdown/);
   assert.doesNotMatch(learnSource, /12 道题/);
+  assert.doesNotMatch(learnSource, /buildReadingTrainingBanner/);
   assert.doesNotMatch(learnSource, /readingTrainingBannerLabel/);
   assert.doesNotMatch(learnSource, /readingTrainingBannerClickable/);
   assert.doesNotMatch(learnSource, /reader-progress-track/);

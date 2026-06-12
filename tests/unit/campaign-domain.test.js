@@ -91,13 +91,59 @@ test("create decomposes the JD into a per-goal coverage checklist", async () => 
         userId: "u1",
       });
 
-      assert.equal(campaign.topics.length, 3);
+      assert.ok(campaign.topics.length >= 3);
       assert.equal(campaign.topics[0].coverage, "uncovered");
       assert.equal(campaign.readiness.coverageRate, 0);
       assert.equal(calls[0].pathname, "/api/campaign/decompose-jd");
       assert.equal(calls[0].payload.role, "Java 后端");
     },
     { proxy: decomposeProxy },
+  );
+});
+
+test("create mixes resume claims, JD topics, and interview-report seeds by risk", async () => {
+  await withDomain(
+    async ({ domain, calls }) => {
+      const { campaign } = await domain.create({
+        role: "Java 后端",
+        deadline: "2026-06-20",
+        jdText: "要求 Redis、Kafka 和并发基础。",
+        resumeText: "负责订单系统 Redis 缓存一致性。",
+      });
+
+      assert.equal(calls[0].pathname, "/api/campaign/decompose-jd");
+      assert.equal(calls[1].pathname, "/api/campaign/decompose-resume");
+      assert.equal(campaign.resume_text, "负责订单系统 Redis 缓存一致性。");
+      assert.equal(campaign.topics[0].source, "resume-claim");
+      assert.equal(campaign.topics[0].topic, "Redis 缓存一致性项目兜底");
+      assert.ok(campaign.topics.some((topic) => topic.source === "jd-topic"));
+      assert.ok(campaign.topics.some((topic) => topic.source === "report-seed"));
+      assert.deepEqual(campaign.readiness.gaps.slice(0, 2).map((gap) => gap.source), ["resume-claim", "jd-topic"]);
+    },
+    {
+      proxy: async (_method, pathname) => {
+        if (pathname === "/api/campaign/decompose-jd") {
+          return {
+            data: {
+              topics: [
+                { topic: "Kafka 消息可靠性", importance: "core" },
+                { topic: "Redis 缓存一致性项目兜底", importance: "core" },
+              ],
+            },
+            traceId: "jd",
+          };
+        }
+        if (pathname === "/api/campaign/decompose-resume") {
+          return {
+            data: {
+              topics: [{ topic: "Redis 缓存一致性项目兜底", importance: "core" }],
+            },
+            traceId: "resume",
+          };
+        }
+        throw new Error(`unexpected proxy call: ${pathname}`);
+      },
+    },
   );
 });
 
@@ -121,7 +167,7 @@ test("passing a topic practice marks coverage solid without touching the ledger"
       assert.equal(result.topic.coverage, "solid");
       assert.equal(result.reviewItem, null);
       assert.equal(result.rescue, null);
-      assert.equal(result.campaign.readiness.coverageRate, 1 / 3);
+      assert.equal(result.campaign.readiness.coverageRate, 1 / result.campaign.topics.length);
       assert.equal((await reviewItemStore.list()).length, 0);
     },
     {

@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
 
 import { apiFetch, postJson } from "../lib/api";
 import { getStoredUserId } from "../lib/user-session";
-import { TrainingGenerationPanel } from "./training-generation-panel";
+import { PracticeShell } from "./practice/practice-shell";
+import { getPracticeSeedSourceLabel, practiceSeedTypes } from "./practice/seed-types";
 
 // 面试冲刺页 — PRODUCT.md「面试冲刺」的 campaign Goal 详情视图（纯视图，零自有引擎/状态，§1.3）。
 // 第一性：这页只回答「今天练哪个」。清单态 = 一行读数 + 主按钮「练下一个」+ 话题清单；
@@ -21,6 +22,25 @@ const coverageLabels = {
 const importanceLabels = {
   core: "重点",
 };
+
+async function postJsonWithTimeout(pathname, payload, { timeoutMs = 45000, timeoutMessage = "AI 响应超时，请稍后重试。" } = {}) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await apiFetch(pathname, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(timeoutMessage);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 function formatDeadline(deadline = "") {
   const ms = Date.parse(deadline);
@@ -62,6 +82,7 @@ function CampaignCreateForm({ creating, error, onCreate }) {
   const [role, setRole] = useState("");
   const [deadline, setDeadline] = useState("");
   const [jdText, setJdText] = useState("");
+  const [resumeText, setResumeText] = useState("");
 
   return (
     <form
@@ -69,7 +90,7 @@ function CampaignCreateForm({ creating, error, onCreate }) {
       data-testid="campaign-create-form"
       onSubmit={(event) => {
         event.preventDefault();
-        onCreate({ role, deadline, jdText });
+        onCreate({ role, deadline, jdText, resumeText });
       }}
     >
       <h2>开启一次面试冲刺</h2>
@@ -93,9 +114,18 @@ function CampaignCreateForm({ creating, error, onCreate }) {
           required
         />
       </label>
+      <label className="ll-campaign-jd-label">
+        简历（可选）
+        <textarea
+          rows="5"
+          value={resumeText}
+          onChange={(event) => setResumeText(event.target.value)}
+          placeholder="贴上简历片段，会把你简历里声称会的点也排进练习清单。"
+        />
+      </label>
       {error ? <p className="ll-campaign-error">{error}</p> : null}
       <button type="submit" className="ll-training-primary" disabled={creating}>
-        {creating ? "正在拆解 JD..." : "生成练习清单"}
+        {creating ? "正在生成清单..." : "生成练习清单"}
       </button>
     </form>
   );
@@ -113,9 +143,10 @@ function TopicPracticeView({ campaignId, topic, onBack, onNext, onCampaignUpdate
       setError("");
       setPractice(null);
       setAnswer("");
-      const data = await postJson(
+      const data = await postJsonWithTimeout(
         `/api/campaigns/${encodeURIComponent(campaignId)}/topics/${encodeURIComponent(topic.id)}/practice`,
         { action: "start" },
+        { timeoutMessage: "出题超时，请换一道或稍后重试。" },
       );
       setPractice(data);
     } catch (nextError) {
@@ -139,9 +170,10 @@ function TopicPracticeView({ campaignId, topic, onBack, onNext, onCampaignUpdate
     try {
       setLoading(true);
       setError("");
-      const data = await postJson(
+      const data = await postJsonWithTimeout(
         `/api/campaigns/${encodeURIComponent(campaignId)}/topics/${encodeURIComponent(topic.id)}/practice`,
         { action: "answer", question: practice.question, answer: submitted },
+        { timeoutMessage: "判分超时，请稍后重试。" },
       );
       setPractice(data);
       if (data.campaign) {
@@ -154,92 +186,40 @@ function TopicPracticeView({ campaignId, topic, onBack, onNext, onCampaignUpdate
     }
   }
 
-  const answered = Boolean(practice?.judgment);
-  const passed = Boolean(practice?.passed);
-  const misses = Array.isArray(practice?.judgment?.misses) ? practice.judgment.misses : [];
-  const hits = Array.isArray(practice?.judgment?.hits) ? practice.judgment.hits : [];
-
   return (
-    <article className="ll-training-card ll-campaign-practice-card" data-testid="campaign-practice-panel">
-      <div className="ll-campaign-practice-head">
-        <button type="button" className="ll-campaign-action" onClick={onBack}>‹ 待练清单</button>
-        <span className="ll-campaign-practice-topic">{topic.topic}</span>
-      </div>
-      {error && !practice?.question ? <p className="ll-campaign-error">{error}</p> : null}
-      <h2>{practice?.question || "正在出题..."}</h2>
-      {error && practice?.question ? <p className="ll-campaign-error">{error}</p> : null}
-
-      {!answered ? (
-        <form
-          className="ll-next-answer-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submitAnswer();
-          }}
-        >
-          <textarea
-            rows="6"
-            value={answer}
-            onChange={(event) => setAnswer(event.target.value)}
-            placeholder="像面试一样作答：先结论，再机制、边界和取舍。"
-            disabled={loading || !practice?.question}
-          />
-          <div className="ll-next-answer-actions">
-            <button type="button" className="ll-campaign-action" onClick={() => void loadQuestion()} disabled={loading}>
-              换一道
-            </button>
-            <button type="submit" className="ll-training-primary" disabled={loading || !answer.trim() || !practice?.question}>
-              {loading ? "判分中..." : "提交回答"}
-            </button>
-          </div>
-        </form>
-      ) : (
-        <section className="ll-review-practice-result">
-          <div
-            className={`ll-thread-score-summary tone-${passed ? "solid" : "weak"}`}
-            style={{ "--thread-score-color": passed ? "#1D9E75" : "#E27272" }}
-          >
-            <div className="ll-thread-score-main">
-              <strong>{passed ? "过了 · 标记为扎实" : "没讲稳 · 已加入复习计划"}</strong>
-            </div>
-          </div>
-          {hits.length || misses.length ? (
-            <div className="ll-thread-support-grid">
-              {hits.length ? (
-                <article className="ll-thread-support-card takeaway">
-                  <strong>讲到位的</strong>
-                  <p>{hits.join("；")}</p>
-                </article>
-              ) : null}
-              {misses.length ? (
-                <article className="ll-thread-support-card improve">
-                  <strong>没讲到的</strong>
-                  <p>{misses.join("；")}</p>
-                </article>
-              ) : null}
-            </div>
-          ) : null}
-          {!passed && practice.rescue?.markdown ? (
-            <div className="ll-thread-message assistant explanation">
-              <TrainingGenerationPanel
-                embedded
-                complete
-                markdown={practice.rescue.markdown}
-                testId="campaign-practice-rescue-card"
-              />
-            </div>
-          ) : null}
-          <div className="ll-next-answer-actions">
-            <button type="button" className="ll-campaign-action" onClick={() => void loadQuestion()} disabled={loading}>
-              同话题再练
-            </button>
-            <button type="button" className="ll-training-primary" onClick={onNext}>
-              练下一个
-            </button>
-          </div>
-        </section>
+    <PracticeShell
+      seed={{ type: topic.source || practiceSeedTypes.jdTopic, payload: topic }}
+      practice={practice}
+      answer={answer}
+      setAnswer={setAnswer}
+      loading={loading}
+      error={error}
+      onSubmit={submitAnswer}
+      onRefreshQuestion={loadQuestion}
+      className="ll-training-card ll-campaign-practice-card"
+      testId="campaign-practice-panel"
+      questionFallback="正在出题..."
+      answerPlaceholder="像面试一样作答：先结论，再机制、边界和取舍。"
+      resultLabels={{
+        passLabel: "过了 · 标记为扎实",
+        failLabel: "没讲稳 · 已加入复习计划",
+      }}
+      supportLabels={{ hits: "讲到位的", misses: "没讲到的" }}
+      rescueTestId="campaign-practice-rescue-card"
+      actions={{
+        retry: "换一道",
+        retryAnswered: "同话题再练",
+        retryClassName: "ll-campaign-action",
+        next: "练下一个",
+        onNext,
+      }}
+      beforeQuestion={(
+        <div className="ll-campaign-practice-head">
+          <button type="button" className="ll-campaign-action" onClick={onBack}>‹ 待练清单</button>
+          <span className="ll-campaign-practice-topic">{topic.topic}</span>
+        </div>
       )}
-    </article>
+    />
   );
 }
 
@@ -331,7 +311,7 @@ export function CampaignDashboard() {
     setCampaigns((current) => (current || []).map((campaign) => (campaign.id === updated.id ? updated : campaign)));
   }
 
-  async function createCampaign({ role, deadline, jdText }) {
+  async function createCampaign({ role, deadline, jdText, resumeText }) {
     try {
       setCreating(true);
       setCreateError("");
@@ -339,6 +319,7 @@ export function CampaignDashboard() {
         role,
         deadline,
         jdText,
+        resumeText,
         userId: getStoredUserId(),
       });
       setCampaigns((current) => [...(current || []), data.campaign]);
@@ -542,6 +523,7 @@ export function CampaignDashboard() {
                             {importanceLabels[topic.importance] ? (
                               <span className="ll-campaign-topic-core">{importanceLabels[topic.importance]}</span>
                             ) : null}
+                            <span className="ll-campaign-topic-source">{getPracticeSeedSourceLabel(topic.source)}</span>
                             {isPriority ? <span className="ll-campaign-topic-priority">建议先练</span> : null}
                           </div>
                           <span className="ll-campaign-topic-text">{topic.topic}</span>

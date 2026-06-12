@@ -18,6 +18,7 @@ import {
   streamLoopAssistAnswer,
   synthesizeLoopAssistSpeech,
 } from "../lib/loopassist-api";
+import { PracticeShell } from "./practice/practice-shell";
 
 const defaultScope = {
   role: "",
@@ -141,23 +142,6 @@ function readFileAsBase64(file) {
     reader.onerror = () => reject(new Error("文件读取失败。"));
     reader.readAsDataURL(file);
   });
-}
-
-function TextAnswerComposer({ value, disabled, onChange, onSubmit }) {
-  return (
-    <section className="loopassist-text-answer" data-testid="loopassist-text-answer">
-      <textarea
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder="输入你的回答，尽量像真实面试一样完整表达。"
-        disabled={disabled}
-        data-testid="loopassist-text-answer-input"
-      />
-      <button type="button" className="loopassist-primary-action" onClick={onSubmit} disabled={disabled || !value.trim()} data-testid="loopassist-submit-text-answer">
-        提交回答
-      </button>
-    </section>
-  );
 }
 
 function ConversationHistoryDrawer({ open, turns, currentTurnId, currentTopic, currentQuestionNumber, questionBudget, onClose }) {
@@ -1934,11 +1918,21 @@ export function LoopAssistWorkspace() {
             <h1>{questionTitle}</h1>
           </section>
 
-          <TextAnswerComposer
-            value={textAnswer}
-            disabled={isSubmitting || isAwaitingFollowup}
-            onChange={setTextAnswer}
+          <PracticeShell
+            seed={{ type: "report-seed", payload: currentPlanStage || currentQuestionTurn || {} }}
+            practice={{ question: questionTitle }}
+            answer={textAnswer}
+            setAnswer={setTextAnswer}
+            loading={isSubmitting || isAwaitingFollowup}
             onSubmit={submitTextAnswer}
+            className="loopassist-text-answer"
+            testId="loopassist-text-answer"
+            showQuestion={false}
+            answerPlaceholder="输入你的回答，尽量像真实面试一样完整表达。"
+            formTestId="loopassist-text-answer-form"
+            textareaTestId="loopassist-text-answer-input"
+            submitTestId="loopassist-submit-text-answer"
+            actions={{ submit: "提交回答", loading: "生成下一问...", submitClassName: "loopassist-primary-action" }}
           />
 
           {questionTone ? <p className={questionToneClassName}>{questionTone}</p> : null}

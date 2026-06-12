@@ -12,7 +12,6 @@ import {
 import { buildReentryPlan, isReadingAction, isTrainingAction } from "../lib/reentry-actions";
 import { readHeading, renderMarkdownContent, slugifyHeading } from "../lib/render-markdown-content";
 import { getDocumentOutline, getReaderRenderer } from "../lib/document-reader-renderers";
-import { TrainingGenerationPanel } from "./training-generation-panel";
 import {
   getStoredUserId,
   setStoredUserId,
@@ -23,6 +22,7 @@ import { ReadingAssistantBubble, ReadingDocumentContent, ReadingSelectionPopover
 import { MiniIcon } from "./learn/shared";
 import { RescuePlaylistStrip, TrainingWorkspace, appendCompletedStep, buildTrainingExchanges, buildTrainingStats, buildTrainingStatus, createTrainingWaitState, getCurrentTrainingQuestion, getNextTrainingWaitStep, hasTeachExplanationForCurrentQuestion, normalizeTrainingWaitStepKey, trainingWaitStepKeys } from "./learn/training-session";
 import { TrainingCompletionSummaryPage, buildTrainingCompletionSummary } from "./learn/training-summary";
+import { ReviewPracticeWorkspace } from "./practice/review-practice";
 
 const profileDirtyStorageKey = "learning-loop-profile-dirty-at";
 const learnPanelLayoutStorageKey = "learning-loop-learn-panel-layout-v1";
@@ -31,7 +31,6 @@ const minQaPanelPercent = 30;
 const maxQaPanelPercent = 58;
 const minReaderZoom = 70;
 const maxReaderZoom = 200;
-const readerZoomStep = 10;
 function clampQaPanelPercent(value) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) {
@@ -277,76 +276,6 @@ function buildDocumentHeadings(markdown = "") {
   return headings;
 }
 
-function getTrainingCtaLabel(documentProgressEntry = null) {
-  if (documentProgressEntry?.trainingSkipped) {
-    return "已跳过训练";
-  }
-  if (documentProgressEntry?.trainingCompleted) {
-    return "训练已完成";
-  }
-  if (documentProgressEntry?.trainingAvailability === "unavailable") {
-    return "暂不支持训练";
-  }
-  if (!documentProgressEntry?.trainingStarted) {
-    return "开始训练";
-  }
-  const checkpointProgressLabel = String(documentProgressEntry?.trainingCheckpointProgressLabel || "").trim();
-  if (checkpointProgressLabel) {
-    return `继续训练（${checkpointProgressLabel}）`;
-  }
-  return "继续训练";
-}
-
-function buildReadingTrainingBanner({
-  currentReadingCompleted = false,
-  trainingStarted = false,
-  trainingCompleted = false,
-  trainingSkipped = false,
-  trainingReadingOnly = false,
-  unavailableReason = "",
-} = {}) {
-  if (trainingCompleted) {
-    return {
-      label: "训练已完成 · 查看记录",
-      tone: "done",
-      clickable: true,
-    };
-  }
-  if (trainingSkipped) {
-    return {
-      label: "已按仅阅读完成收尾 · 重新开启训练 →",
-      tone: "muted-action",
-      clickable: true,
-    };
-  }
-  if (trainingReadingOnly) {
-    return {
-      label: unavailableReason || "当前文档仅阅读 · 暂不支持训练",
-      tone: "muted",
-      clickable: false,
-    };
-  }
-  if (trainingStarted) {
-    return {
-      label: "训练进行中 · 继续训练 →",
-      tone: "action",
-      clickable: true,
-    };
-  }
-  if (currentReadingCompleted) {
-    return {
-      label: "已读完 · 开始训练 →",
-      tone: "action",
-      clickable: true,
-    };
-  }
-  return {
-    label: "读完后建议训练，确认是否真的掌握",
-    tone: "ready",
-    clickable: false,
-  };
-}
-
 function formatCheckpointProgressLabel(label = "") {
   const value = String(label || "").trim();
   if (!value) {
@@ -449,148 +378,6 @@ function ReadingReentryCard({
         </button>
       </div>
     </section>
-  );
-}
-
-function ReviewPracticeWorkspace({
-  practice,
-  answer,
-  setAnswer,
-  loading,
-  error,
-  onSubmit,
-  onRefreshQuestion,
-  onHome,
-}) {
-  const item = practice?.reviewItem || {};
-  const evidence = item.evidence || {};
-  const missedAnchors = Array.isArray(evidence.missedAnchors) ? evidence.missedAnchors : [];
-  const misses = Array.isArray(practice?.judgment?.misses) ? practice.judgment.misses : [];
-  const hits = Array.isArray(practice?.judgment?.hits) ? practice.judgment.hits : [];
-  const answered = Boolean(practice?.judgment);
-  const passed = Boolean(practice?.passed);
-  const stateLabel = item.state === "solid" ? "扎实" : "生疏";
-
-  return (
-    <main className="learn-shell ll-review-practice-page" data-testid="review-practice-workspace">
-      <header className="ll-training-topbar">
-        <div className="ll-training-title">
-          <button type="button" className="ll-training-back" onClick={onHome}>‹</button>
-          <div>
-            <span>今日复习</span>
-            <h1>{item.handle || "重练这个点"}</h1>
-          </div>
-        </div>
-        <div className="ll-training-tabs">
-          <button type="button" className="active">复练</button>
-          <button type="button" onClick={onHome}>回首页</button>
-        </div>
-      </header>
-
-      {error ? <section className="feedback-banner error-banner narrow-banner">{error}</section> : null}
-
-      <section className="ll-review-practice-main">
-        <article className="ll-training-card ll-review-practice-card">
-          <div className="ll-training-card-chip-row">
-            <span className="ll-training-chip">{`待复习 · ${stateLabel}`}</span>
-            <span className="ll-training-status-label">{practice?.source?.available ? "已结合原文出题" : "没有原文也能练"}</span>
-          </div>
-          <h2>{practice?.question || "正在为这个点出一道新题..."}</h2>
-          {evidence.question ? (
-            <div className="ll-review-practice-evidence">
-              <span>上次没答好的题</span>
-              <p>{evidence.question}</p>
-            </div>
-          ) : null}
-          {missedAnchors.length ? (
-            <div className="ll-review-practice-anchor-list">
-              {missedAnchors.map((anchor) => (
-                <span key={anchor}>{anchor}</span>
-              ))}
-            </div>
-          ) : null}
-
-          {!answered ? (
-            <form
-              className="ll-next-answer-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                onSubmit();
-              }}
-            >
-              <textarea
-                rows="6"
-                value={answer}
-                onChange={(event) => setAnswer(event.target.value)}
-                placeholder="一次性写下你的回答。先结论，再机制、边界和取舍。"
-                disabled={loading || !practice?.question}
-              />
-              <div className="ll-next-answer-actions">
-                <button type="button" className="ll-tool-button" onClick={onRefreshQuestion} disabled={loading}>
-                  换一道题
-                </button>
-                <button type="submit" className="ll-training-primary" disabled={loading || !answer.trim() || !practice?.question}>
-                  {loading ? "判分中..." : "提交回答"}
-                </button>
-              </div>
-            </form>
-          ) : (
-            <section className="ll-review-practice-result">
-              <div
-                className={`ll-thread-score-summary tone-${passed ? "solid" : "weak"}`}
-                style={{
-                  "--thread-score-color": passed ? "#1D9E75" : "#E27272",
-                }}
-              >
-                <div className="ll-thread-score-main">
-                  <strong>{passed ? "过了，这个点转为扎实" : "还没讲稳，已安排复习"}</strong>
-                  <span>{passed ? "扎实" : "生疏"}</span>
-                </div>
-                <p>{passed ? "这个点的复习间隔会拉长，暂时不用管它。" : "这个点很快会再出现，先看下面的讲解补上。"}</p>
-              </div>
-              <div className="ll-thread-message user">
-                <div className="ll-answer-label">你的回答</div>
-                <pre className="ll-answer-snapshot">{practice.answer}</pre>
-              </div>
-              {hits.length || misses.length ? (
-                <div className="ll-thread-support-grid">
-                  {hits.length ? (
-                    <article className="ll-thread-support-card takeaway">
-                      <strong>你讲到位的点</strong>
-                      <p>{hits.join("；")}</p>
-                    </article>
-                  ) : null}
-                  {misses.length ? (
-                    <article className="ll-thread-support-card improve">
-                      <strong>还没讲到的关键点</strong>
-                      <p>{misses.join("；")}</p>
-                    </article>
-                  ) : null}
-                </div>
-              ) : null}
-              {!passed && practice.rescue?.markdown ? (
-                <div className="ll-thread-message assistant explanation">
-                  <TrainingGenerationPanel
-                    embedded
-                    complete
-                    markdown={practice.rescue.markdown}
-                    testId="review-practice-rescue-card"
-                  />
-                </div>
-              ) : null}
-              <div className="ll-next-answer-actions">
-                <button type="button" className="ll-tool-button" onClick={onRefreshQuestion} disabled={loading}>
-                  再练一题
-                </button>
-                <button type="button" className="ll-training-primary" onClick={onHome}>
-                  回首页
-                </button>
-              </div>
-            </section>
-          )}
-        </article>
-      </section>
-    </main>
   );
 }
 
@@ -960,7 +747,6 @@ export function LearnWorkspace() {
   const activeDocumentProgressEntry = profile?.documentProgress?.docs?.[activeDocPath] || null;
   const storedReadProgressPercent = Math.min(100, Math.max(0, Number(activeDocumentProgressEntry?.progressPercentage || 0)));
   const isDocumentIgnored = Boolean(activeDocPath && (profile?.documentProgress?.ignoredDocPaths || []).includes(activeDocPath));
-  const trainingCtaLabel = getTrainingCtaLabel(activeDocumentProgressEntry);
   const visibleReadProgressPercent = Math.max(readProgressPercent, storedReadProgressPercent);
   const currentReadingCompleted = visibleReadProgressPercent >= 90;
   const trainingSkipped = Boolean(activeDocumentProgressEntry?.trainingSkipped || locallySkippedTrainingPaths.includes(activeDocPath));
@@ -972,17 +758,6 @@ export function LearnWorkspace() {
     activeDocumentProgressEntry?.activeSessionId ||
     sessionBelongsToDocument(session, activeDocPath)
   );
-  const trainingHeaderCtaLabel = currentReadingCompleted && !trainingUnlocked && !trainingCompleted && !trainingReadingOnly
-    ? "训练这篇"
-    : trainingCtaLabel;
-  const readingTrainingBanner = buildReadingTrainingBanner({
-    currentReadingCompleted,
-    trainingStarted,
-    trainingCompleted,
-    trainingSkipped,
-    trainingReadingOnly,
-    unavailableReason: activeDocumentProgressEntry?.trainingUnavailableReason || "",
-  });
   const reentryPlan = useMemo(
     () => buildReentryPlan({
       path: activeDocPath,
@@ -1108,10 +883,6 @@ export function LearnWorkspace() {
       top: qaScrollRef.current.scrollHeight,
       behavior,
     });
-  }
-
-  function changeReaderZoom(delta) {
-    setReaderZoom((value) => clampReaderZoom(value + delta));
   }
 
   useEffect(() => {
@@ -1985,17 +1756,6 @@ export function LearnWorkspace() {
     setDismissedReentrySignature(reentrySignature);
   }
 
-  async function handleReadingTrainingBannerClick() {
-    if (!readingTrainingBanner.clickable || isStarting || isAnswering) {
-      return;
-    }
-    if (trainingSkipped) {
-      await restartTraining();
-      return;
-    }
-    await unlockTraining();
-  }
-
   async function skipTrainingForDocument() {
     if (!profile?.user?.id || !activeDocPath) {
       return;
@@ -2443,20 +2203,29 @@ export function LearnWorkspace() {
       return;
     }
 
-    function handlePointerMove(moveEvent) {
+    const divider = event.currentTarget;
+
+    function applyPointerLayout(clientX) {
       const bounds = studyMainRef.current?.getBoundingClientRect();
       if (!bounds || bounds.width <= 0) {
         return;
       }
-      const nextQaPercent = ((bounds.right - moveEvent.clientX) / bounds.width) * 100;
+      const nextQaPercent = ((bounds.right - clientX) / bounds.width) * 100;
       setPanelLayout({
         mode: "manual",
         qaPercent: clampQaPanelPercent(nextQaPercent),
       });
     }
 
+    function handlePointerMove(moveEvent) {
+      applyPointerLayout(moveEvent.clientX);
+    }
+
     function finishDragging() {
       setIsDraggingLayout(false);
+      if (typeof divider.releasePointerCapture === "function" && divider.hasPointerCapture?.(event.pointerId)) {
+        divider.releasePointerCapture(event.pointerId);
+      }
       document.body.style.removeProperty("cursor");
       document.body.style.removeProperty("user-select");
       window.removeEventListener("pointermove", handlePointerMove);
@@ -2465,6 +2234,10 @@ export function LearnWorkspace() {
     }
 
     setIsDraggingLayout(true);
+    if (typeof divider.setPointerCapture === "function") {
+      divider.setPointerCapture(event.pointerId);
+    }
+    applyPointerLayout(event.clientX);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
     window.addEventListener("pointermove", handlePointerMove);
