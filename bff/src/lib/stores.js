@@ -1,3 +1,4 @@
+import { createCampaignGoalStore } from "../../../src/goals/campaign-goal-store.js";
 import { createDrillPassthrough } from "../../../src/ledger/drill-passthrough.js";
 import { createReviewItemStore } from "../../../src/ledger/review-item-store.js";
 import { createLoopAssistRescuePlaylistStore } from "../../../src/loopassist/rescue-playlist-store.js";
@@ -18,6 +19,9 @@ export const rescuePlaylistStore = createLoopAssistRescuePlaylistStore();
 // 失败账本（PRODUCT.md §4）。写端 = 穿透适配器（阶段 3），读端 = Today Queue「今日复习」（阶段 4）。
 
 export const reviewItemStore = createReviewItemStore();
+
+// 面试战役 Goal（PRODUCT.md 持久实体 ①）：deadline + per-Goal 覆盖度清单，随战役生灭。
+export const campaignGoalStore = createCampaignGoalStore();
 
 export const drillPassthrough = createDrillPassthrough({ store: reviewItemStore });
 

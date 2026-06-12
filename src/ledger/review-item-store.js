@@ -142,14 +142,15 @@ export function createReviewItemStore({ ledgerDir = defaultLedgerDir } = {}) {
 
     // ——— 写入口（阶段 3 的穿透适配器调用） ———
     // 失败驱动：只在答崩、有漏掉的锚点时调用（§4）。一次过的话题不写任何状态。
-    async recordMiss({ handle, source_ref = "", evidence = {}, state = "shaky", now = nowIso() } = {}) {
+    // deadline（可选）：面试战役的 deadline 感知调度——next_due 不能排到面试之后（封顶在 review-scheduling 里）。
+    async recordMiss({ handle, source_ref = "", evidence = {}, state = "shaky", now = nowIso(), deadline = null } = {}) {
       const cleanHandle = normalizeText(handle);
       if (!cleanHandle) {
         throw new Error("review item handle is required.");
       }
       const safeState = VALID_STATES.has(state) ? state : "shaky";
       return mutate(async (items) => {
-        const schedule = scheduleNextReview({ state: safeState, priorStreak: 0, now });
+        const schedule = scheduleNextReview({ state: safeState, priorStreak: 0, now, deadline });
         const item = normalizeItem({
           id: buildId(cleanHandle),
           handle: cleanHandle,
@@ -166,8 +167,8 @@ export function createReviewItemStore({ ledgerDir = defaultLedgerDir } = {}) {
       });
     },
 
-    // 复练后写回 state 与 next_due（§4 session 回路第 3 步）。
-    async updateState({ id, state, now = nowIso() } = {}) {
+    // 复练后写回 state 与 next_due（§4 session 回路第 3 步）。deadline 同 recordMiss。
+    async updateState({ id, state, now = nowIso(), deadline = null } = {}) {
       if (!VALID_STATES.has(state)) {
         throw new Error(`invalid review item state: ${state}`);
       }
@@ -177,7 +178,7 @@ export function createReviewItemStore({ ledgerDir = defaultLedgerDir } = {}) {
           if (item.id !== id) {
             return item;
           }
-          const schedule = scheduleNextReview({ state, priorStreak: item.streak, now });
+          const schedule = scheduleNextReview({ state, priorStreak: item.streak, now, deadline });
           updated = normalizeItem({
             ...item,
             state,

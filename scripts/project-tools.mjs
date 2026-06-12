@@ -35,13 +35,17 @@ const pythonFiles = [
   "ai-service/app/engine/session_engine.py",
   "ai-service/app/loopassist/__init__.py",
   "ai-service/app/loopassist/service.py",
+  "ai-service/app/engine/jd_decompose.py",
+  "ai-service/tests/test_jd_decompose.py",
   "ai-service/tests/test_review_question.py",
   "ai-service/tests/test_tutor_provider_config.py",
 ];
 
 const nodeCheckFiles = [
   "bff/src/server.js",
+  "bff/src/lib/campaign-domain.js",
   "bff/src/lib/review-drill-domain.js",
+  "src/goals/campaign-goal-store.js",
   "scripts/service-runtime.mjs",
   "scripts/start-services.mjs",
   "scripts/stop-services.mjs",
@@ -59,8 +63,12 @@ const testFiles = [
   "tests/unit/split-entrypoints.test.js",
   "tests/unit/loopassist-contract.test.js",
   "tests/unit/loopassist-corpus.test.js",
+  "tests/unit/campaign-domain.test.js",
+  "tests/unit/campaign-goal-store.test.js",
   "tests/unit/reentry-actions.test.js",
   "tests/unit/review-drill-domain.test.js",
+  "tests/unit/review-item-store.test.js",
+  "tests/unit/review-scheduling.test.js",
   "tests/unit/user/resume-version-store.test.js",
 ];
 

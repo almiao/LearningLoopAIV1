@@ -19,6 +19,7 @@ from app.core.tracing import (
     trace_id_var,
 )
 from app.engine.anchor_judge import judge_anchors
+from app.engine.jd_decompose import decompose_jd
 from app.engine.control_intents import detect_control_intent
 from app.engine.session_engine import (
     answer_session,
@@ -335,6 +336,12 @@ class ReviewQuestionRequest(BaseModel):
     sourceExcerpt: str = ""
 
 
+class JdDecomposeRequest(BaseModel):
+    jdText: str
+    resumeText: str = ""
+    role: str = ""
+
+
 app = FastAPI(title="Learning Loop AI Service")
 snapshot_store = SnapshotStore()
 app.add_middleware(
@@ -523,6 +530,19 @@ def review_generate_question(payload: ReviewQuestionRequest) -> Dict[str, Any]:
         review_item=payload.reviewItem,
         source_excerpt=payload.sourceExcerpt,
     )
+
+
+# JD 拆扁平话题（PRODUCT.md「面试战役 ②定范围」）。产出 per-Goal 覆盖度清单种子，无状态、不入库。
+@app.post("/api/campaign/decompose-jd")
+def campaign_decompose_jd(payload: JdDecomposeRequest) -> Dict[str, Any]:
+    try:
+        return decompose_jd(
+            jd_text=payload.jdText,
+            resume_text=payload.resumeText,
+            role=payload.role,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/interview/start-target")

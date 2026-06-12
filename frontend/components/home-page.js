@@ -1566,9 +1566,9 @@ export function HomePage() {
           <button type="button" className="ll-mobile-nav" onClick={() => setMobilePane((pane) => (pane === "sidebar" ? "detail" : "sidebar"))}>
             {mobilePane === "sidebar" ? "查看详情" : "资料库"}
           </button>
-          <Link href="/loopassist" className="ll-interview-button">
+          <Link href="/campaign" className="ll-interview-button">
             <span aria-hidden="true">AI</span>
-            <span>面试模式</span>
+            <span>面试战役</span>
           </Link>
           <AvatarMenu
             open={avatarOpen}

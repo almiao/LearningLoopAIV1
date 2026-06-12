@@ -7,11 +7,13 @@ import { handleAnswer, handleAnswerStream, handleFocusConcept, handleFocusDomain
 import { handleKnowledgeAnswer } from "./lib/knowledge-domain.js";
 import { handleLoopAssistStart, handleLoopAssistStream, recordLoopAssistDrillRounds } from "./lib/loopassist-domain.js";
 import { buildProfilePayload, getUserProfile, handleIgnoredDocument, handleListResumeVersions, handleReadingProgress, handleRecommendationSnooze, handleSaveResumeVersion, handleSkippedTraining } from "./lib/profile-domain.js";
+import { createCampaignDomain, parseCampaignPath } from "./lib/campaign-domain.js";
 import { createReviewDrillDomain, parseReviewDrillPath } from "./lib/review-drill-domain.js";
 import { aiServiceUrl, proxyBinary, proxyJson, ttsServiceUrl } from "./lib/service-proxy.js";
-import { rescuePlaylistStore, reviewItemStore, userProfileStore } from "./lib/stores.js";
+import { campaignGoalStore, rescuePlaylistStore, reviewItemStore, userProfileStore } from "./lib/stores.js";
 
 const reviewDrillDomain = createReviewDrillDomain({ store: reviewItemStore });
+const campaignDomain = createCampaignDomain({ store: campaignGoalStore, reviewItemStore });
 
 const server = http.createServer(async (request, response) => {
   try {
@@ -51,6 +53,53 @@ const server = http.createServer(async (request, response) => {
           });
       sendJson(response, 200, payload);
       return;
+    }
+
+    // 面试战役（campaign Goal）：仪表盘是共享引擎 + 共享账本的纯视图（§1.3）。
+    if (url.pathname === "/api/campaigns") {
+      if (request.method === "GET") {
+        sendJson(response, 200, await campaignDomain.list());
+        return;
+      }
+      if (request.method === "POST") {
+        const body = await readJsonBody(request);
+        sendJson(response, 200, await campaignDomain.create(body));
+        return;
+      }
+    }
+
+    const campaignRoute = parseCampaignPath(url.pathname);
+    if (campaignRoute) {
+      if (request.method === "GET" && campaignRoute.action === "detail") {
+        sendJson(response, 200, await campaignDomain.detail({ id: campaignRoute.id }));
+        return;
+      }
+      if (request.method === "POST" && campaignRoute.action === "drill") {
+        const body = await readJsonBody(request);
+        const payload = body.action === "answer" || body.answer
+          ? await campaignDomain.answerTopicDrill({
+              id: campaignRoute.id,
+              topicId: campaignRoute.topicId,
+              question: body.question || "",
+              answer: body.answer || "",
+            })
+          : await campaignDomain.startTopicDrill({
+              id: campaignRoute.id,
+              topicId: campaignRoute.topicId,
+            });
+        sendJson(response, 200, payload);
+        return;
+      }
+      if (request.method === "POST" && campaignRoute.action === "debrief") {
+        const body = await readJsonBody(request);
+        sendJson(response, 200, await campaignDomain.debrief({ id: campaignRoute.id, misses: body.misses || [] }));
+        return;
+      }
+      if (request.method === "POST" && campaignRoute.action === "archive") {
+        const body = await readJsonBody(request);
+        sendJson(response, 200, await campaignDomain.archive({ id: campaignRoute.id, outcome: body.outcome || "" }));
+        return;
+      }
     }
 
     if (request.method === "GET" && url.pathname === "/api/loopassist/options") {
