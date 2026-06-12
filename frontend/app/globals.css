@@ -8222,16 +8222,17 @@ button {
 
 /* LoopAssist v2 design: warm paper workspace inspired by the supplied HTML comps. */
 .loopassist-shell {
-  --loop-paper: #f5f1e8;
-  --loop-paper-2: #efe9dc;
+  /* 对齐全站暖纸基准：纸底/墨色/分隔线取 :root 同值，品牌色统一为面试红（--danger） */
+  --loop-paper: var(--paper-warm);
+  --loop-paper-2: var(--paper-soft);
   --loop-surface: var(--paper);
-  --loop-ink: #1b1916;
-  --loop-ink-2: #4a463f;
-  --loop-muted: #8c877c;
-  --loop-line: #e2dbcb;
-  --loop-line-2: #d5ccb8;
-  --loop-brand: #d9531e;
-  --loop-brand-soft: #fbefe7;
+  --loop-ink: var(--ink);
+  --loop-ink-2: var(--ink-2);
+  --loop-muted: var(--ink-3);
+  --loop-line: var(--line-warm);
+  --loop-line-2: var(--line-soft);
+  --loop-brand: var(--danger);
+  --loop-brand-soft: #fdf0ed;
   --loop-good: var(--green-deep);
   --loop-warn: var(--amber);
   --loop-miss: #c03b26;
@@ -8917,7 +8918,7 @@ button {
   font-family: var(--loop-font-mono);
   font-size: 12.5px;
   font-weight: 700;
-  box-shadow: 0 8px 18px rgba(217, 83, 30, 0.26);
+  box-shadow: 0 8px 18px rgba(204, 75, 55, 0.26);
 }
 
 .loopassist-review-rescue-handoff {
@@ -9212,7 +9213,7 @@ button {
 }
 
 .loopassist-radar-area {
-  fill: rgba(217, 83, 30, 0.22);
+  fill: rgba(204, 75, 55, 0.22);
   stroke: var(--loop-brand);
   stroke-width: 2;
 }
@@ -9462,7 +9463,7 @@ button {
   right: -40px;
   width: 170px;
   height: 170px;
-  background: radial-gradient(circle, rgba(217, 83, 30, 0.35), transparent 70%);
+  background: radial-gradient(circle, rgba(204, 75, 55, 0.35), transparent 70%);
 }
 
 .loopassist-review-page .scorecard .label {
