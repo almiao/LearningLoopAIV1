@@ -2269,7 +2269,15 @@ export function LearnWorkspace() {
   if (!profile) {
     return (
       <main className="learn-shell">
-        <Link className="floating-back-link" href="/">‹</Link>
+        <header className="ll-topbar">
+          <Link href="/" className="ll-brand">
+            <span className="ll-brand-mark" aria-hidden="true" />
+            <span>LearningLoop</span>
+          </Link>
+          <div className="ll-topbar-actions">
+            <Link href="/" className="ll-secondary-button">← 返回首页</Link>
+          </div>
+        </header>
         <section className="gate-card">
           <h1>先连接学习档案，再进入学习页。</h1>
           <p>首页会保存你的账号、目标和长期记忆；连接后再回来，这里会直接回到学习页。</p>

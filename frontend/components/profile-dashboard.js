@@ -91,8 +91,16 @@ export function ProfileDashboard() {
   if (!profile) {
     return (
       <main className="profile-shell">
+        <header className="ll-topbar">
+          <Link href="/" className="ll-brand">
+            <span className="ll-brand-mark" aria-hidden="true" />
+            <span>LearningLoop</span>
+          </Link>
+          <div className="ll-topbar-actions">
+            <Link href="/" className="ll-secondary-button">← 返回首页</Link>
+          </div>
+        </header>
         <section className="profile-header">
-          <div className="brand-chip">L</div>
           <div className="profile-header-copy">
             <h1>个人档案</h1>
             <p>查看文档阅读、训练进展、记忆内容与下一步建议。</p>
@@ -111,8 +119,16 @@ export function ProfileDashboard() {
 
   return (
     <main className="profile-shell">
+      <header className="ll-topbar">
+        <Link href="/" className="ll-brand">
+          <span className="ll-brand-mark" aria-hidden="true" />
+          <span>LearningLoop</span>
+        </Link>
+        <div className="ll-topbar-actions">
+          <Link href="/" className="ll-secondary-button">← 返回首页</Link>
+        </div>
+      </header>
       <section className="profile-header">
-        <div className="brand-chip">L</div>
         <div className="profile-header-copy">
           <h1>个人档案</h1>
           <p>查看文档阅读、训练进展、记忆内容与下一步建议。</p>

@@ -149,11 +149,11 @@ export function MaterialIngestionPage() {
     <main className="materials-shell">
       <header className="materials-topbar">
         <div className="materials-title-group">
-          <Link className="back-link header-back-link" href="/">‹</Link>
-          <div>
-            <p className="eyebrow">资料录入</p>
-            <h1>上传资料</h1>
-          </div>
+          <Link href="/" className="ll-brand">
+            <span className="ll-brand-mark" aria-hidden="true" />
+            <span>LearningLoop</span>
+          </Link>
+          <h1 className="materials-page-title">上传资料</h1>
         </div>
         {materials.length ? (
           <Link className="secondary-pill materials-history-link" href={`/learn?doc=${encodeURIComponent(materials[0].path)}`}>
