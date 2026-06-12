@@ -274,7 +274,7 @@ function AvatarMenu({ open, onToggle, onLogout, onLoginClick, userName, isLogged
   );
 }
 
-function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue, materialPool, hasProfile, onSnoozeRecommendation }) {
+function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue, materialPool, hasProfile, hasActiveCampaign, onSnoozeRecommendation }) {
   const reentryPlan = buildReentryPlan(featuredDocument);
   const action = reentryPlan.primaryAction;
   const color = getSignalColor(featuredDocument);
@@ -286,183 +286,188 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
 
   return (
     <section className="ll-default-view">
-      <div className="ll-kicker">今天先做什么</div>
+      <div className="ll-kicker ll-today-kicker">{hasActiveCampaign ? "为了这场面试，今天做三件事" : "今天先做什么"}</div>
       {!hasProfile ? (
         <p className="ll-status-note">当前还没连接学习档案，先打开一篇 JavaGuide 文档，阅读与训练进度会自动回到这里。</p>
       ) : null}
-      <div className="ll-hero-card">
-        <span className="ll-hero-bar" style={{ background: color }} aria-hidden="true" />
-        <div className="ll-hero-main">
-          <div className="ll-hero-layout">
-            <div className="ll-hero-body">
-              <section className="ll-hero-task ll-hero-recommendation">
-                <div className="ll-reentry-badge">{heroCopy.badge}</div>
-                <h1 className="ll-reentry-title">{heroCopy.title}</h1>
-                <p className="ll-reentry-reason">{heroCopy.reason}</p>
-              </section>
 
-              <section className="ll-hero-support-strip">
-                <div className="ll-hero-context-row">
-                  <span className="ll-doc-row-icon" style={{ color }}>
-                    {getTypeIcon(featuredDocument)}
-                  </span>
-                  <div className="ll-doc-title-block">
-                    <p className="ll-hero-caption">材料</p>
-                    <Link href={buildLearningHref(featuredDocument)} className="ll-title-link">
-                      <h2>{featuredDocument.title}</h2>
-                    </Link>
-                    <p>{`来源 ${featuredDocument.providerLabel} · ${featuredDocument.folderLabels.join(" / ") || "资料库"} · ${formatLastActivity(featuredDocument.lastActivityAt)}`}</p>
-                  </div>
-                </div>
-                {recommendationFacts.length ? (
-                  <div className="ll-hero-footer-row">
-                    <div className="ll-recommendation-facts" aria-label="推荐依据">
-                      {recommendationFacts.map((fact) => (
-                        <span key={fact} className="ll-recommendation-chip">{fact}</span>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </section>
-            </div>
-            <aside className="ll-hero-cta">
-              <strong className="ll-hero-score" style={{ color }}>
-                {getHeroMetric(featuredDocument)}
-              </strong>
-              <Link href={buildLearningHref(featuredDocument, { autostart: action.autostart, intent: action.kind })} className="ll-primary-button">
-                {action.label}
-              </Link>
-              <Link
-                href={recommendedNewDocument ? buildLearningHref(recommendedNewDocument) : "/library"}
-                className="ll-secondary-button ll-hero-explore-button"
-              >
-                开始新的一篇 →
-              </Link>
-              {featuredDocument.group !== "unstarted" ? (
-                <button
-                  type="button"
-                  className="ll-text-button"
-                  onClick={() => onSnoozeRecommendation(featuredDocument)}
-                >
-                  {snoozeLabel}
-                </button>
-              ) : null}
-              {reentryPlan.secondaryActions?.length ? (
-                <div className="ll-reentry-secondary-links" aria-label="备选动作">
-                  {reentryPlan.secondaryActions.map((secondaryAction) => (
-                    <Link
-                      key={`${featuredDocument.path}:${secondaryAction.kind}`}
-                      href={buildLearningHref(featuredDocument, { autostart: secondaryAction.autostart, intent: secondaryAction.kind })}
-                      className="ll-reentry-secondary-link"
-                    >
-                      {secondaryAction.label}
-                    </Link>
-                  ))}
-                </div>
-              ) : null}
-            </aside>
-          </div>
-        </div>
-      </div>
-
-      <section className="ll-review-section">
-        <div className="ll-section-head">
-          <div>
-            <h2>今日复习</h2>
-          </div>
-          <div className="ll-review-head-actions">
-            <span className="ll-danger-badge">{reviewItems.length}</span>
-            <span className="ll-section-hint">没讲稳的点 · 今天到期</span>
-          </div>
-        </div>
-        {reviewItems.length ? (
-          <ul className="ll-review-list">
-            {reviewItems.map((item) => {
-              const handle = item.handle || "(无标题)";
-              const stateClass = `ll-state-tag ll-state-${item.state || "shaky"}`;
-              const stateLabel = item.state === "solid" ? "扎实" : "生疏";
-              const rePracticeHref = buildReviewItemPracticeHref(item);
-              return (
-                <li key={item.id} className="ll-review-row">
-                  <Link href={rePracticeHref} className="ll-review-link" title={`重练:${handle}`}>
-                    <span className="ll-review-dot" aria-hidden="true" />
-                    <span className="ll-review-handle">{handle}</span>
-                    <span className={stateClass}>{stateLabel}</span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <article className="ll-review-empty">
-            <strong>今天没有要复习的点</strong>
-            <p>练习里没讲稳的点,会自动出现在这里。</p>
-          </article>
-        )}
-      </section>
-
-      <section className="ll-new-source-section">
-        <div className="ll-section-head">
-          <div><h2>学点新的</h2></div>
-          <div className="ll-review-head-actions">
-            <Link href="/library" className="ll-section-link">浏览我的资料 →</Link>
-          </div>
-        </div>
-        <div className="ll-new-source-row">
-          <Link href="/library" className="ll-new-source-drop">
-            <span className="ll-new-source-plus" aria-hidden="true">+</span>
-            <span>丢一篇进来</span>
+      <div className="ll-today-grid">
+        <section className="ll-today-card">
+          <span className="ll-today-tag">① 继续读</span>
+          <div className="ll-reentry-badge">{heroCopy.badge}</div>
+          <Link href={buildLearningHref(featuredDocument)} className="ll-title-link">
+            <h2 className="ll-today-doc-title">{featuredDocument.title}</h2>
           </Link>
-          {poolItems.length ? (
-            <div className="ll-pool-chips" aria-label="素材池">
-              {poolItems.map((document) => (
-                <Link
-                  key={document.path}
-                  href={buildLearningHref(document)}
-                  className="ll-pool-chip"
-                  title={document.title}
-                >
-                  {document.title}
-                </Link>
+          <p className="ll-today-sub">{heroCopy.reason}</p>
+          {recommendationFacts.length ? (
+            <div className="ll-recommendation-facts" aria-label="推荐依据">
+              {recommendationFacts.map((fact) => (
+                <span key={fact} className="ll-recommendation-chip">{fact}</span>
               ))}
             </div>
-          ) : (
-            <p className="ll-pool-empty">素材池是空的。导入一篇,这里就会出现。</p>
-          )}
-        </div>
-      </section>
+          ) : null}
+          <div className="ll-today-grow" />
+          <div className="ll-today-progress-row">
+            <div className="ll-today-bar" role="presentation">
+              <i style={{ width: `${Math.min(Math.max(featuredDocument.progressPercentage || 0, 0), 100)}%` }} />
+            </div>
+            <span className="ll-today-metric" style={{ color }}>{getHeroMetric(featuredDocument)}</span>
+          </div>
+          <div className="ll-today-actions">
+            <Link href={buildLearningHref(featuredDocument, { autostart: action.autostart, intent: action.kind })} className="ll-primary-button">
+              {action.label}
+            </Link>
+            {reentryPlan.secondaryActions?.length ? (
+              reentryPlan.secondaryActions.map((secondaryAction) => (
+                <Link
+                  key={`${featuredDocument.path}:${secondaryAction.kind}`}
+                  href={buildLearningHref(featuredDocument, { autostart: secondaryAction.autostart, intent: secondaryAction.kind })}
+                  className="ll-reentry-secondary-link"
+                >
+                  {secondaryAction.label}
+                </Link>
+              ))
+            ) : null}
+          </div>
+          {featuredDocument.group !== "unstarted" ? (
+            <button
+              type="button"
+              className="ll-text-button"
+              onClick={() => onSnoozeRecommendation(featuredDocument)}
+            >
+              {snoozeLabel}
+            </button>
+          ) : null}
+        </section>
 
+        <section className="ll-today-card is-muted">
+          <span className="ll-today-tag">② 复习巩固</span>
+          {reviewItems.length ? (
+            <>
+              <div className="ll-today-review-count">
+                <span className="ll-danger-badge">{reviewItems.length}</span>
+                <span className="ll-section-hint">没讲稳的点 · 今天到期</span>
+              </div>
+              <ul className="ll-review-list">
+                {reviewItems.slice(0, 4).map((item) => {
+                  const handle = item.handle || "(无标题)";
+                  const stateClass = `ll-state-tag ll-state-${item.state || "shaky"}`;
+                  const stateLabel = item.state === "solid" ? "扎实" : "生疏";
+                  const rePracticeHref = buildReviewItemPracticeHref(item);
+                  return (
+                    <li key={item.id} className="ll-review-row">
+                      <Link href={rePracticeHref} className="ll-review-link" title={`重练:${handle}`}>
+                        <span className="ll-review-dot" aria-hidden="true" />
+                        <span className="ll-review-handle">{handle}</span>
+                        <span className={stateClass}>{stateLabel}</span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+              {reviewItems.length > 4 ? (
+                <p className="ll-today-sub">共 {reviewItems.length} 个，先从最上面的开始。</p>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <h2 className="ll-today-doc-title">今天没有要复习的点</h2>
+              <p className="ll-today-sub">练习里没讲稳的点，会自动出现在这里。</p>
+            </>
+          )}
+        </section>
+
+        <section className="ll-today-card">
+          <span className="ll-today-tag">{hasActiveCampaign ? "③ 学点新的（按冲刺缺口推荐）" : "③ 学点新的"}</span>
+          {recommendedNewDocument ? (
+            <>
+              <Link href={buildLearningHref(recommendedNewDocument)} className="ll-title-link">
+                <h2 className="ll-today-doc-title">{recommendedNewDocument.title}</h2>
+              </Link>
+              <p className="ll-today-sub">{`来源 ${recommendedNewDocument.providerLabel} · ${recommendedNewDocument.folderLabels?.join(" / ") || "资料库"}`}</p>
+            </>
+          ) : (
+            <>
+              <h2 className="ll-today-doc-title">素材池是空的</h2>
+              <p className="ll-today-sub">导入一篇，这里就会出现推荐。</p>
+            </>
+          )}
+          {poolItems.length > 1 ? (
+            <div className="ll-pool-chips is-compact" aria-label="素材池">
+              {poolItems
+                .filter((document) => document.path !== recommendedNewDocument?.path)
+                .slice(0, 3)
+                .map((document) => (
+                  <Link
+                    key={document.path}
+                    href={buildLearningHref(document)}
+                    className="ll-pool-chip"
+                    title={document.title}
+                  >
+                    {document.title}
+                  </Link>
+                ))}
+            </div>
+          ) : null}
+          <div className="ll-today-grow" />
+          <div className="ll-today-actions">
+            <Link
+              href={recommendedNewDocument ? buildLearningHref(recommendedNewDocument) : "/library"}
+              className="ll-primary-button"
+            >
+              开始新的一篇 →
+            </Link>
+            <Link href="/library" className="ll-reentry-secondary-link">+ 丢一篇进来</Link>
+          </div>
+        </section>
+      </div>
+
+      <section className="ll-home-foot-row">
+        <span>我的资料</span>
+        <Link href="/library" className="ll-section-link">浏览我的资料 →</Link>
+      </section>
     </section>
   );
 }
 
-function ActiveCampaignStrip({ campaign }) {
+function CampaignHero({ campaign }) {
   if (!campaign) {
     return null;
   }
-  const topGap = campaign?.readiness?.gaps?.[0] || null;
+  const readiness = campaign?.readiness || {};
+  const topGap = readiness.gaps?.[0] || null;
   const coveragePercent = getCampaignCoveragePercent(campaign);
+  const topicCount = Number(readiness.topicCount || 0);
+  const solidCount = Math.max(topicCount - (readiness.gaps?.length || 0), 0);
   return (
-    <section className="ll-active-campaign-strip" aria-label="进行中的面试冲刺">
-      <div className="ll-active-campaign-copy">
-        <span className="ll-active-campaign-kicker">进行中的面试冲刺</span>
-        <h2>{campaign.role || "当前岗位"}</h2>
-        <p>
-          {getCampaignCountdownLabel(campaign)}
-          {" · "}
-          覆盖 {coveragePercent}%
-          {" · "}
-          {topGap ? `今天优先补 ${topGap.topic}` : "先做一轮模拟，继续压实高风险话题"}
-        </p>
+    <section className="ll-sprint-hero" aria-label="进行中的面试冲刺">
+      <div className="ll-sprint-hero-label">
+        <span className="ll-sprint-pill">面试冲刺 · 进行中</span>
+        <span className="ll-sprint-countdown">{getCampaignCountdownLabel(campaign)}</span>
       </div>
-      <div className="ll-active-campaign-metrics">
-        <span>{getCampaignCountdownLabel(campaign)}</span>
-        <span>{coveragePercent}% 覆盖</span>
-        <span>{topGap?.topic || "查看待练清单"}</span>
+      <h1>{campaign.role || "当前岗位"}</h1>
+      <div className="ll-sprint-stats">
+        <div className="ll-sprint-stat">
+          <strong>{coveragePercent}%</strong>
+          <span>话题覆盖</span>
+        </div>
+        {topicCount ? (
+          <div className="ll-sprint-stat">
+            <strong>{solidCount}/{topicCount}</strong>
+            <span>已讲稳</span>
+          </div>
+        ) : null}
+        <div className="ll-sprint-focus">
+          {topGap ? (
+            <>今天优先补：<b>{topGap.topic}</b></>
+          ) : (
+            "先做一轮模拟，继续压实高风险话题"
+          )}
+        </div>
+        <Link href="/campaign" className="ll-primary-button ll-sprint-cta">
+          进入冲刺 →
+        </Link>
       </div>
-      <Link href="/campaign" className="ll-active-campaign-link">
-        进入冲刺
-      </Link>
     </section>
   );
 }
@@ -650,7 +655,10 @@ export function HomePage() {
   }, [documentProgress?.currentDocPath, documentProgress?.recentDocs, uiDocuments]);
 
   const recommendedNewDocument = useMemo(() => {
-    const preferred = groupedDocuments.unstarted.find((document) => !snoozedRecommendationDocPaths.has(document.path));
+    const preferred = groupedDocuments.unstarted.find((document) => (
+      document.path !== featuredDocument?.path
+      && !snoozedRecommendationDocPaths.has(document.path)
+    ));
     if (preferred) {
       return preferred;
     }
@@ -733,9 +741,8 @@ export function HomePage() {
         </div>
       </header>
 
-      <ActiveCampaignStrip campaign={activeCampaign} />
-
       <div className="ll-home-main">
+        <CampaignHero campaign={activeCampaign} />
         {error ? <p className="ll-status-note">{error}</p> : null}
         {featuredDocument ? (
           <DefaultFocusView
@@ -744,6 +751,7 @@ export function HomePage() {
             reviewDue={reviewDue}
             materialPool={materialPool}
             hasProfile={Boolean(profile?.user?.id)}
+            hasActiveCampaign={Boolean(activeCampaign)}
             onSnoozeRecommendation={snoozeFeaturedDocument}
           />
         ) : null}

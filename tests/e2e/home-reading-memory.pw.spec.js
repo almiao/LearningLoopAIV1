@@ -74,7 +74,7 @@ test("home page keeps a single act-led column and the library lives on its own s
 
   await page.goto("/", { waitUntil: "networkidle" });
 
-  await expect(page.getByText("今天先做什么")).toBeVisible();
+  await expect(page.getByText(/今天先做什么|为了这场面试，今天做三件事/)).toBeVisible();
   await expect(page.getByRole("heading", { name: currentDocTitle })).toBeVisible();
   await expect(page.getByRole("link", { name: "开始新的一篇 →" })).toBeVisible();
   await expect(page.getByRole("button", { name: "今天先不读这个" })).toBeVisible();
@@ -86,7 +86,7 @@ test("home page keeps a single act-led column and the library lives on its own s
   await expect(page).toHaveURL(/\/learn\?doc=docs%2Fai%2Fagent%2Fmcp\.md/);
   await expect(page.getByTestId("reader-header")).toContainText(currentDocTitle);
   await page.goBack();
-  await expect(page.getByText("今天先做什么")).toBeVisible();
+  await expect(page.getByText(/今天先做什么|为了这场面试，今天做三件事/)).toBeVisible();
 
   // 旧资料库深链跳到二级页。
   await page.goto("/?mode=library&panel=library", { waitUntil: "networkidle" });
