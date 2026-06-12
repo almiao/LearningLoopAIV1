@@ -2065,8 +2065,8 @@ export function LoopAssistWorkspace() {
                 </section>
                 <section className="loopassist-review-ledger-note" data-testid="loopassist-ledger-note">
                   <div className="loopassist-review-ledger-copy">
-                    <span>失败账本</span>
-                    <p>这轮没答出的点已写进你的复习账本，到期会出现在首页「今日复习」——面试结束，残渣留下。</p>
+                    <span>复习计划</span>
+                    <p>这轮没答出的点已加进你的复习计划，到期会出现在首页「今日复习」——面试结束，收获留下。</p>
                   </div>
                   <Link href="/" className="loopassist-review-ledger-link">回首页看今日复习 →</Link>
                 </section>

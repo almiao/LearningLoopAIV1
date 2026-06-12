@@ -239,3 +239,55 @@ test("daysUntil clamps at zero after the deadline", () => {
   assert.equal(daysUntil("2026-06-10", new Date("2026-06-12T00:00:00.000Z")), 0);
   assert.equal(daysUntil("2026-06-13T12:00:00.000Z", new Date("2026-06-12T00:00:00.000Z")), 2);
 });
+
+test("readiness without a deadline reports null daysLeft and still ranks gaps", () => {
+  const readiness = buildReadiness({
+    deadline: "",
+    topics: [
+      { id: "t1", topic: "core 没碰过", importance: "core", coverage: "uncovered" },
+      { id: "t2", topic: "secondary 生疏", importance: "secondary", coverage: "shaky" },
+    ],
+  }, { now: new Date("2026-06-12T00:00:00.000Z") });
+
+  assert.equal(readiness.daysLeft, null);
+  assert.deepEqual(readiness.gaps.map((gap) => gap.topicId), ["t1", "t2"]);
+});
+
+test("campaign without a deadline writes uncapped ledger items on failure", async () => {
+  await withDomain(
+    async ({ domain, reviewItemStore }) => {
+      const { campaign } = await domain.create({
+        role: "后端",
+        deadline: "",
+        jdText: "JD 内容",
+      });
+      assert.equal(campaign.readiness.daysLeft, null);
+
+      const result = await domain.answerTopicDrill({
+        id: campaign.id,
+        topicId: campaign.topics[0].id,
+        question: "缓存一致性怎么保证？",
+        answer: "加锁。",
+      });
+      assert.equal(result.passed, false);
+      const items = await reviewItemStore.list();
+      assert.equal(items.length, 1);
+      // 无 deadline：shaky 正常 +1 天，不被封顶。
+      assert.equal(items[0].next_due_at, "2026-06-13T00:00:00.000Z");
+    },
+    {
+      proxy: async (_method, pathname) => {
+        if (pathname === "/api/campaign/decompose-jd") {
+          return { data: { topics: [{ topic: "Redis 缓存一致性", importance: "core" }] }, traceId: "t" };
+        }
+        if (pathname === "/api/anchor-judge") {
+          return { data: { verdict: "fail", hits: [], misses: ["旁路缓存"], confidence: 0.8 }, traceId: "t" };
+        }
+        if (pathname === "/api/loopassist/rescue-material") {
+          return { data: { markdown: "### 补讲" }, traceId: "t" };
+        }
+        throw new Error(`unexpected proxy call: ${pathname}`);
+      },
+    },
+  );
+});

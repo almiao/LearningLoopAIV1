@@ -118,12 +118,12 @@ function TrainingSummaryHero({ summary }) {
       <div className="ll-summary-mastery-row">
         <strong className="ll-summary-outcome is-passed">{`过线 ${summary.passedPointCount}`}</strong>
         <span className="ll-summary-outcome-divider" aria-hidden="true">·</span>
-        <strong className="ll-summary-outcome is-review">{`进复习账本 ${summary.weakPoints.length}`}</strong>
+        <strong className="ll-summary-outcome is-review">{`待复习 ${summary.weakPoints.length}`}</strong>
       </div>
       <small>
         {summary.weakPoints.length
-          ? "进账本的点到期后会出现在首页「今日复习」。"
-          : "这轮没有新的薄弱点进账本。"}
+          ? "没讲稳的点到期后会出现在首页「今日复习」。"
+          : "这轮没有新的薄弱点要复习。"}
       </small>
     </section>
   );
@@ -233,7 +233,7 @@ function TomorrowReviewBanner({ summary, onReviewPlan, onDismiss }) {
       </div>
       <div>
         <h2>明天还有事</h2>
-        <p>{`${summary.weakPoints.length} 处薄弱点已写进复习账本，到期会出现在首页「今日复习」，趁记忆新鲜补上。`}</p>
+        <p>{`${summary.weakPoints.length} 处薄弱点已加进复习计划，到期会出现在首页「今日复习」，趁记忆新鲜补上。`}</p>
         <div>
           <button type="button" onClick={onReviewPlan}>查看复习计划</button>
           <button type="button" onClick={onDismiss}>关闭提醒</button>

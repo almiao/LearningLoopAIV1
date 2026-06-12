@@ -128,13 +128,14 @@ export function createCampaignGoalStore({ goalsDir = defaultGoalsDir } = {}) {
       return campaigns.find((campaign) => campaign.id === id) || null;
     },
 
-    async create({ company = "", role = "", deadline, jdText = "", topics = [], now = nowIso() } = {}) {
+    // deadline 可选：没定面试日也能先开练；定了之后调度才会被它封顶。
+    async create({ company = "", role = "", deadline = "", jdText = "", topics = [], now = nowIso() } = {}) {
       const cleanRole = normalizeText(role);
       const cleanDeadline = normalizeText(deadline);
       if (!cleanRole) {
         throw new Error("campaign role is required.");
       }
-      if (!cleanDeadline || !Number.isFinite(Date.parse(cleanDeadline))) {
+      if (cleanDeadline && !Number.isFinite(Date.parse(cleanDeadline))) {
         throw new Error("campaign deadline must be a valid date.");
       }
       const cleanTopics = topics

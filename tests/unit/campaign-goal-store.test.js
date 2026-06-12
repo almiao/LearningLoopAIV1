@@ -60,6 +60,17 @@ test("create rejects missing role, bad deadline, and empty topics", async () => 
   });
 });
 
+test("create allows omitting the deadline (interview date not set yet)", async () => {
+  await withStore(async (store) => {
+    const campaign = await store.create({
+      role: "后端",
+      topics: [{ topic: "MySQL 索引" }],
+    });
+    assert.equal(campaign.deadline, "");
+    assert.equal((await store.get(campaign.id)).deadline, "");
+  });
+});
+
 test("updateTopicCoverage flips coverage and stamps last_drilled_at", async () => {
   await withStore(async (store) => {
     const campaign = await store.create({

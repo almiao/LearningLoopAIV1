@@ -478,7 +478,7 @@ function ReviewDrillWorkspace({
           <button type="button" className="ll-training-back" onClick={onHome}>‹</button>
           <div>
             <span>今日复习</span>
-            <h1>{item.handle || "复习项重练"}</h1>
+            <h1>{item.handle || "重练这个点"}</h1>
           </div>
         </div>
         <div className="ll-training-tabs">
@@ -492,13 +492,13 @@ function ReviewDrillWorkspace({
       <section className="ll-review-drill-main">
         <article className="ll-training-card ll-review-drill-card">
           <div className="ll-training-card-chip-row">
-            <span className="ll-training-chip">{`失败账本 · ${stateLabel}`}</span>
-            <span className="ll-training-status-label">{drill?.source?.available ? "已带原文上下文" : "无原文也可练"}</span>
+            <span className="ll-training-chip">{`待复习 · ${stateLabel}`}</span>
+            <span className="ll-training-status-label">{drill?.source?.available ? "已结合原文出题" : "没有原文也能练"}</span>
           </div>
-          <h2>{drill?.question || "正在生成这条复习项的变体题..."}</h2>
+          <h2>{drill?.question || "正在为这个点出一道新题..."}</h2>
           {evidence.question ? (
             <div className="ll-review-drill-evidence">
-              <span>上次答崩的问题</span>
+              <span>上次没答好的题</span>
               <p>{evidence.question}</p>
             </div>
           ) : null}
@@ -527,7 +527,7 @@ function ReviewDrillWorkspace({
               />
               <div className="ll-next-answer-actions">
                 <button type="button" className="ll-tool-button" onClick={onRefreshQuestion} disabled={loading}>
-                  换一道变体
+                  换一道题
                 </button>
                 <button type="submit" className="ll-training-primary" disabled={loading || !answer.trim() || !drill?.question}>
                   {loading ? "判分中..." : "提交回答"}
@@ -543,10 +543,10 @@ function ReviewDrillWorkspace({
                 }}
               >
                 <div className="ll-thread-score-main">
-                  <strong>{passed ? "过线，已转扎实" : "还没过线，已安排复练"}</strong>
-                  <span>{passed ? "solid" : "shaky"}</span>
+                  <strong>{passed ? "过了，这个点转为扎实" : "还没讲稳，已安排复习"}</strong>
+                  <span>{passed ? "扎实" : "生疏"}</span>
                 </div>
-                <p>{passed ? "这条复习项会被拉长间隔，暂时放你走。" : "这条复习项仍保留在短间隔队列里，先补上漏点。"}</p>
+                <p>{passed ? "这个点的复习间隔会拉长，暂时不用管它。" : "这个点很快会再出现，先看下面的讲解补上。"}</p>
               </div>
               <div className="ll-thread-message user">
                 <div className="ll-answer-label">你的回答</div>
@@ -556,13 +556,13 @@ function ReviewDrillWorkspace({
                 <div className="ll-thread-support-grid">
                   {hits.length ? (
                     <article className="ll-thread-support-card takeaway">
-                      <strong>命中的锚点</strong>
+                      <strong>你讲到位的点</strong>
                       <p>{hits.join("；")}</p>
                     </article>
                   ) : null}
                   {misses.length ? (
                     <article className="ll-thread-support-card improve">
-                      <strong>漏掉的锚点</strong>
+                      <strong>还没讲到的关键点</strong>
                       <p>{misses.join("；")}</p>
                     </article>
                   ) : null}
@@ -580,10 +580,10 @@ function ReviewDrillWorkspace({
               ) : null}
               <div className="ll-next-answer-actions">
                 <button type="button" className="ll-tool-button" onClick={onRefreshQuestion} disabled={loading}>
-                  再来一道变体
+                  再练一题
                 </button>
                 <button type="button" className="ll-training-primary" onClick={onHome}>
-                  回今日队列
+                  回首页
                 </button>
               </div>
             </section>

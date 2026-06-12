@@ -974,7 +974,7 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
           </div>
           <div className="ll-review-head-actions">
             <span className="ll-danger-badge">{reviewItems.length}</span>
-            <span className="ll-section-hint">失败账本 · 到期复习项</span>
+            <span className="ll-section-hint">没讲稳的点 · 今天到期</span>
           </div>
         </div>
         {reviewItems.length ? (
@@ -982,7 +982,7 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
             {reviewItems.map((item) => {
               const handle = item.handle || "(无标题)";
               const stateClass = `ll-state-tag ll-state-${item.state || "shaky"}`;
-              const stateLabel = item.state || "shaky";
+              const stateLabel = item.state === "solid" ? "扎实" : "生疏";
               const reDrillHref = buildReviewItemDrillHref(item);
               return (
                 <li key={item.id} className="ll-review-row">
@@ -997,8 +997,8 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
           </ul>
         ) : (
           <article className="ll-review-empty">
-            <strong>今天没有到期的复习项</strong>
-            <p>做一轮 drill,答崩的点会自动出现在这里。</p>
+            <strong>今天没有要复习的点</strong>
+            <p>练习里没讲稳的点,会自动出现在这里。</p>
           </article>
         )}
       </section>
@@ -1568,7 +1568,7 @@ export function HomePage() {
           </button>
           <Link href="/campaign" className="ll-interview-button">
             <span aria-hidden="true">AI</span>
-            <span>面试战役</span>
+            <span>面试准备</span>
           </Link>
           <AvatarMenu
             open={avatarOpen}
@@ -1586,7 +1586,7 @@ export function HomePage() {
           <div className="ll-today-review-head">
             <h2>今日复习</h2>
             <span className="ll-today-review-count">{reviewDue.length}</span>
-            <span className="ll-today-review-hint">失败账本 · 到期</span>
+            <span className="ll-today-review-hint">没讲稳的点 · 今天到期</span>
           </div>
           <ul className="ll-today-review-list">
             {reviewDue.map((item) => (
@@ -1594,7 +1594,7 @@ export function HomePage() {
                 <span className="ll-today-review-dot" aria-hidden="true" />
                 <span className="ll-today-review-handle">{item.handle}</span>
                 <span className={`ll-today-review-tag is-${item.state === "solid" ? "solid" : "shaky"}`}>
-                  {item.state === "solid" ? "solid" : "shaky"}
+                  {item.state === "solid" ? "扎实" : "生疏"}
                 </span>
               </li>
             ))}

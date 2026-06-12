@@ -67,9 +67,10 @@ function coverageRisk(coverage = "uncovered") {
 
 // 就绪度读数（PRODUCT：派生视图，不是新实体）。
 // 覆盖率答「碰没碰」，达标度答「会不会」（重要度加权），缺口按 重要度×风险×(1/剩余天数) 排。
+// deadline 可选：没定面试日时 daysLeft 为 null，紧迫度因子取中性值。
 export function buildReadiness(campaign = {}, { now = new Date() } = {}) {
   const topics = Array.isArray(campaign.topics) ? campaign.topics : [];
-  const daysLeft = daysUntil(campaign.deadline, now);
+  const daysLeft = campaign.deadline ? daysUntil(campaign.deadline, now) : null;
   const total = topics.length;
   const touched = topics.filter((topic) => topic.coverage !== "uncovered").length;
   const totalWeight = topics.reduce((sum, topic) => sum + importanceWeight(topic.importance), 0);
@@ -77,7 +78,7 @@ export function buildReadiness(campaign = {}, { now = new Date() } = {}) {
     .filter((topic) => topic.coverage === "solid")
     .reduce((sum, topic) => sum + importanceWeight(topic.importance), 0);
 
-  const urgency = 1 / Math.max(daysLeft, 1);
+  const urgency = daysLeft === null ? 1 : 1 / Math.max(daysLeft, 1);
   const gaps = topics
     .filter((topic) => topic.coverage !== "solid")
     .map((topic) => ({
@@ -269,14 +270,14 @@ export function createCampaignDomain({
             id: existing.id,
             state: "shaky",
             now: nowIso,
-            deadline: campaign.deadline,
+            deadline: campaign.deadline || null,
           })
         : await reviewItemStore.recordMiss({
             handle: topic.topic,
             source_ref: "",
             evidence: { question: cleanQuestion, missedAnchors: misses },
             now: nowIso,
-            deadline: campaign.deadline,
+            deadline: campaign.deadline || null,
           });
 
       try {

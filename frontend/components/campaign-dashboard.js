@@ -8,11 +8,12 @@ import { apiFetch, postJson } from "../lib/api";
 import { getStoredUserId } from "../lib/user-session";
 import { TrainingGenerationPanel } from "./training-generation-panel";
 
-// 面试战役仪表盘 — PRODUCT.md「面试战役」的 campaign Goal 详情视图。
-// 纯视图：倒计时 + 覆盖度 + 就绪度 + drill 入口 + 模拟入口 + 面后回灌，零自有引擎/状态（§1.3）。
+// 面试准备页 — PRODUCT.md「面试战役」的 campaign Goal 详情视图。
+// 纯视图：倒计时 + 覆盖度 + 就绪度 + 练习入口 + 模拟入口 + 面后复盘，零自有引擎/状态（§1.3）。
+// 文案纪律：界面不出现内部术语（战役/drill/账本/锚点/shaky 等），全部用大白话。
 
 const coverageLabels = {
-  uncovered: "未覆盖",
+  uncovered: "没练过",
   shaky: "生疏",
   solid: "扎实",
 };
@@ -31,7 +32,6 @@ function formatDeadline(deadline = "") {
 }
 
 function CampaignCreateForm({ creating, error, onCreate }) {
-  const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
   const [deadline, setDeadline] = useState("");
   const [jdText, setJdText] = useState("");
@@ -42,29 +42,25 @@ function CampaignCreateForm({ creating, error, onCreate }) {
       data-testid="campaign-create-form"
       onSubmit={(event) => {
         event.preventDefault();
-        onCreate({ company, role, deadline, jdText });
+        onCreate({ role, deadline, jdText });
       }}
     >
-      <h2>开一场面试战役</h2>
+      <h2>准备一场面试</h2>
       <p className="ll-campaign-form-hint">
-        贴上 JD，系统当场拆成可操练的话题清单（已上传过简历会自动交叉，简历声称会的优先验）。
+        贴上职位描述（JD），系统会拆成一份可以逐个练习的话题清单（已上传过简历会自动对照，简历里写了的优先验证）。
       </p>
       <div className="ll-campaign-form-grid">
-        <label>
-          公司（可选）
-          <input value={company} onChange={(event) => setCompany(event.target.value)} placeholder="Acme" />
-        </label>
         <label>
           岗位
           <input value={role} onChange={(event) => setRole(event.target.value)} placeholder="Java 后端" required />
         </label>
         <label>
-          面试日期
-          <input type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} required />
+          面试日期（可选）
+          <input type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} />
         </label>
       </div>
       <label className="ll-campaign-jd-label">
-        JD 原文
+        职位描述（JD）
         <textarea
           rows="8"
           value={jdText}
@@ -75,7 +71,7 @@ function CampaignCreateForm({ creating, error, onCreate }) {
       </label>
       {error ? <p className="ll-campaign-error">{error}</p> : null}
       <button type="submit" className="ll-training-primary" disabled={creating}>
-        {creating ? "正在拆解 JD..." : "建战役并拆话题"}
+        {creating ? "正在拆解 JD..." : "生成练习清单"}
       </button>
     </form>
   );
@@ -85,35 +81,38 @@ function ReadinessPanel({ readiness }) {
   if (!readiness) {
     return null;
   }
+  const hasDeadline = readiness.daysLeft !== null && readiness.daysLeft !== undefined;
   return (
     <section className="ll-campaign-readiness" data-testid="campaign-readiness">
       <div className="ll-campaign-readiness-stats">
-        <div>
-          <strong>{readiness.daysLeft}</strong>
-          <span>天倒计时</span>
-        </div>
+        {hasDeadline ? (
+          <div>
+            <strong>{readiness.daysLeft}</strong>
+            <span>天后面试</span>
+          </div>
+        ) : null}
         <div>
           <strong>{formatPercent(readiness.coverageRate)}</strong>
-          <span>覆盖率（碰过没）</span>
+          <span>练过的话题</span>
         </div>
         <div>
           <strong>{formatPercent(readiness.masteryRate)}</strong>
-          <span>达标度（会不会）</span>
+          <span>讲得稳的话题</span>
         </div>
       </div>
       {readiness.likelyToFail?.length ? (
         <div className="ll-campaign-risk-list">
-          <span>最可能被问崩</span>
+          <span>最可能被问倒的</span>
           {readiness.likelyToFail.map((gap) => (
             <em key={gap.topicId}>{gap.topic}</em>
           ))}
         </div>
       ) : (
         <div className="ll-campaign-risk-list">
-          <span>缺口已清零，再用模拟面校一遍。</span>
+          <span>清单上的话题都讲得稳了，去模拟面试再验一遍。</span>
         </div>
       )}
-      <p className="ll-campaign-disclaimer">{readiness.disclaimer}</p>
+      <p className="ll-campaign-disclaimer">这份读数只是你自己的薄弱点地图，不代表面试结果。</p>
     </section>
   );
 }
@@ -179,7 +178,7 @@ function TopicDrillPanel({ campaignId, topic, onClose, onCampaignUpdate }) {
   return (
     <article className="ll-training-card ll-campaign-drill-card" data-testid="campaign-drill-panel">
       <div className="ll-training-card-chip-row">
-        <span className="ll-training-chip">{`话题操练 · ${coverageLabels[topic.coverage] || "未覆盖"}`}</span>
+        <span className="ll-training-chip">{`练这个话题 · ${coverageLabels[topic.coverage] || "没练过"}`}</span>
         <button type="button" className="ll-tool-button" onClick={onClose}>关闭</button>
       </div>
       <h2>{drill?.question || (loading ? "正在出题..." : error || "正在出题...")}</h2>
@@ -216,26 +215,26 @@ function TopicDrillPanel({ campaignId, topic, onClose, onCampaignUpdate }) {
             style={{ "--thread-score-color": passed ? "#1D9E75" : "#E27272" }}
           >
             <div className="ll-thread-score-main">
-              <strong>{passed ? "过线，话题转扎实" : "答崩了，已写进失败账本"}</strong>
-              <span>{passed ? "solid" : "shaky"}</span>
+              <strong>{passed ? "过了，这个话题标记为扎实" : "没讲稳，已加进你的复习计划"}</strong>
+              <span>{passed ? "扎实" : "生疏"}</span>
             </div>
             <p>
               {passed
-                ? "覆盖度清单里这条标为扎实。碰过 ≠ 会，账本不会为一次过的留痕。"
-                : "这个点会按面试日封顶的节奏出现在今日复习里，先看补讲。"}
+                ? "这个话题先放一放，后面用模拟面试再验证一遍。"
+                : "这个点会出现在首页的今日复习里，先看下面的讲解补上。"}
             </p>
           </div>
           {hits.length || misses.length ? (
             <div className="ll-thread-support-grid">
               {hits.length ? (
                 <article className="ll-thread-support-card takeaway">
-                  <strong>命中的锚点</strong>
+                  <strong>你讲到位的点</strong>
                   <p>{hits.join("；")}</p>
                 </article>
               ) : null}
               {misses.length ? (
                 <article className="ll-thread-support-card improve">
-                  <strong>漏掉的锚点</strong>
+                  <strong>还没讲到的关键点</strong>
                   <p>{misses.join("；")}</p>
                 </article>
               ) : null}
@@ -284,13 +283,13 @@ function DebriefPanel({ campaignId, onCampaignUpdate }) {
       setSubmitting(true);
       setError("");
       const data = await postJson(`/api/campaigns/${encodeURIComponent(campaignId)}/debrief`, { misses });
-      setResult(`已转成 ${data.reviewItems?.length || 0} 条复习项，进了失败账本。`);
+      setResult(`已加进复习计划，共 ${data.reviewItems?.length || 0} 条。`);
       setText("");
       if (data.campaign) {
         onCampaignUpdate(data.campaign);
       }
     } catch (nextError) {
-      setError(nextError.message || "回灌失败。");
+      setError(nextError.message || "保存失败。");
     } finally {
       setSubmitting(false);
     }
@@ -298,8 +297,8 @@ function DebriefPanel({ campaignId, onCampaignUpdate }) {
 
   return (
     <section className="ll-campaign-debrief" data-testid="campaign-debrief">
-      <h3>面试后回灌</h3>
-      <p>真被问到却没答上的点，一行一个写下来——真实失败最值钱，直接转复习项。</p>
+      <h3>面试后复盘</h3>
+      <p>面试里真被问到、却没答上来的点，一行一个写下来——这些最值得练，会直接进你的复习计划。</p>
       <textarea
         rows="3"
         value={text}
@@ -308,7 +307,7 @@ function DebriefPanel({ campaignId, onCampaignUpdate }) {
       />
       <div className="ll-next-answer-actions">
         <button type="button" className="ll-training-primary" onClick={() => void submitDebrief()} disabled={submitting || !text.trim()}>
-          {submitting ? "写入账本..." : "转成复习项"}
+          {submitting ? "保存中..." : "加进复习计划"}
         </button>
       </div>
       {result ? <p className="ll-campaign-debrief-done">{result}</p> : null}
@@ -338,7 +337,7 @@ export function CampaignDashboard() {
         }
       } catch (error) {
         if (!cancelled) {
-          setLoadError(error.message || "战役列表加载失败。");
+          setLoadError(error.message || "加载失败。");
           setCampaigns([]);
         }
       }
@@ -353,12 +352,11 @@ export function CampaignDashboard() {
     setCampaigns((current) => (current || []).map((campaign) => (campaign.id === updated.id ? updated : campaign)));
   }
 
-  async function createCampaign({ company, role, deadline, jdText }) {
+  async function createCampaign({ role, deadline, jdText }) {
     try {
       setCreating(true);
       setCreateError("");
       const data = await postJson("/api/campaigns", {
-        company,
         role,
         deadline,
         jdText,
@@ -367,7 +365,7 @@ export function CampaignDashboard() {
       setCampaigns((current) => [...(current || []), data.campaign]);
       setActiveId(data.campaign.id);
     } catch (error) {
-      setCreateError(error.message || "建战役失败。");
+      setCreateError(error.message || "创建失败。");
     } finally {
       setCreating(false);
     }
@@ -380,7 +378,7 @@ export function CampaignDashboard() {
       setActiveId("");
       setActiveTopic(null);
     } catch (error) {
-      setLoadError(error.message || "归档失败。");
+      setLoadError(error.message || "操作失败。");
     }
   }
 
@@ -392,8 +390,8 @@ export function CampaignDashboard() {
         <div className="ll-training-title">
           <button type="button" className="ll-training-back" onClick={() => router.push("/?mode=status&panel=home")}>‹</button>
           <div>
-            <span>面试战役</span>
-            <h1>{activeCampaign ? `${activeCampaign.role}${activeCampaign.company ? ` @ ${activeCampaign.company}` : ""}` : "备战仪表盘"}</h1>
+            <span>面试准备</span>
+            <h1>{activeCampaign ? `${activeCampaign.role}${activeCampaign.company ? ` @ ${activeCampaign.company}` : ""}` : "新面试"}</h1>
           </div>
         </div>
         <div className="ll-training-tabs">
@@ -411,7 +409,7 @@ export function CampaignDashboard() {
             </button>
           ))}
           <button type="button" className={!activeId ? "active" : ""} onClick={() => { setActiveId(""); setActiveTopic(null); }}>
-            ＋ 新战役
+            ＋ 新面试
           </button>
         </div>
       </header>
@@ -426,11 +424,11 @@ export function CampaignDashboard() {
         ) : (
           <div className="ll-campaign-detail">
             <div className="ll-campaign-meta-row">
-              <span>{`面试日 ${formatDeadline(activeCampaign.deadline)}`}</span>
+              <span>{activeCampaign.deadline ? `面试日 ${formatDeadline(activeCampaign.deadline)}` : "还没定面试日期"}</span>
               <div className="ll-campaign-meta-actions">
-                <Link href="/loopassist" className="ll-tool-button">模拟面（连播）</Link>
+                <Link href="/loopassist" className="ll-tool-button">模拟面试</Link>
                 <button type="button" className="ll-tool-button" onClick={() => void archiveCampaign(activeCampaign.id)}>
-                  结束战役归档
+                  结束这场面试
                 </button>
               </div>
             </div>
@@ -460,9 +458,9 @@ export function CampaignDashboard() {
                     <button type="button" className="ll-campaign-topic-row" onClick={() => setActiveTopic(topic)}>
                       <span className={`ll-campaign-topic-dot is-${topic.coverage}`} aria-hidden="true" />
                       <span className="ll-campaign-topic-text">{topic.topic}</span>
-                      {topic.importance === "core" ? <span className="ll-campaign-topic-core">core</span> : null}
+                      {topic.importance === "core" ? <span className="ll-campaign-topic-core">重点</span> : null}
                       <span className={`ll-state-tag ll-state-${topic.coverage === "solid" ? "solid" : "shaky"}`}>
-                        {coverageLabels[topic.coverage] || "未覆盖"}
+                        {coverageLabels[topic.coverage] || "没练过"}
                       </span>
                     </button>
                   </li>
