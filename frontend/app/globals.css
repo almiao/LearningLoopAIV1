@@ -11625,3 +11625,190 @@ button {
     min-height: 0;
   }
 }
+
+/* ===== 首页 V1 一条流布局（覆盖 V3，2026-06-12 用户定稿） ===== */
+.ll-sprint-strip {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  max-width: 1080px;
+  margin: 0 auto 32px;
+  padding: 18px 24px;
+  border: 1px solid var(--line-warm);
+  border-radius: 16px;
+  background: var(--paper);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+}
+
+.ll-sprint-strip-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.ll-sprint-strip-copy h2 {
+  margin: 8px 0 0;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.ll-sprint-strip-meta {
+  margin: 6px 0 0;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+
+.ll-sprint-strip-meta b {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.ll-sprint-strip-progress {
+  width: 180px;
+  flex: 0 0 auto;
+}
+
+.ll-sprint-strip-progress > span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink-3);
+  font-size: 12px;
+  text-align: right;
+}
+
+.ll-today-heading {
+  margin: 0 0 16px;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.ll-step-card {
+  border: 1px solid var(--line-warm);
+  border-radius: 16px;
+  background: var(--paper);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+}
+
+.ll-step {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 22px 24px;
+}
+
+.ll-step + .ll-step {
+  border-top: 1px solid var(--line-warm);
+}
+
+.ll-step-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1.5px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.ll-step-num.is-on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.ll-step-body {
+  min-width: 0;
+}
+
+.ll-step-title {
+  margin: 0 0 4px;
+  font-size: 15.5px;
+  font-weight: 750;
+}
+
+.ll-step-sub {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ll-step-doc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.ll-step-doc-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.ll-step-doc-meta {
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+.ll-step .ll-recommendation-facts {
+  margin-top: 8px;
+}
+
+.ll-step .ll-review-list {
+  margin-top: 10px;
+}
+
+.ll-step-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.ll-step-idle {
+  padding: 9px 16px;
+  border: 1px solid var(--line-warm);
+  border-radius: 999px;
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ll-step-footnote {
+  margin: 14px 0 0;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+@media (max-width: 760px) {
+  .ll-sprint-strip {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+
+  .ll-sprint-strip-progress {
+    width: 100%;
+  }
+
+  .ll-sprint-strip-progress > span {
+    text-align: left;
+  }
+
+  .ll-step {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .ll-step-actions {
+    grid-column: 2;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+  }
+}
