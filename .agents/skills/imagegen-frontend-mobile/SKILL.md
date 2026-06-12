@@ -505,7 +505,7 @@ Navigation must feel intentional and believable.
 
 Use familiar mobile patterns when appropriate:
 - tab bar / bottom navigation for major app sections
-- stack navigation feel for drill-down flows
+- stack navigation feel for practice-down flows
 - sheets for secondary tasks
 - segmented controls for local switching
 - app bars where useful
