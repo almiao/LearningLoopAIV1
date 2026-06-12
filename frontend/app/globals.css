@@ -1,21 +1,7 @@
 @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
 
 :root {
-  --bg: #fafaf8;
-  --surface: #ffffff;
-  --surface-subtle: #f7f6f1;
-  --surface-muted: #f3f4f6;
-  --line: #e7e7e4;
-  --line-strong: #d7d2c8;
-  --text: #202124;
-  --text-muted: #77736a;
-  --text-soft: #8b8d88;
-  --accent: #111111;
-  --accent-blue: #2b67c8;
-  --accent-green: #176b4d;
-  --accent-green-bg: #ecf7f1;
-  --danger: #cc4b37;
-  --color-background-secondary: #eef0ec;
+  /* 全站唯一基准色板：暖纸 + 墨色（见 DESIGN.md） */
   --paper: #ffffff;
   --ink: #191917;
   --ink-2: #63635e;
@@ -25,13 +11,30 @@
   --paper-soft: #f1efe8;
   --line-warm: #e8e6dc;
   --paper-tint: #faf9f5;
-  --brand-purple: #534ab7;
-  --brand-purple-deep: #3c3489;
-  --brand-purple-soft: #eeedfe;
-  --brand-purple-line: #d7d5fb;
   --green: #1d9e75;
   --green-deep: #2e7d54;
   --amber: #b9821a;
+  /* 早期冷灰 token，统一映射到暖纸基准值 */
+  --bg: var(--paper-tint);
+  --surface: var(--paper);
+  --surface-subtle: var(--paper-warm);
+  --surface-muted: var(--paper-soft);
+  --line: var(--line-warm);
+  --line-strong: #d7d2c8;
+  --text: var(--ink);
+  --text-muted: var(--ink-2);
+  --text-soft: var(--ink-3);
+  --accent: #111111;
+  --accent-blue: #2b67c8;
+  --accent-green: #176b4d;
+  --accent-green-bg: #ecf7f1;
+  --danger: #cc4b37;
+  --color-background-secondary: var(--paper-soft);
+  /* 原 library/materials 品牌紫，降级为全站墨色强调 */
+  --brand-purple: var(--ink);
+  --brand-purple-deep: #000000;
+  --brand-purple-soft: var(--paper-soft);
+  --brand-purple-line: var(--line-strong);
   --topbar-height: 60px;
   --topbar-border: 1px solid var(--line-warm);
   --topbar-bg: rgba(250, 249, 245, 0.94);
@@ -1224,7 +1227,7 @@ button {
 
 .ll-folder-card-top {
   height: 12px;
-  background: linear-gradient(90deg, var(--brand-purple-soft) 0%, #f5f3ff 100%);
+  background: linear-gradient(90deg, var(--brand-purple-soft) 0%, var(--paper-tint) 100%);
 }
 
 .ll-folder-card-body {
@@ -2583,7 +2586,7 @@ button {
 .ll-inline-spinner {
   width: 10px;
   height: 10px;
-  border: 1.5px solid rgba(83, 74, 183, 0.22);
+  border: 1.5px solid rgba(25, 25, 23, 0.22);
   border-top-color: var(--brand-purple);
   border-radius: 999px;
   flex: 0 0 10px;
@@ -2701,9 +2704,9 @@ button {
   gap: 16px;
   margin-top: 18px;
   padding: 12px 14px;
-  border: 1px solid #ece6f7;
+  border: 1px solid var(--line-warm);
   border-radius: 12px;
-  background: #faf8fd;
+  background: var(--paper-tint);
 }
 
 .ll-training-generation-fallback.error {
@@ -2717,7 +2720,7 @@ button {
 
 .ll-training-generation-fallback p {
   margin: 0;
-  color: #5a4f87;
+  color: var(--ink-2);
   font-size: 13px;
   font-weight: 500;
 }
@@ -2731,7 +2734,7 @@ button {
 .ll-training-generation-fallback-actions button {
   min-height: 34px;
   padding: 0 14px;
-  border: 1px solid #ded5f3;
+  border: 1px solid var(--line-soft);
   border-radius: 999px;
   background: var(--paper);
   color: var(--ll-purple);
