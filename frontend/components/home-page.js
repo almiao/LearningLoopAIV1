@@ -274,7 +274,7 @@ function AvatarMenu({ open, onToggle, onLogout, onLoginClick, userName, isLogged
   );
 }
 
-function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue, materialPool, hasProfile, hasActiveCampaign, onSnoozeRecommendation }) {
+function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue, materialPool, hasProfile, onSnoozeRecommendation }) {
   const reentryPlan = buildReentryPlan(featuredDocument);
   const action = reentryPlan.primaryAction;
   const color = getSignalColor(featuredDocument);
@@ -286,7 +286,7 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
 
   return (
     <section className="ll-default-view">
-      <h1 className="ll-today-heading">{hasActiveCampaign ? "为了这场面试，今天做三件事" : "今天先做什么"}</h1>
+      <h1 className="ll-today-heading">今天先做什么</h1>
       {!hasProfile ? (
         <p className="ll-status-note">当前还没连接学习档案，先打开一篇 JavaGuide 文档，阅读与训练进度会自动回到这里。</p>
       ) : null}
@@ -381,7 +381,7 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
           <span className="ll-step-num">3</span>
           <div className="ll-step-body">
             <h2 className="ll-step-title">再学一篇新的</h2>
-            <p className="ll-step-sub">{hasActiveCampaign ? "按你的冲刺目标推荐：" : "从素材池里挑一篇："}</p>
+            <p className="ll-step-sub">从素材池里挑一篇：</p>
             {recommendedNewDocument ? (
               <div className="ll-step-doc">
                 <Link href={buildLearningHref(recommendedNewDocument)} className="ll-title-link">
@@ -404,9 +404,6 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
           </div>
         </section>
       </div>
-      {hasActiveCampaign ? (
-        <p className="ll-step-footnote">完成 1-2-3，今天的进度会自动回灌到面试冲刺的覆盖率里。</p>
-      ) : null}
 
       <section className="ll-home-foot-row">
         <span>我的资料</span>
@@ -726,7 +723,6 @@ export function HomePage() {
             reviewDue={reviewDue}
             materialPool={materialPool}
             hasProfile={Boolean(profile?.user?.id)}
-            hasActiveCampaign={Boolean(activeCampaign)}
             onSnoozeRecommendation={snoozeFeaturedDocument}
           />
         ) : null}
