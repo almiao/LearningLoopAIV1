@@ -13,8 +13,8 @@ function clipText(value = "", limit = sourceExcerptLimit) {
   return text.length > limit ? `${text.slice(0, limit)}...` : text;
 }
 
-export function parseReviewDrillPath(pathname = "") {
-  const match = /^\/api\/review\/([^/]+)\/drill$/.exec(String(pathname || ""));
+export function parseReviewPracticePath(pathname = "") {
+  const match = /^\/api\/review\/([^/]+)\/practice$/.exec(String(pathname || ""));
   return match ? decodeURIComponent(match[1]) : "";
 }
 
@@ -96,14 +96,14 @@ function buildRescueGap({ item, question, judgment }) {
   };
 }
 
-export function createReviewDrillDomain({
+export function createReviewPracticeDomain({
   store,
   proxy = proxyJson,
   readDocument = readSourceDocument,
   now = () => new Date().toISOString(),
 } = {}) {
   if (!store) {
-    throw new Error("review drill store is required.");
+    throw new Error("review practice store is required.");
   }
 
   async function getItemOrThrow(id = "") {
@@ -130,7 +130,7 @@ export function createReviewDrillDomain({
       throw new Error("AI 服务未能生成复习题，请稍后重试。");
     }
     return {
-      mode: "review_drill",
+      mode: "review_practice",
       reviewItem: serializeReviewItem(item),
       question,
       intent: data?.intent || "review_item_revisit",
@@ -168,7 +168,7 @@ export function createReviewDrillDomain({
       try {
         const { data } = await proxy("POST", "/api/loopassist/rescue-material", {
           scope: {
-            role: "review-drill",
+            role: "review-practice",
             round: "到期复习",
             topics: [item.handle].filter(Boolean),
           },
@@ -189,7 +189,7 @@ export function createReviewDrillDomain({
     }
 
     return {
-      mode: "review_drill",
+      mode: "review_practice",
       reviewItem: serializeReviewItem(updatedItem),
       question: cleanQuestion,
       answer: cleanAnswer,

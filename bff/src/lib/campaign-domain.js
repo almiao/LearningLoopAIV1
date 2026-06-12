@@ -2,9 +2,9 @@ import { getLatestResumeVersion } from "../../../src/user/resume-version-store.j
 import { getUserProfile } from "./profile-domain.js";
 import { proxyJson } from "./service-proxy.js";
 
-// 面试战役域 — PRODUCT.md「面试战役」的 BFF 编排层。
+// 面试冲刺域 — PRODUCT.md「面试冲刺」的 BFF 编排层。
 //
-// 守 §1.3：这里没有第二个引擎。话题 drill 复用的是与复习 drill 完全相同的三个零件
+// 守 §1.3：这里没有第二个引擎。话题 practice 复用的是与复习 practice 完全相同的三个零件
 // （/api/review/generate-question 出题、/api/anchor-judge 判分、rescue-material 补讲），
 // 只是种子从「复习项」换成「JD 话题」——这就是"参数化"的全部。
 // 覆盖度写 Goal（per-Goal、随战役生灭），失败写账本（全局、持久）——碰过 ≠ 会。
@@ -12,7 +12,7 @@ import { proxyJson } from "./service-proxy.js";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const jdExcerptLimit = 2400;
 
-// 就绪度的诚实边界（PRODUCT「面试战役」就绪度节）：必须随读数一起返回，否则误导。
+// 就绪度的诚实边界（PRODUCT「面试冲刺」就绪度节）：必须随读数一起返回，否则误导。
 export const READINESS_DISCLAIMER =
   "达标度只和锚点判分质量、JD 拆解质量一样准；覆盖率 ≠ 达标度 ≠ 真能过面。这是你自己的薄弱点地图，不是录用预测。";
 
@@ -34,9 +34,9 @@ export function parseCampaignPath(pathname = "") {
   if (action) {
     return { id: decodeURIComponent(action[1]), action: action[2], topicId: "" };
   }
-  const drill = /^\/api\/campaigns\/([^/]+)\/topics\/([^/]+)\/drill$/.exec(pathname);
-  if (drill) {
-    return { id: decodeURIComponent(drill[1]), action: "drill", topicId: decodeURIComponent(drill[2]) };
+  const practice = /^\/api\/campaigns\/([^/]+)\/topics\/([^/]+)\/practice$/.exec(pathname);
+  if (practice) {
+    return { id: decodeURIComponent(practice[1]), action: "practice", topicId: decodeURIComponent(practice[2]) };
   }
   return null;
 }
@@ -205,8 +205,8 @@ export function createCampaignDomain({
     return { campaign: withReadiness(campaign, now()) };
   }
 
-  // ③ 冲刺：话题 drill 出题。种子=JD 话题（同一出题引擎，换个种子而已）。
-  async function startTopicDrill({ id, topicId } = {}) {
+  // ③ 冲刺：话题 practice 出题。种子=JD 话题（同一出题引擎，换个种子而已）。
+  async function startTopicPractice({ id, topicId } = {}) {
     const campaign = await getCampaignOrThrow(id);
     const topic = getTopicOrThrow(campaign, topicId);
     const { data, traceId } = await proxy("POST", "/api/review/generate-question", {
@@ -223,17 +223,17 @@ export function createCampaignDomain({
       throw new Error("AI 服务未能生成话题练习题，请稍后重试。");
     }
     return {
-      mode: "campaign_drill",
+      mode: "campaign_practice",
       campaignId: campaign.id,
       topic: { id: topic.id, topic: topic.topic, importance: topic.importance, coverage: topic.coverage },
       question,
-      intent: data?.intent || "campaign_topic_drill",
+      intent: data?.intent || "campaign_topic_practice",
       traceId,
     };
   }
 
   // ③ 冲刺：判分 → 覆盖度写 Goal；答崩 → 失败写全局账本（next_due 被 deadline 封顶）+ 补讲。
-  async function answerTopicDrill({ id, topicId, question = "", answer: learnerAnswer = "" } = {}) {
+  async function answerTopicPractice({ id, topicId, question = "", answer: learnerAnswer = "" } = {}) {
     const campaign = await getCampaignOrThrow(id);
     const topic = getTopicOrThrow(campaign, topicId);
     const cleanQuestion = normalizeText(question);
@@ -312,7 +312,7 @@ export function createCampaignDomain({
     }
 
     return {
-      mode: "campaign_drill",
+      mode: "campaign_practice",
       campaign: withReadiness(updatedCampaign, now()),
       topic: { id: topic.id, topic: topic.topic, importance: topic.importance, coverage: passed ? "solid" : "shaky" },
       question: cleanQuestion,
@@ -363,8 +363,8 @@ export function createCampaignDomain({
     create,
     list,
     detail,
-    startTopicDrill,
-    answerTopicDrill,
+    startTopicPractice,
+    answerTopicPractice,
     debrief,
     archive,
   };

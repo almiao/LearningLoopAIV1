@@ -3,9 +3,9 @@ import { getLatestResumeVersion } from "../../../src/user/resume-version-store.j
 import { serializeSseEvent, withStreamHeaders } from "./http-utils.js";
 import { getUserProfile } from "./profile-domain.js";
 import { aiServiceUrl, proxyJson } from "./service-proxy.js";
-import { drillPassthrough } from "./stores.js";
+import { practicePassthrough } from "./stores.js";
 
-export function recordLoopAssistDrillRounds(review = {}) {
+export function recordLoopAssistPracticeRounds(review = {}) {
   const reviews = Array.isArray(review?.questionReviews) ? review.questionReviews : [];
   for (const item of reviews) {
     const question = String(item?.questionText || "").trim();
@@ -13,7 +13,7 @@ export function recordLoopAssistDrillRounds(review = {}) {
     if (!question || !answer) {
       continue;
     }
-    void drillPassthrough({
+    void practicePassthrough({
       handle: String(item.objective || item.topic || "").trim(),
       question,
       answer,

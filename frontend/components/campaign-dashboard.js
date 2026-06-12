@@ -8,9 +8,9 @@ import { apiFetch, postJson } from "../lib/api";
 import { getStoredUserId } from "../lib/user-session";
 import { TrainingGenerationPanel } from "./training-generation-panel";
 
-// 面试准备页 — PRODUCT.md「面试战役」的 campaign Goal 详情视图。
-// 纯视图：倒计时 + 覆盖度 + 就绪度 + 练习入口 + 模拟入口 + 面后复盘，零自有引擎/状态（§1.3）。
-// 文案纪律：界面不出现内部术语（战役/drill/账本/锚点/shaky 等），全部用大白话。
+// 面试冲刺页 — PRODUCT.md「面试冲刺」的 campaign Goal 详情视图（纯视图，零自有引擎/状态，§1.3）。
+// 第一性：这页只回答「今天练哪个」。清单态 = 一行读数 + 主按钮「练下一个」+ 话题清单；
+// 练题态 = 整页只剩题目与作答。解释性文字一律不上屏（文案纪律见 ui-copy-no-jargon）。
 
 const coverageLabels = {
   uncovered: "没练过",
@@ -18,9 +18,9 @@ const coverageLabels = {
   solid: "扎实",
 };
 
-function formatPercent(value = 0) {
-  return `${Math.round((Number(value) || 0) * 100)}%`;
-}
+const importanceLabels = {
+  core: "重点",
+};
 
 function formatDeadline(deadline = "") {
   const ms = Date.parse(deadline);
@@ -28,7 +28,34 @@ function formatDeadline(deadline = "") {
     return deadline;
   }
   const date = new Date(ms);
-  return `${date.getMonth() + 1} 月 ${date.getDate()} 日`;
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+// 「练下一个」= 就绪度缺口排序的第一个（最可能被问倒的优先）。
+function nextGapTopic(campaign) {
+  const gaps = campaign?.readiness?.gaps || [];
+  if (!gaps.length) {
+    return null;
+  }
+  return (campaign.topics || []).find((topic) => topic.id === gaps[0].topicId) || null;
+}
+
+function topGapTopics(campaign, limit = 3) {
+  const gaps = campaign?.readiness?.gaps || [];
+  const topicsById = new Map((campaign?.topics || []).map((topic) => [topic.id, topic]));
+  return gaps
+    .map((gap) => topicsById.get(gap.topicId))
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function buildCampaignInterviewHref(campaignId = "") {
+  const params = new URLSearchParams();
+  params.set("mode", "interview");
+  if (campaignId) {
+    params.set("campaignId", campaignId);
+  }
+  return `/learn?${params.toString()}`;
 }
 
 function CampaignCreateForm({ creating, error, onCreate }) {
@@ -45,10 +72,7 @@ function CampaignCreateForm({ creating, error, onCreate }) {
         onCreate({ role, deadline, jdText });
       }}
     >
-      <h2>准备一场面试</h2>
-      <p className="ll-campaign-form-hint">
-        贴上职位描述（JD），系统会拆成一份可以逐个练习的话题清单（已上传过简历会自动对照，简历里写了的优先验证）。
-      </p>
+      <h2>开启一次面试冲刺</h2>
       <div className="ll-campaign-form-grid">
         <label>
           岗位
@@ -65,7 +89,7 @@ function CampaignCreateForm({ creating, error, onCreate }) {
           rows="8"
           value={jdText}
           onChange={(event) => setJdText(event.target.value)}
-          placeholder="把职位描述整段贴进来。"
+          placeholder="把职位描述整段贴进来，会拆成可逐个练习的话题。"
           required
         />
       </label>
@@ -77,48 +101,8 @@ function CampaignCreateForm({ creating, error, onCreate }) {
   );
 }
 
-function ReadinessPanel({ readiness }) {
-  if (!readiness) {
-    return null;
-  }
-  const hasDeadline = readiness.daysLeft !== null && readiness.daysLeft !== undefined;
-  return (
-    <section className="ll-campaign-readiness" data-testid="campaign-readiness">
-      <div className="ll-campaign-readiness-stats">
-        {hasDeadline ? (
-          <div>
-            <strong>{readiness.daysLeft}</strong>
-            <span>天后面试</span>
-          </div>
-        ) : null}
-        <div>
-          <strong>{formatPercent(readiness.coverageRate)}</strong>
-          <span>练过的话题</span>
-        </div>
-        <div>
-          <strong>{formatPercent(readiness.masteryRate)}</strong>
-          <span>讲得稳的话题</span>
-        </div>
-      </div>
-      {readiness.likelyToFail?.length ? (
-        <div className="ll-campaign-risk-list">
-          <span>最可能被问倒的</span>
-          {readiness.likelyToFail.map((gap) => (
-            <em key={gap.topicId}>{gap.topic}</em>
-          ))}
-        </div>
-      ) : (
-        <div className="ll-campaign-risk-list">
-          <span>清单上的话题都讲得稳了，去模拟面试再验一遍。</span>
-        </div>
-      )}
-      <p className="ll-campaign-disclaimer">这份读数只是你自己的薄弱点地图，不代表面试结果。</p>
-    </section>
-  );
-}
-
-function TopicDrillPanel({ campaignId, topic, onClose, onCampaignUpdate }) {
-  const [drill, setDrill] = useState(null);
+function TopicPracticeView({ campaignId, topic, onBack, onNext, onCampaignUpdate }) {
+  const [practice, setPractice] = useState(null);
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -127,15 +111,15 @@ function TopicDrillPanel({ campaignId, topic, onClose, onCampaignUpdate }) {
     try {
       setLoading(true);
       setError("");
-      setDrill(null);
+      setPractice(null);
       setAnswer("");
       const data = await postJson(
-        `/api/campaigns/${encodeURIComponent(campaignId)}/topics/${encodeURIComponent(topic.id)}/drill`,
+        `/api/campaigns/${encodeURIComponent(campaignId)}/topics/${encodeURIComponent(topic.id)}/practice`,
         { action: "start" },
       );
-      setDrill(data);
+      setPractice(data);
     } catch (nextError) {
-      setError(nextError.message || "练习题生成失败。");
+      setError(nextError.message || "出题失败，请重试。");
     } finally {
       setLoading(false);
     }
@@ -149,40 +133,41 @@ function TopicDrillPanel({ campaignId, topic, onClose, onCampaignUpdate }) {
 
   async function submitAnswer() {
     const submitted = answer.trim();
-    if (!drill?.question || !submitted) {
+    if (!practice?.question || !submitted) {
       return;
     }
     try {
       setLoading(true);
       setError("");
       const data = await postJson(
-        `/api/campaigns/${encodeURIComponent(campaignId)}/topics/${encodeURIComponent(topic.id)}/drill`,
-        { action: "answer", question: drill.question, answer: submitted },
+        `/api/campaigns/${encodeURIComponent(campaignId)}/topics/${encodeURIComponent(topic.id)}/practice`,
+        { action: "answer", question: practice.question, answer: submitted },
       );
-      setDrill(data);
+      setPractice(data);
       if (data.campaign) {
         onCampaignUpdate(data.campaign);
       }
     } catch (nextError) {
-      setError(nextError.message || "判分失败。");
+      setError(nextError.message || "判分失败，请重试。");
     } finally {
       setLoading(false);
     }
   }
 
-  const answered = Boolean(drill?.judgment);
-  const passed = Boolean(drill?.passed);
-  const misses = Array.isArray(drill?.judgment?.misses) ? drill.judgment.misses : [];
-  const hits = Array.isArray(drill?.judgment?.hits) ? drill.judgment.hits : [];
+  const answered = Boolean(practice?.judgment);
+  const passed = Boolean(practice?.passed);
+  const misses = Array.isArray(practice?.judgment?.misses) ? practice.judgment.misses : [];
+  const hits = Array.isArray(practice?.judgment?.hits) ? practice.judgment.hits : [];
 
   return (
-    <article className="ll-training-card ll-campaign-drill-card" data-testid="campaign-drill-panel">
-      <div className="ll-training-card-chip-row">
-        <span className="ll-training-chip">{`练这个话题 · ${coverageLabels[topic.coverage] || "没练过"}`}</span>
-        <button type="button" className="ll-tool-button" onClick={onClose}>关闭</button>
+    <article className="ll-training-card ll-campaign-practice-card" data-testid="campaign-practice-panel">
+      <div className="ll-campaign-practice-head">
+        <button type="button" className="ll-campaign-action" onClick={onBack}>‹ 待练清单</button>
+        <span className="ll-campaign-practice-topic">{topic.topic}</span>
       </div>
-      <h2>{drill?.question || (loading ? "正在出题..." : error || "正在出题...")}</h2>
-      {error && drill?.question ? <p className="ll-campaign-error">{error}</p> : null}
+      {error && !practice?.question ? <p className="ll-campaign-error">{error}</p> : null}
+      <h2>{practice?.question || "正在出题..."}</h2>
+      {error && practice?.question ? <p className="ll-campaign-error">{error}</p> : null}
 
       {!answered ? (
         <form
@@ -197,65 +182,59 @@ function TopicDrillPanel({ campaignId, topic, onClose, onCampaignUpdate }) {
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
             placeholder="像面试一样作答：先结论，再机制、边界和取舍。"
-            disabled={loading || !drill?.question}
+            disabled={loading || !practice?.question}
           />
           <div className="ll-next-answer-actions">
-            <button type="button" className="ll-tool-button" onClick={() => void loadQuestion()} disabled={loading}>
+            <button type="button" className="ll-campaign-action" onClick={() => void loadQuestion()} disabled={loading}>
               换一道
             </button>
-            <button type="submit" className="ll-training-primary" disabled={loading || !answer.trim() || !drill?.question}>
+            <button type="submit" className="ll-training-primary" disabled={loading || !answer.trim() || !practice?.question}>
               {loading ? "判分中..." : "提交回答"}
             </button>
           </div>
         </form>
       ) : (
-        <section className="ll-review-drill-result">
+        <section className="ll-review-practice-result">
           <div
             className={`ll-thread-score-summary tone-${passed ? "solid" : "weak"}`}
             style={{ "--thread-score-color": passed ? "#1D9E75" : "#E27272" }}
           >
             <div className="ll-thread-score-main">
-              <strong>{passed ? "过了，这个话题标记为扎实" : "没讲稳，已加进你的复习计划"}</strong>
-              <span>{passed ? "扎实" : "生疏"}</span>
+              <strong>{passed ? "过了 · 标记为扎实" : "没讲稳 · 已加入复习计划"}</strong>
             </div>
-            <p>
-              {passed
-                ? "这个话题先放一放，后面用模拟面试再验证一遍。"
-                : "这个点会出现在首页的今日复习里，先看下面的讲解补上。"}
-            </p>
           </div>
           {hits.length || misses.length ? (
             <div className="ll-thread-support-grid">
               {hits.length ? (
                 <article className="ll-thread-support-card takeaway">
-                  <strong>你讲到位的点</strong>
+                  <strong>讲到位的</strong>
                   <p>{hits.join("；")}</p>
                 </article>
               ) : null}
               {misses.length ? (
                 <article className="ll-thread-support-card improve">
-                  <strong>还没讲到的关键点</strong>
+                  <strong>没讲到的</strong>
                   <p>{misses.join("；")}</p>
                 </article>
               ) : null}
             </div>
           ) : null}
-          {!passed && drill.rescue?.markdown ? (
+          {!passed && practice.rescue?.markdown ? (
             <div className="ll-thread-message assistant explanation">
               <TrainingGenerationPanel
                 embedded
                 complete
-                markdown={drill.rescue.markdown}
-                testId="campaign-drill-rescue-card"
+                markdown={practice.rescue.markdown}
+                testId="campaign-practice-rescue-card"
               />
             </div>
           ) : null}
           <div className="ll-next-answer-actions">
-            <button type="button" className="ll-tool-button" onClick={() => void loadQuestion()} disabled={loading}>
-              再练一题
+            <button type="button" className="ll-campaign-action" onClick={() => void loadQuestion()} disabled={loading}>
+              同话题再练
             </button>
-            <button type="button" className="ll-training-primary" onClick={onClose}>
-              回话题清单
+            <button type="button" className="ll-training-primary" onClick={onNext}>
+              练下一个
             </button>
           </div>
         </section>
@@ -283,7 +262,7 @@ function DebriefPanel({ campaignId, onCampaignUpdate }) {
       setSubmitting(true);
       setError("");
       const data = await postJson(`/api/campaigns/${encodeURIComponent(campaignId)}/debrief`, { misses });
-      setResult(`已加进复习计划，共 ${data.reviewItems?.length || 0} 条。`);
+      setResult(`已加入复习计划，共 ${data.reviewItems?.length || 0} 条。`);
       setText("");
       if (data.campaign) {
         onCampaignUpdate(data.campaign);
@@ -296,14 +275,14 @@ function DebriefPanel({ campaignId, onCampaignUpdate }) {
   }
 
   return (
-    <section className="ll-campaign-debrief" data-testid="campaign-debrief">
-      <h3>面试后复盘</h3>
-      <p>面试里真被问到、却没答上来的点，一行一个写下来——这些最值得练，会直接进你的复习计划。</p>
+    <details className="ll-campaign-debrief" data-testid="campaign-debrief">
+      <summary>真实面试结束后，把被问住的点回填进来</summary>
+      <p>这里记录的是你在真实面试里临场没讲稳的点，不是当前这道练习题的操作。</p>
       <textarea
         rows="3"
         value={text}
         onChange={(event) => setText(event.target.value)}
-        placeholder={"例：Kafka 重平衡期间消息会怎样\n例：G1 的 mixed GC 触发条件"}
+        placeholder={"一行一个，例：Kafka 重平衡期间消息会怎样"}
       />
       <div className="ll-next-answer-actions">
         <button type="button" className="ll-training-primary" onClick={() => void submitDebrief()} disabled={submitting || !text.trim()}>
@@ -312,7 +291,7 @@ function DebriefPanel({ campaignId, onCampaignUpdate }) {
       </div>
       {result ? <p className="ll-campaign-debrief-done">{result}</p> : null}
       {error ? <p className="ll-campaign-error">{error}</p> : null}
-    </section>
+    </details>
   );
 }
 
@@ -364,6 +343,7 @@ export function CampaignDashboard() {
       });
       setCampaigns((current) => [...(current || []), data.campaign]);
       setActiveId(data.campaign.id);
+      setActiveTopic(null);
     } catch (error) {
       setCreateError(error.message || "创建失败。");
     } finally {
@@ -372,6 +352,9 @@ export function CampaignDashboard() {
   }
 
   async function archiveCampaign(id) {
+    if (typeof window !== "undefined" && !window.confirm("结束这次面试冲刺？练习记录会保留在复习计划里。")) {
+      return;
+    }
     try {
       await postJson(`/api/campaigns/${encodeURIComponent(id)}/archive`, {});
       setCampaigns((current) => (current || []).filter((campaign) => campaign.id !== id));
@@ -383,6 +366,47 @@ export function CampaignDashboard() {
   }
 
   const activeCampaign = (campaigns || []).find((campaign) => campaign.id === activeId) || null;
+  const topics = activeCampaign?.topics || [];
+  const practicedCount = topics.filter((topic) => topic.coverage !== "uncovered").length;
+  const solidCount = topics.filter((topic) => topic.coverage === "solid").length;
+  const shakyCount = topics.filter((topic) => topic.coverage === "shaky").length;
+  const uncoveredCount = topics.filter((topic) => topic.coverage === "uncovered").length;
+  const daysLeft = activeCampaign?.readiness?.daysLeft;
+  const nextTopic = activeCampaign ? nextGapTopic(activeCampaign) : null;
+  const priorityTopics = activeCampaign ? topGapTopics(activeCampaign) : [];
+  const scheduleLabel = activeCampaign?.deadline
+    ? daysLeft === 0
+      ? `今天面试 · ${formatDeadline(activeCampaign.deadline)}`
+      : `${daysLeft} 天后面试 · ${formatDeadline(activeCampaign.deadline)}`
+    : "面试日期未设置";
+  const scheduleHint = activeCampaign?.deadline
+    ? "系统会按剩余天数和话题风险安排优先级。"
+    : "这不是问题，先按 JD 重点和薄弱点开始练就行。";
+  const statusCards = [
+    {
+      label: "已练话题",
+      value: `${practicedCount}/${topics.length || 0}`,
+      tone: practicedCount ? "warm" : "neutral",
+    },
+    {
+      label: "讲稳的话题",
+      value: `${solidCount}`,
+      tone: solidCount ? "solid" : "neutral",
+    },
+    {
+      label: "待补的话题",
+      value: `${shakyCount + uncoveredCount}`,
+      tone: shakyCount + uncoveredCount ? "alert" : "solid",
+    },
+  ];
+
+  function startNextTopic() {
+    const target = nextGapTopic(activeCampaign);
+    if (!target) {
+      return;
+    }
+    setActiveTopic(target);
+  }
 
   return (
     <main className="learn-shell ll-campaign-page" data-testid="campaign-dashboard">
@@ -390,8 +414,8 @@ export function CampaignDashboard() {
         <div className="ll-training-title">
           <button type="button" className="ll-training-back" onClick={() => router.push("/?mode=status&panel=home")}>‹</button>
           <div>
-            <span>面试准备</span>
-            <h1>{activeCampaign ? `${activeCampaign.role}${activeCampaign.company ? ` @ ${activeCampaign.company}` : ""}` : "新面试"}</h1>
+            <span>面试冲刺</span>
+            <h1>{activeTopic ? "单题练习" : activeCampaign ? "当前准备" : "新面试"}</h1>
           </div>
         </div>
         <div className="ll-training-tabs">
@@ -421,52 +445,119 @@ export function CampaignDashboard() {
           <p className="ll-campaign-loading">加载中...</p>
         ) : !activeCampaign ? (
           <CampaignCreateForm creating={creating} error={createError} onCreate={createCampaign} />
+        ) : activeTopic ? (
+          <TopicPracticeView
+            campaignId={activeCampaign.id}
+            topic={activeTopic}
+            onBack={() => setActiveTopic(null)}
+            onNext={() => {
+              const target = nextGapTopic(
+                (campaigns || []).find((campaign) => campaign.id === activeId) || activeCampaign,
+              );
+              setActiveTopic(target);
+            }}
+            onCampaignUpdate={(updated) => {
+              applyCampaignUpdate(updated);
+              setActiveTopic((current) => {
+                if (!current) {
+                  return current;
+                }
+                return updated.topics.find((topic) => topic.id === current.id) || current;
+              });
+            }}
+          />
         ) : (
           <div className="ll-campaign-detail">
-            <div className="ll-campaign-meta-row">
-              <span>{activeCampaign.deadline ? `面试日 ${formatDeadline(activeCampaign.deadline)}` : "还没定面试日期"}</span>
-              <div className="ll-campaign-meta-actions">
-                <Link href="/loopassist" className="ll-tool-button">模拟面试</Link>
-                <button type="button" className="ll-tool-button" onClick={() => void archiveCampaign(activeCampaign.id)}>
-                  结束这场面试
-                </button>
-              </div>
-            </div>
-
-            <ReadinessPanel readiness={activeCampaign.readiness} />
-
-            {activeTopic ? (
-              <TopicDrillPanel
-                campaignId={activeCampaign.id}
-                topic={activeTopic}
-                onClose={() => setActiveTopic(null)}
-                onCampaignUpdate={(updated) => {
-                  applyCampaignUpdate(updated);
-                  setActiveTopic((current) => {
-                    if (!current) {
-                      return current;
-                    }
-                    const next = updated.topics.find((topic) => topic.id === current.id);
-                    return next || current;
-                  });
-                }}
-              />
-            ) : (
-              <ul className="ll-campaign-topic-list" data-testid="campaign-topic-list">
-                {activeCampaign.topics.map((topic) => (
-                  <li key={topic.id}>
-                    <button type="button" className="ll-campaign-topic-row" onClick={() => setActiveTopic(topic)}>
-                      <span className={`ll-campaign-topic-dot is-${topic.coverage}`} aria-hidden="true" />
-                      <span className="ll-campaign-topic-text">{topic.topic}</span>
-                      {topic.importance === "core" ? <span className="ll-campaign-topic-core">重点</span> : null}
-                      <span className={`ll-state-tag ll-state-${topic.coverage === "solid" ? "solid" : "shaky"}`}>
-                        {coverageLabels[topic.coverage] || "没练过"}
-                      </span>
+            <section className="ll-campaign-summary" data-testid="campaign-readiness">
+              <div className="ll-campaign-summary-hero">
+                <div className="ll-campaign-summary-copy">
+                  <div className="ll-campaign-summary-kicker">
+                    <span className={`ll-campaign-status-pill${activeCampaign.deadline ? " is-dated" : ""}`}>{scheduleLabel}</span>
+                    {nextTopic ? <span className="ll-campaign-status-pill">下一步先练 {nextTopic.topic}</span> : null}
+                  </div>
+                  <div>
+                    <h2>这场面试先把最容易失分的话题讲稳</h2>
+                    <p>{scheduleHint}</p>
+                  </div>
+                </div>
+                <div className="ll-campaign-summary-actions">
+                  {nextTopic ? (
+                    <button type="button" className="ll-training-primary" onClick={startNextTopic} title={nextTopic.topic}>
+                      练下一个
                     </button>
-                  </li>
+                  ) : (
+                    <Link href={buildCampaignInterviewHref(activeCampaign.id)} className="ll-training-primary">开始模拟面试</Link>
+                  )}
+                  <Link href={buildCampaignInterviewHref(activeCampaign.id)} className="ll-campaign-action">开始模拟面试</Link>
+                  <button type="button" className="ll-campaign-action ll-campaign-action-danger" onClick={() => void archiveCampaign(activeCampaign.id)}>
+                    归档这场准备
+                  </button>
+                </div>
+              </div>
+              <div className="ll-campaign-summary-stats">
+                {statusCards.map((card) => (
+                  <article key={card.label} className={`ll-campaign-stat-card tone-${card.tone}`}>
+                    <span>{card.label}</span>
+                    <strong>{card.value}</strong>
+                  </article>
                 ))}
+              </div>
+              {priorityTopics.length ? (
+                <div className="ll-campaign-priority-strip">
+                  <span>优先补强</span>
+                  <div className="ll-campaign-priority-topics">
+                    {priorityTopics.map((topic) => (
+                      <button key={topic.id} type="button" className="ll-campaign-priority-chip" onClick={() => setActiveTopic(topic)}>
+                        {topic.topic}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <p className="ll-campaign-footnote">读数只用来找薄弱点，不代表真实面试结果。</p>
+            </section>
+
+            <section className="ll-campaign-topic-section">
+              <div className="ll-campaign-section-head">
+                <div>
+                  <h3>待练清单</h3>
+                  <p>上面先看全局安排，下面逐题进入练习。</p>
+                </div>
+                <span>{topics.length} 个话题</span>
+              </div>
+
+              <ul className="ll-campaign-topic-list" data-testid="campaign-topic-list">
+                {topics.map((topic) => {
+                  const isPriority = nextTopic?.id === topic.id;
+                  const coverageTone = topic.coverage === "solid" ? "solid" : topic.coverage === "shaky" ? "shaky" : "uncovered";
+                  return (
+                    <li key={topic.id}>
+                      <button
+                        type="button"
+                        className={`ll-campaign-topic-row${isPriority ? " is-priority" : ""}`}
+                        onClick={() => setActiveTopic(topic)}
+                      >
+                        <div className="ll-campaign-topic-main">
+                          <div className="ll-campaign-topic-labels">
+                            {importanceLabels[topic.importance] ? (
+                              <span className="ll-campaign-topic-core">{importanceLabels[topic.importance]}</span>
+                            ) : null}
+                            {isPriority ? <span className="ll-campaign-topic-priority">建议先练</span> : null}
+                          </div>
+                          <span className="ll-campaign-topic-text">{topic.topic}</span>
+                        </div>
+                        <div className="ll-campaign-topic-side">
+                          <span className={`ll-state-tag ll-state-${coverageTone}`}>
+                            {coverageLabels[topic.coverage] || "没练过"}
+                          </span>
+                          <span className="ll-campaign-topic-arrow">开始</span>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
-            )}
+            </section>
 
             <DebriefPanel campaignId={activeCampaign.id} onCampaignUpdate={applyCampaignUpdate} />
           </div>

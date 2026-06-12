@@ -6,16 +6,16 @@ import test from "node:test";
 
 import { createReviewItemStore } from "../../src/ledger/review-item-store.js";
 import {
-  createReviewDrillDomain,
+  createReviewPracticeDomain,
   getDocumentPathFromSourceRef,
-  parseReviewDrillPath,
-} from "../../bff/src/lib/review-drill-domain.js";
+  parseReviewPracticePath,
+} from "../../bff/src/lib/review-practice-domain.js";
 
 async function withDomain(run, { proxy, readDocument, now } = {}) {
-  const dir = await mkdtemp(path.join(tmpdir(), "review-drill-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "review-practice-"));
   const store = createReviewItemStore({ ledgerDir: dir });
   const calls = [];
-  const domain = createReviewDrillDomain({
+  const domain = createReviewPracticeDomain({
     store,
     proxy: async (method, pathname, payload) => {
       calls.push({ method, pathname, payload });
@@ -31,9 +31,9 @@ async function withDomain(run, { proxy, readDocument, now } = {}) {
   }
 }
 
-test("review drill path helpers parse id and source refs", () => {
-  assert.equal(parseReviewDrillPath("/api/review/item%201/drill"), "item 1");
-  assert.equal(parseReviewDrillPath("/api/review/item%201"), "");
+test("review practice path helpers parse id and source refs", () => {
+  assert.equal(parseReviewPracticePath("/api/review/item%201/practice"), "item 1");
+  assert.equal(parseReviewPracticePath("/api/review/item%201"), "");
   assert.equal(getDocumentPathFromSourceRef("docs/java/concurrency.md#aqs"), "docs/java/concurrency.md");
   assert.equal(getDocumentPathFromSourceRef("demo://loopassist/question-1"), "");
 });
@@ -71,7 +71,7 @@ test("start seeds ai-service with the review item evidence without requiring sou
   );
 });
 
-test("passing a review drill marks the ledger item solid and skips rescue", async () => {
+test("passing a review practice marks the ledger item solid and skips rescue", async () => {
   await withDomain(
     async ({ store, domain, calls }) => {
       const item = await store.recordMiss({
@@ -106,7 +106,7 @@ test("passing a review drill marks the ledger item solid and skips rescue", asyn
   );
 });
 
-test("failed review drill marks the item shaky and returns targeted rescue material", async () => {
+test("failed review practice marks the item shaky and returns targeted rescue material", async () => {
   await withDomain(
     async ({ store, domain, calls }) => {
       const item = await store.recordMiss({

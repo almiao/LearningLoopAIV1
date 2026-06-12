@@ -290,7 +290,7 @@ async function prepareLoopAssistInterview(page) {
   await expect(page.getByTestId("loopassist-plan")).toContainText("开始面试");
 }
 
-test("LoopAssist keeps voice focused and offers a weak text fallback", async ({ page }) => {
+test("LoopAssist keeps text answering focused with transcript tucked away", async ({ page }) => {
   const setup = await mockLoopAssistSetup(page);
 
   await prepareLoopAssistInterview(page);
@@ -330,11 +330,6 @@ test("LoopAssist keeps voice focused and offers a weak text fallback", async ({ 
   await expect(page.locator(".loopassist-history-drawer")).toHaveClass(/is-open/);
   await page.keyboard.press("Escape");
   await expect(page.locator(".loopassist-history-drawer.is-open")).toHaveCount(0);
-  await page.getByTestId("loopassist-start-answer").click();
-  await expect(page.getByTestId("loopassist-shell")).toContainText("麦克风服务暂时连接不上");
-  await expect(page.getByTestId("loopassist-toggle-text-mode")).toBeVisible();
-  await expect(page.getByTestId("loopassist-shell").locator("textarea")).toHaveCount(0);
-  await page.getByTestId("loopassist-toggle-text-mode").click();
   await expect(page.getByTestId("loopassist-text-answer")).toBeVisible();
   await expect(page.getByTestId("loopassist-voice-orb")).toHaveCount(0);
   await page.getByTestId("loopassist-text-answer-input").fill("AQS 主要通过 state 和 CLH 队列实现同步。");
@@ -344,14 +339,14 @@ test("LoopAssist keeps voice focused and offers a weak text fallback", async ({ 
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByTestId("loopassist-more-menu").click();
   await page.getByRole("button", { name: "退出本轮" }).click();
-  await expect(page.getByTestId("loopassist-review")).toContainText("72 / 100");
+  await expect(page.getByTestId("loopassist-review")).toContainText(/72\s*\/\s*100/);
   await expect(page.getByTestId("loopassist-review")).toContainText("能力分布");
   await expect(page.getByTestId("loopassist-review")).toContainText("逐题复盘");
   await expect(page.getByTestId("loopassist-review")).toContainText("公平锁和非公平锁有什么区别");
   await page.getByRole("button", { name: "＋ 新建面试" }).click();
   await expect(page.getByTestId("loopassist-interview-record")).toBeEnabled();
   await page.getByTestId("loopassist-interview-record").click();
-  await expect(page.getByTestId("loopassist-review")).toContainText("72 / 100");
+  await expect(page.getByTestId("loopassist-review")).toContainText(/72\s*\/\s*100/);
 });
 
 test("LoopAssist keeps TTS network failures user-facing", async ({ page }) => {
@@ -363,6 +358,7 @@ test("LoopAssist keeps TTS network failures user-facing", async ({ page }) => {
   await page.getByTestId("loopassist-start-interview").click();
   await expect(page.getByTestId("loopassist-shell")).toContainText("面试官语音暂时不可用");
   await expect(page.getByTestId("loopassist-shell")).not.toContainText("Failed to fetch");
-  await expect(page.getByTestId("loopassist-toggle-text-mode")).toBeVisible();
+  await expect(page.getByTestId("loopassist-text-answer")).toBeVisible();
+  await expect(page.getByTestId("loopassist-text-answer-input")).toBeVisible();
   await expect(page.getByRole("button", { name: "重试" })).toHaveCount(0);
 });

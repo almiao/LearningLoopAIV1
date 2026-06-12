@@ -5,14 +5,14 @@ import http from "node:http";
 import { buildMissingAssetPlaceholder, buildSafeContentDisposition, buildServiceBaseUrl, port, readJsonBody, sendBuffer, sendErrorJson, sendJson, withCorsHeaders } from "./lib/http-utils.js";
 import { handleAnswer, handleAnswerStream, handleFocusConcept, handleFocusDomain, handleStartTarget, isCompletedDocumentSession, isResumableDocumentSession, stripSessionPayload } from "./lib/interview-domain.js";
 import { handleKnowledgeAnswer } from "./lib/knowledge-domain.js";
-import { handleLoopAssistStart, handleLoopAssistStream, recordLoopAssistDrillRounds } from "./lib/loopassist-domain.js";
+import { handleLoopAssistStart, handleLoopAssistStream, recordLoopAssistPracticeRounds } from "./lib/loopassist-domain.js";
 import { buildProfilePayload, getUserProfile, handleIgnoredDocument, handleListResumeVersions, handleReadingProgress, handleRecommendationSnooze, handleSaveResumeVersion, handleSkippedTraining } from "./lib/profile-domain.js";
-import { createCampaignDomain, parseCampaignPath } from "./lib/campaign-domain.js";
-import { createReviewDrillDomain, parseReviewDrillPath } from "./lib/review-drill-domain.js";
+import { buildReadiness, createCampaignDomain, parseCampaignPath } from "./lib/campaign-domain.js";
+import { createReviewPracticeDomain, parseReviewPracticePath } from "./lib/review-practice-domain.js";
 import { aiServiceUrl, proxyBinary, proxyJson, ttsServiceUrl } from "./lib/service-proxy.js";
 import { campaignGoalStore, rescuePlaylistStore, reviewItemStore, userProfileStore } from "./lib/stores.js";
 
-const reviewDrillDomain = createReviewDrillDomain({ store: reviewItemStore });
+const reviewPracticeDomain = createReviewPracticeDomain({ store: reviewItemStore });
 const campaignDomain = createCampaignDomain({ store: campaignGoalStore, reviewItemStore });
 
 const server = http.createServer(async (request, response) => {
@@ -32,30 +32,34 @@ const server = http.createServer(async (request, response) => {
 
     // Today Queue「今日复习」块（阶段 4 最小读出口）：账本按 next_due 渲染。
     if (request.method === "GET" && url.pathname === "/api/review/today") {
-      const items = await reviewItemStore.listDue({});
+      const campaignId = url.searchParams.get("campaignId") || "";
+      const campaign = campaignId ? await campaignGoalStore.get(campaignId) : null;
+      const items = await reviewItemStore.listDue({
+        campaign: campaign ? { ...campaign, readiness: buildReadiness(campaign) } : null,
+      });
       sendJson(response, 200, { items, count: items.length });
       return;
     }
 
-    const reviewDrillItemId = parseReviewDrillPath(url.pathname);
-    if (request.method === "POST" && reviewDrillItemId) {
+    const reviewPracticeItemId = parseReviewPracticePath(url.pathname);
+    if (request.method === "POST" && reviewPracticeItemId) {
       const body = await readJsonBody(request);
       const payload = body.action === "answer" || body.answer
-        ? await reviewDrillDomain.answer({
-            id: reviewDrillItemId,
+        ? await reviewPracticeDomain.answer({
+            id: reviewPracticeItemId,
             userId: body.userId || "",
             question: body.question || "",
             answer: body.answer || "",
           })
-        : await reviewDrillDomain.start({
-            id: reviewDrillItemId,
+        : await reviewPracticeDomain.start({
+            id: reviewPracticeItemId,
             userId: body.userId || "",
           });
       sendJson(response, 200, payload);
       return;
     }
 
-    // 面试战役（campaign Goal）：仪表盘是共享引擎 + 共享账本的纯视图（§1.3）。
+    // 面试冲刺（campaign Goal）：仪表盘是共享引擎 + 共享账本的纯视图（§1.3）。
     if (url.pathname === "/api/campaigns") {
       if (request.method === "GET") {
         sendJson(response, 200, await campaignDomain.list());
@@ -74,16 +78,16 @@ const server = http.createServer(async (request, response) => {
         sendJson(response, 200, await campaignDomain.detail({ id: campaignRoute.id }));
         return;
       }
-      if (request.method === "POST" && campaignRoute.action === "drill") {
+      if (request.method === "POST" && campaignRoute.action === "practice") {
         const body = await readJsonBody(request);
         const payload = body.action === "answer" || body.answer
-          ? await campaignDomain.answerTopicDrill({
+          ? await campaignDomain.answerTopicPractice({
               id: campaignRoute.id,
               topicId: campaignRoute.topicId,
               question: body.question || "",
               answer: body.answer || "",
             })
-          : await campaignDomain.startTopicDrill({
+          : await campaignDomain.startTopicPractice({
               id: campaignRoute.id,
               topicId: campaignRoute.topicId,
             });
@@ -131,7 +135,7 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/loopassist/review") {
       const { data, traceId } = await proxyJson("POST", "/api/loopassist/review", await readJsonBody(request));
-      recordLoopAssistDrillRounds(data);
+      recordLoopAssistPracticeRounds(data);
       sendJson(response, 200, { ...data, traceId });
       return;
     }

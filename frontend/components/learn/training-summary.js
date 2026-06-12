@@ -95,7 +95,7 @@ export function buildTrainingCompletionSummary({
 
   return {
     documentTitle: documentTitle || "本次训练",
-    drilledPointCount: rows.length,
+    practicedPointCount: rows.length,
     passedPointCount: Math.max(0, rows.length - weakRows.length),
     completedCount,
     totalCount,
@@ -114,7 +114,7 @@ function TrainingSummaryHero({ summary }) {
         <MiniIcon name="confetti" />
         本轮训练完成
       </div>
-      <p>{summary.drilledPointCount ? `这轮一共练了 ${summary.drilledPointCount} 个点` : "这轮还没有可判分的回答"}</p>
+      <p>{summary.practicedPointCount ? `这轮一共练了 ${summary.practicedPointCount} 个点` : "这轮还没有可判分的回答"}</p>
       <div className="ll-summary-mastery-row">
         <strong className="ll-summary-outcome is-passed">{`过线 ${summary.passedPointCount}`}</strong>
         <span className="ll-summary-outcome-divider" aria-hidden="true">·</span>
@@ -253,7 +253,7 @@ function TrainingSharePanel({ summary, onClose }) {
         </div>
         <div className="ll-summary-share-card">
           <span>{summary.documentTitle}</span>
-          <strong>{`本轮 ${summary.completedCount} 题 · 过线 ${summary.passedPointCount}/${summary.drilledPointCount} 个点`}</strong>
+          <strong>{`本轮 ${summary.completedCount} 题 · 过线 ${summary.passedPointCount}/${summary.practicedPointCount} 个点`}</strong>
           <p>{summary.takeaways.slice(0, 3).join(" / ")}</p>
         </div>
         <p>分享内容只展示你的学习成果，不包含产品宣传。</p>

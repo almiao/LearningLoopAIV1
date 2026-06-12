@@ -68,6 +68,29 @@ test("listDue returns only due items, sorted by next_due_at", async () => {
   });
 });
 
+test("listDue prioritizes active campaign gaps ahead of plain due order", async () => {
+  await withStore(async (store) => {
+    const t0 = "2026-06-07T00:00:00.000Z";
+    await store.recordMiss({ handle: "普通到期项", now: "2026-06-06T00:00:00.000Z" });
+    await store.recordMiss({ handle: "Redis 缓存一致性", now: t0 });
+
+    const due = await store.listDue({
+      now: "2026-06-08T12:00:00.000Z",
+      campaign: {
+        readiness: {
+          daysLeft: 2,
+          gaps: [
+            { topicId: "redis", topic: "Redis 缓存一致性", coverage: "shaky", priority: 0.9 },
+          ],
+        },
+      },
+    });
+
+    assert.deepEqual(due.map((it) => it.handle), ["Redis 缓存一致性", "普通到期项"]);
+    assert.equal(due[0].campaign_topic_id, "redis");
+  });
+});
+
 test("updateState to solid reschedules to +3 days and bumps last_seen", async () => {
   await withStore(async (store) => {
     const created = await store.recordMiss({ handle: "索引失效的典型场景", now: "2026-06-07T00:00:00.000Z" });
@@ -78,6 +101,28 @@ test("updateState to solid reschedules to +3 days and bumps last_seen", async ()
     assert.equal(updated.state, "solid");
     assert.equal(updated.last_seen_at, seenAt);
     assert.equal(updated.next_due_at, new Date(Date.parse(seenAt) + 3 * DAY_MS).toISOString());
+  });
+});
+
+test("recordMiss reuses an existing handle instead of creating duplicate rows", async () => {
+  await withStore(async (store) => {
+    const first = await store.recordMiss({
+      handle: "Redis 缓存一致性",
+      evidence: { question: "第一次", missedAnchors: ["旁路缓存"] },
+      now: "2026-06-07T00:00:00.000Z",
+    });
+
+    const second = await store.recordMiss({
+      handle: "Redis 缓存一致性",
+      evidence: { question: "第二次", missedAnchors: ["双删"] },
+      now: "2026-06-08T00:00:00.000Z",
+    });
+
+    const all = await store.list();
+    assert.equal(all.length, 1);
+    assert.equal(second.id, first.id);
+    assert.equal(all[0].evidence.question, "第二次");
+    assert.deepEqual(all[0].evidence.missedAnchors, ["双删"]);
   });
 });
 

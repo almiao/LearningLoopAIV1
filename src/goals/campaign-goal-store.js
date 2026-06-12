@@ -3,14 +3,14 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// 面试战役 Goal — PRODUCT.md 的持久实体 ①（另一个是复习项账本）。
+// 面试冲刺 Goal — PRODUCT.md 的持久实体 ①（另一个是复习项账本）。
 //
 // 纪律（落在代码里，不只在文档里）：
 //   - Goal 由用户声明、数量就几个，不从内容自动抽 → 无去重负担。
 //   - 覆盖度清单是 Goal 的属性（per-Goal、随战役生灭、用完即弃），不是第三个知识实体；
-//     它答「碰过没」，账本答「会不会」——碰过 ≠ 会（PRODUCT「面试战役」关键承接 2）。
+//     它答「碰过没」，账本答「会不会」——碰过 ≠ 会（PRODUCT「面试冲刺」关键承接 2）。
 //   - 收尾归档时清单随 Goal 一起死；复习项本就全局，自动流回日常（留存桥 ⑧）。
-//   - 零自有引擎：这里只有状态，drill 永远走共享操练引擎（§1.3）。
+//   - 零自有引擎：这里只有状态，practice 永远走共享操练引擎（§1.3）。
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -54,7 +54,7 @@ function normalizeTopic(topic = {}, index = 0) {
     topic: text,
     importance: VALID_IMPORTANCE.has(topic.importance) ? topic.importance : "core",
     coverage: VALID_COVERAGE.has(topic.coverage) ? topic.coverage : "uncovered",
-    last_drilled_at: normalizeText(topic.last_drilled_at),
+    last_practiced_at: normalizeText(topic.last_practiced_at),
   };
 }
 
@@ -179,7 +179,7 @@ export function createCampaignGoalStore({ goalsDir = defaultGoalsDir } = {}) {
               return topic;
             }
             topicFound = true;
-            return { ...topic, coverage, last_drilled_at: now };
+            return { ...topic, coverage, last_practiced_at: now };
           });
           if (!topicFound) {
             throw new Error(`campaign topic not found: ${topicId}`);

@@ -5,19 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { getStoredUserId } from "../lib/user-session";
 
-function formatState(state) {
-  if (state === "solid") {
-    return "稳定";
-  }
-  if (state === "partial") {
-    return "持续推进";
-  }
-  if (state === "weak") {
-    return "待补强";
-  }
-  return "待建立";
-}
-
 function progressTone(progress) {
   if (progress >= 70) {
     return "good";
@@ -26,14 +13,6 @@ function progressTone(progress) {
     return "mid";
   }
   return "low";
-}
-
-function formatConfidence(value = 0) {
-  const numericValue = Number(value || 0);
-  if (!Number.isFinite(numericValue) || numericValue <= 0) {
-    return "";
-  }
-  return `${Math.round(numericValue * 100)}%`;
 }
 
 function formatReviewWindow(nextReviewAt = "") {
@@ -70,36 +49,44 @@ export function ProfileDashboard() {
       .catch((nextError) => setError(nextError.message));
   }, []);
 
-  const flattenedItems = useMemo(() => {
-    if (!profile) {
-      return [];
-    }
-    return (profile.targets || []).flatMap((target) =>
-      (target.domains || []).flatMap((domain) =>
-        (domain.items || []).map((item) => ({
-          ...item,
-          targetTitle: target.title,
-          domainTitle: domain.title,
-        }))
-      )
-    );
-  }, [profile]);
-
-  const assessedItems = flattenedItems.filter((item) => item.evidenceCount > 0);
-  const weakItems = flattenedItems
-    .filter((item) => item.state === "weak" || item.state === "partial")
-    .sort((left, right) => left.progressPercentage - right.progressPercentage)
-    .slice(0, 4);
-  const recentItems = assessedItems
-    .slice()
-    .sort((left, right) => (right.evidenceCount || 0) - (left.evidenceCount || 0))
-    .slice(0, 4);
   const userRules = profile?.userRules || [];
   const sessionSummaries = profile?.sessionSummaries || [];
   const documentItems = useMemo(() => {
     return Object.values(profile?.documentProgress?.docs || {})
       .sort((left, right) => String(right.lastActivityAt || "").localeCompare(String(left.lastActivityAt || "")));
   }, [profile]);
+  const recentSessions = useMemo(() => (
+    sessionSummaries
+      .slice()
+      .sort((left, right) => String(right.endedAt || "").localeCompare(String(left.endedAt || "")))
+      .slice(0, 4)
+  ), [sessionSummaries]);
+  const reviewReadyDocuments = useMemo(() => (
+    documentItems
+      .filter((document) => document.nextReviewAt || document.trainingStarted || document.evidenceCount > 0)
+      .sort((left, right) => {
+        const leftDue = Date.parse(left.nextReviewAt || "");
+        const rightDue = Date.parse(right.nextReviewAt || "");
+        const leftHasDue = Number.isFinite(leftDue);
+        const rightHasDue = Number.isFinite(rightDue);
+        if (leftHasDue !== rightHasDue) {
+          return leftHasDue ? -1 : 1;
+        }
+        if (leftHasDue && rightHasDue && leftDue !== rightDue) {
+          return leftDue - rightDue;
+        }
+        return String(right.lastActivityAt || "").localeCompare(String(left.lastActivityAt || ""));
+      })
+      .slice(0, 4)
+  ), [documentItems]);
+  const recentPracticeDocuments = useMemo(() => (
+    documentItems
+      .filter((document) => (document.evidenceCount || 0) > 0 || (document.trainingAnswerCount || 0) > 0)
+      .slice(0, 4)
+  ), [documentItems]);
+  const totalEvidenceCount = useMemo(() => (
+    documentItems.reduce((sum, document) => sum + Number(document.evidenceCount || 0), 0)
+  ), [documentItems]);
 
   if (!profile) {
     return (
@@ -155,6 +142,10 @@ export function ProfileDashboard() {
                 <strong>{profile.documentProgress?.stats?.startedTrainingCount || 0}</strong>
                 <span>已开训练</span>
               </div>
+              <div>
+                <strong>{recentSessions.length}</strong>
+                <span>最近轮次</span>
+              </div>
             </div>
           </article>
 
@@ -203,33 +194,38 @@ export function ProfileDashboard() {
           <div className="profile-bottom-grid">
             <article className="next-step-card">
               <h3>下一步建议</h3>
-              {weakItems.length ? (
+              {reviewReadyDocuments.length ? (
                 <ul>
-                  {weakItems.map((item) => (
-                    <li key={item.checkpointId}>
-                      <strong>{item.title}</strong>
-                      <span>{item.domainTitle} · {formatState(item.state)}</span>
+                  {reviewReadyDocuments.map((document) => (
+                    <li key={document.docPath}>
+                      <strong>{document.docTitle || document.docPath}</strong>
+                      <span>
+                        {[
+                          document.learningStatusLabel || "未训练",
+                          formatReviewWindow(document.nextReviewAt || ""),
+                        ].filter(Boolean).join(" · ")}
+                      </span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p>已经有了一批稳定证据，下一轮可以继续扩展更广的知识分组。</p>
+                <p>当前没有临近的复习项，下一轮可以继续扩展新的文档或补一场模拟。</p>
               )}
             </article>
 
             <article className="recent-activity-card">
               <h3>最近学习</h3>
-              {recentItems.length ? (
+              {recentSessions.length ? (
                 <ul>
-                  {recentItems.map((item) => (
-                    <li key={item.checkpointId}>
-                      <strong>{item.title}</strong>
-                      <span>{item.evidenceCount} 条证据 · 训练记忆</span>
+                  {recentSessions.map((summary) => (
+                    <li key={summary.sessionId}>
+                      <strong>{summary.docPath}</strong>
+                      <span>{summary.oneParagraphSummary || "这一轮已经收口，可以从这里接着推进。"}</span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p>还没有近期证据，开始一轮学习后这里会出现最近推进过的知识项目。</p>
+                <p>还没有最近轮次记录，开始一轮学习后这里会出现最新的收口摘要。</p>
               )}
             </article>
           </div>
@@ -237,42 +233,39 @@ export function ProfileDashboard() {
 
         <aside className="memory-column">
           <section className="memory-column-head">
-            <h2>记忆内容</h2>
-            <p>汇总用户在学习目标、对话反馈和长期偏好中的关键记忆。</p>
+            <h2>学习侧写</h2>
+            <p>先看真实学习痕迹，再看偏好与最近收口，不再把旧掌握度图当主舞台。</p>
           </section>
 
           <article className="memory-card">
             <div className="memory-card-head">
-              <strong>记忆摘要</strong>
+              <strong>学习摘要</strong>
             </div>
             <p>
-              用户当前已建立 {profile.summary.assessedCheckpoints} 个知识点记录，其中稳定 {profile.summary.solidItems} 项、
-              进行中 {profile.summary.partialItems} 项、待补强 {profile.summary.weakItems} 项。
+              最近共沉淀了 {totalEvidenceCount} 条答题证据，已读文档 {profile.documentProgress?.stats?.completedReadingCount || 0} 篇，
+              已开训练 {profile.documentProgress?.stats?.startedTrainingCount || 0} 篇，最近收口 {recentSessions.length} 轮。
             </p>
           </article>
 
           <article className="memory-card">
             <div className="memory-card-head">
-              <strong>最近知识点记录</strong>
+              <strong>最近练习痕迹</strong>
             </div>
             <div className="memory-list">
-              {recentItems.length ? recentItems.map((item) => (
-                <div className="memory-list-item" key={item.checkpointId}>
+              {recentPracticeDocuments.length ? recentPracticeDocuments.map((document) => (
+                <div className="memory-list-item" key={document.docPath}>
                   <span className="memory-bullet success" />
                   <div>
-                    <strong>{item.title}</strong>
-                    <p>{item.domainTitle} · {item.evidenceCount} 条证据</p>
-                    {item.derivedPrinciple ? <p>记住的核心：{item.derivedPrinciple}</p> : null}
-                    {item.nextReviewAt || item.recallConfidence ? (
+                    <strong>{document.docTitle || document.docPath}</strong>
+                    <p>{document.learningStatusLabel || "未训练"} · {document.evidenceCount || 0} 条证据</p>
+                    {document.nextReviewAt ? (
                       <p>
-                        {[formatReviewWindow(item.nextReviewAt), item.recallConfidence ? `当前把握 ${formatConfidence(item.recallConfidence)}` : ""]
-                          .filter(Boolean)
-                          .join(" · ")}
+                        {formatReviewWindow(document.nextReviewAt)}
                       </p>
                     ) : null}
                   </div>
                 </div>
-              )) : <p>进入学习后，新的知识点记录会沉淀到这里。</p>}
+              )) : <p>进入学习后，最近的训练痕迹会沉淀到这里。</p>}
             </div>
           </article>
 
@@ -298,7 +291,7 @@ export function ProfileDashboard() {
               <strong>最近一轮总结</strong>
             </div>
             <div className="memory-list">
-              {sessionSummaries.length ? sessionSummaries.slice(0, 3).map((summary) => (
+              {recentSessions.length ? recentSessions.slice(0, 3).map((summary) => (
                 <div className="memory-list-item" key={summary.sessionId}>
                   <span className="memory-bullet success" />
                   <div>
@@ -307,12 +300,12 @@ export function ProfileDashboard() {
                     {summary.recommendedNextAction ? <p>{`下次默认动作：${summary.recommendedNextAction}`}</p> : null}
                   </div>
                 </div>
-              )) : weakItems.length ? weakItems.map((item) => (
-                <div className="memory-list-item" key={item.checkpointId}>
+              )) : reviewReadyDocuments.length ? reviewReadyDocuments.map((document) => (
+                <div className="memory-list-item" key={document.docPath}>
                   <span className="memory-bullet warning" />
                   <div>
-                    <strong>{item.title}</strong>
-                    <p>{item.domainTitle} · {formatState(item.state)}</p>
+                    <strong>{document.docTitle || document.docPath}</strong>
+                    <p>{document.learningStatusLabel || "未训练"}</p>
                   </div>
                 </div>
               )) : <p>当前没有待复习知识点，可以继续扩大覆盖范围。</p>}

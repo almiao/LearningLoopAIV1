@@ -52,6 +52,13 @@ test("deadline further out than the interval does not shorten it", () => {
   assert.equal(r.nextDueAt, daysAfter(NOW, 3));
 });
 
+test("near deadline compresses the interval before the hard cap", () => {
+  const deadline = daysAfter(NOW, 5);
+  const r = scheduleNextReview({ state: "solid", priorStreak: 0, now: NOW, deadline });
+  assert.ok(r.intervalDays < 3);
+  assert.ok(r.intervalDays > 0);
+});
+
 test("garbage now falls back without throwing", () => {
   const r = scheduleNextReview({ state: "shaky", now: "not-a-date" });
   assert.equal(r.intervalDays, 1);

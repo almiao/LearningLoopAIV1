@@ -21,7 +21,7 @@
 
 <rect class="box" x="44" y="34" width="186" height="48" rx="8"/><text class="th" x="137" y="56" text-anchor="middle">今日复习</text><text class="ts" x="137" y="73" text-anchor="middle">账本到期项</text>
 <rect class="box" x="247" y="34" width="186" height="48" rx="8"/><text class="th" x="340" y="56" text-anchor="middle">学新东西</text><text class="ts" x="340" y="73" text-anchor="middle">带一篇原文 · 读后练</text>
-<rect class="box" x="450" y="34" width="186" height="48" rx="8"/><text class="th" x="543" y="56" text-anchor="middle">面试战役</text><text class="ts" x="543" y="73" text-anchor="middle">JD 话题 + 倒计时</text>
+<rect class="box" x="450" y="34" width="186" height="48" rx="8"/><text class="th" x="543" y="56" text-anchor="middle">面试冲刺</text><text class="ts" x="543" y="73" text-anchor="middle">JD 话题 + 倒计时</text>
 
 <line class="arr" x1="137" y1="82" x2="330" y2="110"/>
 <line class="arr" x1="340" y1="82" x2="340" y2="110"/>

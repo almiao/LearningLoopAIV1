@@ -9,7 +9,7 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createDrillPassthrough } from "../src/ledger/drill-passthrough.js";
+import { createPracticePassthrough } from "../src/ledger/practice-passthrough.js";
 import { createReviewItemStore } from "../src/ledger/review-item-store.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,8 +23,8 @@ function fail(step, msg) { console.error(`[${step}] FAIL: ${msg}`); process.exit
 try { await rm(ledgerPath, { force: true }); log("setup", "cleared old ledger"); } catch {}
 
 // 1. Run passthrough on a deliberately weak answer.
-const passthrough = createDrillPassthrough({ store: createReviewItemStore() });
-log("1", "calling drill-passthrough (Q: ReentrantLock vs synchronized; A: cliché)");
+const passthrough = createPracticePassthrough({ store: createReviewItemStore() });
+log("1", "calling practice-passthrough (Q: ReentrantLock vs synchronized; A: cliché)");
 const written = await passthrough({
   handle: "讲清 ReentrantLock 与 synchronized 的取舍",
   question: "讲清 ReentrantLock 与 synchronized 的取舍。",
@@ -57,8 +57,8 @@ if (!Array.isArray(payload?.items)) fail("3", `unexpected shape: ${JSON.stringif
 log("3", `ok: GET /api/review/today returned ${payload.items.length} item(s), count=${payload.count}`);
 
 // 4. listDue uses next_due_at — a brand-new shaky item gets +1 day, so it WON'T show today.
-//    That's correct behavior (you don't re-drill the same point the same day) but it means
-//    the home page will be empty right after a single drill. Make this explicit.
+//    That's correct behavior (you don't re-practice the same point the same day) but it means
+//    the home page will be empty right after a single practice. Make this explicit.
 if (payload.items.length === 0) {
   log("4", "expected — newly-written shaky items get next_due_at = +1 day, not visible today");
   log("4", "to see it on the home page, either: (a) wait a day, (b) set state=solid via store.updateState, (c) backdate created_at for a manual smoke");

@@ -452,8 +452,8 @@ function ReadingReentryCard({
   );
 }
 
-function ReviewDrillWorkspace({
-  drill,
+function ReviewPracticeWorkspace({
+  practice,
   answer,
   setAnswer,
   loading,
@@ -462,17 +462,17 @@ function ReviewDrillWorkspace({
   onRefreshQuestion,
   onHome,
 }) {
-  const item = drill?.reviewItem || {};
+  const item = practice?.reviewItem || {};
   const evidence = item.evidence || {};
   const missedAnchors = Array.isArray(evidence.missedAnchors) ? evidence.missedAnchors : [];
-  const misses = Array.isArray(drill?.judgment?.misses) ? drill.judgment.misses : [];
-  const hits = Array.isArray(drill?.judgment?.hits) ? drill.judgment.hits : [];
-  const answered = Boolean(drill?.judgment);
-  const passed = Boolean(drill?.passed);
+  const misses = Array.isArray(practice?.judgment?.misses) ? practice.judgment.misses : [];
+  const hits = Array.isArray(practice?.judgment?.hits) ? practice.judgment.hits : [];
+  const answered = Boolean(practice?.judgment);
+  const passed = Boolean(practice?.passed);
   const stateLabel = item.state === "solid" ? "扎实" : "生疏";
 
   return (
-    <main className="learn-shell ll-review-drill-page" data-testid="review-drill-workspace">
+    <main className="learn-shell ll-review-practice-page" data-testid="review-practice-workspace">
       <header className="ll-training-topbar">
         <div className="ll-training-title">
           <button type="button" className="ll-training-back" onClick={onHome}>‹</button>
@@ -489,21 +489,21 @@ function ReviewDrillWorkspace({
 
       {error ? <section className="feedback-banner error-banner narrow-banner">{error}</section> : null}
 
-      <section className="ll-review-drill-main">
-        <article className="ll-training-card ll-review-drill-card">
+      <section className="ll-review-practice-main">
+        <article className="ll-training-card ll-review-practice-card">
           <div className="ll-training-card-chip-row">
             <span className="ll-training-chip">{`待复习 · ${stateLabel}`}</span>
-            <span className="ll-training-status-label">{drill?.source?.available ? "已结合原文出题" : "没有原文也能练"}</span>
+            <span className="ll-training-status-label">{practice?.source?.available ? "已结合原文出题" : "没有原文也能练"}</span>
           </div>
-          <h2>{drill?.question || "正在为这个点出一道新题..."}</h2>
+          <h2>{practice?.question || "正在为这个点出一道新题..."}</h2>
           {evidence.question ? (
-            <div className="ll-review-drill-evidence">
+            <div className="ll-review-practice-evidence">
               <span>上次没答好的题</span>
               <p>{evidence.question}</p>
             </div>
           ) : null}
           {missedAnchors.length ? (
-            <div className="ll-review-drill-anchor-list">
+            <div className="ll-review-practice-anchor-list">
               {missedAnchors.map((anchor) => (
                 <span key={anchor}>{anchor}</span>
               ))}
@@ -523,19 +523,19 @@ function ReviewDrillWorkspace({
                 value={answer}
                 onChange={(event) => setAnswer(event.target.value)}
                 placeholder="一次性写下你的回答。先结论，再机制、边界和取舍。"
-                disabled={loading || !drill?.question}
+                disabled={loading || !practice?.question}
               />
               <div className="ll-next-answer-actions">
                 <button type="button" className="ll-tool-button" onClick={onRefreshQuestion} disabled={loading}>
                   换一道题
                 </button>
-                <button type="submit" className="ll-training-primary" disabled={loading || !answer.trim() || !drill?.question}>
+                <button type="submit" className="ll-training-primary" disabled={loading || !answer.trim() || !practice?.question}>
                   {loading ? "判分中..." : "提交回答"}
                 </button>
               </div>
             </form>
           ) : (
-            <section className="ll-review-drill-result">
+            <section className="ll-review-practice-result">
               <div
                 className={`ll-thread-score-summary tone-${passed ? "solid" : "weak"}`}
                 style={{
@@ -550,7 +550,7 @@ function ReviewDrillWorkspace({
               </div>
               <div className="ll-thread-message user">
                 <div className="ll-answer-label">你的回答</div>
-                <pre className="ll-answer-snapshot">{drill.answer}</pre>
+                <pre className="ll-answer-snapshot">{practice.answer}</pre>
               </div>
               {hits.length || misses.length ? (
                 <div className="ll-thread-support-grid">
@@ -568,13 +568,13 @@ function ReviewDrillWorkspace({
                   ) : null}
                 </div>
               ) : null}
-              {!passed && drill.rescue?.markdown ? (
+              {!passed && practice.rescue?.markdown ? (
                 <div className="ll-thread-message assistant explanation">
                   <TrainingGenerationPanel
                     embedded
                     complete
-                    markdown={drill.rescue.markdown}
-                    testId="review-drill-rescue-card"
+                    markdown={practice.rescue.markdown}
+                    testId="review-practice-rescue-card"
                   />
                 </div>
               ) : null}
@@ -703,10 +703,10 @@ export function LearnWorkspace() {
   const [rescuePlaylist, setRescuePlaylist] = useState(null);
   const [rescuePlaylistMenuOpen, setRescuePlaylistMenuOpen] = useState(false);
   const [rescueDocumentPayload, setRescueDocumentPayload] = useState(null);
-  const [reviewDrill, setReviewDrill] = useState(null);
-  const [reviewDrillAnswer, setReviewDrillAnswer] = useState("");
-  const [reviewDrillLoading, setReviewDrillLoading] = useState(false);
-  const [reviewDrillError, setReviewDrillError] = useState("");
+  const [reviewPractice, setReviewPractice] = useState(null);
+  const [reviewPracticeAnswer, setReviewPracticeAnswer] = useState("");
+  const [reviewPracticeLoading, setReviewPracticeLoading] = useState(false);
+  const [reviewPracticeError, setReviewPracticeError] = useState("");
   const deferredSession = useDeferredValue(session);
   const visibleView = buildVisibleSessionView(deferredSession || {});
   const chatTimeline = visibleView.chatTimeline || [];
@@ -747,38 +747,38 @@ export function LearnWorkspace() {
 
   useEffect(() => {
     if (!reviewItemId) {
-      setReviewDrill(null);
-      setReviewDrillAnswer("");
-      setReviewDrillError("");
-      setReviewDrillLoading(false);
+      setReviewPractice(null);
+      setReviewPracticeAnswer("");
+      setReviewPracticeError("");
+      setReviewPracticeLoading(false);
       return;
     }
 
     let cancelled = false;
-    async function loadReviewDrill() {
+    async function loadReviewPractice() {
       try {
-        setReviewDrillLoading(true);
-        setReviewDrillError("");
-        setReviewDrillAnswer("");
-        const data = await postJson(`/api/review/${encodeURIComponent(reviewItemId)}/drill`, {
+        setReviewPracticeLoading(true);
+        setReviewPracticeError("");
+        setReviewPracticeAnswer("");
+        const data = await postJson(`/api/review/${encodeURIComponent(reviewItemId)}/practice`, {
           action: "start",
           userId: getStoredUserId(),
         });
         if (!cancelled) {
-          setReviewDrill(data);
+          setReviewPractice(data);
         }
       } catch (nextError) {
         if (!cancelled) {
-          setReviewDrillError(nextError.message || "复习题生成失败。");
+          setReviewPracticeError(nextError.message || "复习题生成失败。");
         }
       } finally {
         if (!cancelled) {
-          setReviewDrillLoading(false);
+          setReviewPracticeLoading(false);
         }
       }
     }
 
-    void loadReviewDrill();
+    void loadReviewPractice();
     return () => {
       cancelled = true;
     };
@@ -2021,46 +2021,46 @@ export function LearnWorkspace() {
     }
   }
 
-  async function refreshReviewDrillQuestion() {
+  async function refreshReviewPracticeQuestion() {
     if (!reviewItemId) {
       return;
     }
     try {
-      setReviewDrillLoading(true);
-      setReviewDrillError("");
-      setReviewDrillAnswer("");
-      const data = await postJson(`/api/review/${encodeURIComponent(reviewItemId)}/drill`, {
+      setReviewPracticeLoading(true);
+      setReviewPracticeError("");
+      setReviewPracticeAnswer("");
+      const data = await postJson(`/api/review/${encodeURIComponent(reviewItemId)}/practice`, {
         action: "start",
         userId: profile?.user?.id || getStoredUserId(),
       });
-      setReviewDrill(data);
+      setReviewPractice(data);
     } catch (nextError) {
-      setReviewDrillError(nextError.message || "复习题生成失败。");
+      setReviewPracticeError(nextError.message || "复习题生成失败。");
     } finally {
-      setReviewDrillLoading(false);
+      setReviewPracticeLoading(false);
     }
   }
 
-  async function submitReviewDrillAnswer() {
-    const submittedAnswer = reviewDrillAnswer.trim();
-    if (!reviewItemId || !reviewDrill?.question || !submittedAnswer) {
+  async function submitReviewPracticeAnswer() {
+    const submittedAnswer = reviewPracticeAnswer.trim();
+    if (!reviewItemId || !reviewPractice?.question || !submittedAnswer) {
       return;
     }
     try {
-      setReviewDrillLoading(true);
-      setReviewDrillError("");
-      const data = await postJson(`/api/review/${encodeURIComponent(reviewItemId)}/drill`, {
+      setReviewPracticeLoading(true);
+      setReviewPracticeError("");
+      const data = await postJson(`/api/review/${encodeURIComponent(reviewItemId)}/practice`, {
         action: "answer",
         userId: profile?.user?.id || getStoredUserId(),
-        question: reviewDrill.question,
+        question: reviewPractice.question,
         answer: submittedAnswer,
       });
-      setReviewDrill(data);
-      setReviewDrillAnswer("");
+      setReviewPractice(data);
+      setReviewPracticeAnswer("");
     } catch (nextError) {
-      setReviewDrillError(nextError.message || "复习判分失败。");
+      setReviewPracticeError(nextError.message || "复习判分失败。");
     } finally {
-      setReviewDrillLoading(false);
+      setReviewPracticeLoading(false);
     }
   }
 
@@ -2596,14 +2596,14 @@ export function LearnWorkspace() {
 
   if (reviewItemId) {
     return (
-      <ReviewDrillWorkspace
-        drill={reviewDrill}
-        answer={reviewDrillAnswer}
-        setAnswer={setReviewDrillAnswer}
-        loading={reviewDrillLoading}
-        error={reviewDrillError}
-        onSubmit={submitReviewDrillAnswer}
-        onRefreshQuestion={refreshReviewDrillQuestion}
+      <ReviewPracticeWorkspace
+        practice={reviewPractice}
+        answer={reviewPracticeAnswer}
+        setAnswer={setReviewPracticeAnswer}
+        loading={reviewPracticeLoading}
+        error={reviewPracticeError}
+        onSubmit={submitReviewPracticeAnswer}
+        onRefreshQuestion={refreshReviewPracticeQuestion}
         onHome={() => router.push("/?mode=status&panel=home")}
       />
     );

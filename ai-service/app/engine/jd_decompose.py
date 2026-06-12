@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, List
 from app.domain.interview.parsers import parse_provider_json_text
 from app.engine.tutor_intelligence import stream_provider_text_chunks
 
-# JD 拆扁平话题 — PRODUCT.md「面试战役 ②定范围」。
+# JD 拆扁平话题 — PRODUCT.md「面试冲刺 ②定范围」。
 #
 # 输入 JD 文本 (+ 可选简历/岗位名) → 扁平起步话题清单（不是概念图，守 §1.6）。
 # 纪律（落在代码里）：

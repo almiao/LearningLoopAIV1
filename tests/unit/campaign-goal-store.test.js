@@ -71,7 +71,7 @@ test("create allows omitting the deadline (interview date not set yet)", async (
   });
 });
 
-test("updateTopicCoverage flips coverage and stamps last_drilled_at", async () => {
+test("updateTopicCoverage flips coverage and stamps last_practiced_at", async () => {
   await withStore(async (store) => {
     const campaign = await store.create({
       role: "后端",
@@ -86,7 +86,7 @@ test("updateTopicCoverage flips coverage and stamps last_drilled_at", async () =
       now: "2026-06-12T08:00:00.000Z",
     });
     assert.equal(afterFail.topics[0].coverage, "shaky");
-    assert.equal(afterFail.topics[0].last_drilled_at, "2026-06-12T08:00:00.000Z");
+    assert.equal(afterFail.topics[0].last_practiced_at, "2026-06-12T08:00:00.000Z");
 
     const afterPass = await store.updateTopicCoverage({
       id: campaign.id,

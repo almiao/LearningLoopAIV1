@@ -14,6 +14,10 @@ export const SHAKY_INTERVAL_DAYS = 1;
 // solid 第 1/2/3/4/5+ 次连续的间隔（天）。约 ×2.2 扩张，贴遗忘曲线、到顶封顶。
 export const SOLID_INTERVAL_LADDER_DAYS = [3, 7, 16, 35, 75];
 
+function roundDays(value) {
+  return Math.max(0, Math.round(value * 100) / 100);
+}
+
 function toMs(value, fallback) {
   const ms = value instanceof Date ? value.getTime() : Date.parse(value || "");
   return Number.isFinite(ms) ? ms : fallback;
@@ -35,10 +39,27 @@ export function scheduleNextReview({ state = "shaky", priorStreak = 0, now = new
     intervalDays = SHAKY_INTERVAL_DAYS;
   }
 
+  // 面试冲刺下半调度：离 deadline 越近，间隔越应该被压缩。
+  // 这里保留可解释的分段压缩，不引入黑盒记忆模型。
+  const deadlineMs = deadline ? toMs(deadline, NaN) : NaN;
+  if (Number.isFinite(deadlineMs) && deadlineMs > baseMs) {
+    const daysLeft = (deadlineMs - baseMs) / DAY_MS;
+    let compressionFactor = 1;
+    if (daysLeft <= 1.5) {
+      compressionFactor = 0.2;
+    } else if (daysLeft <= 3) {
+      compressionFactor = 0.45;
+    } else if (daysLeft <= 7) {
+      compressionFactor = 0.65;
+    } else if (daysLeft <= 14) {
+      compressionFactor = 0.85;
+    }
+    intervalDays = roundDays(intervalDays * compressionFactor);
+  }
+
   let nextMs = baseMs + intervalDays * DAY_MS;
 
-  // deadline-aware（面试战役 §③）：复习不能排到面试之后 → 被 deadline 封顶。
-  const deadlineMs = deadline ? toMs(deadline, NaN) : NaN;
+  // deadline-aware（面试冲刺 §③）：复习不能排到面试之后 → 被 deadline 封顶。
   if (Number.isFinite(deadlineMs)) {
     nextMs = Math.min(nextMs, deadlineMs);
   }

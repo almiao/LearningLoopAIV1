@@ -564,7 +564,7 @@ def _clean_review_text(value: Any, fallback: str = "") -> str:
 
 
 def generate_review_question(*, review_item: Dict[str, Any], source_excerpt: str = "") -> Dict[str, Any]:
-    """Generate one review drill question from a persisted review item.
+    """Generate one review practice question from a persisted review item.
 
     This is a thin wrapper over the existing runtime question generator: the
     review item is only a seed, not a new engine or a new persistent model.
@@ -592,7 +592,7 @@ def generate_review_question(*, review_item: Dict[str, Any], source_excerpt: str
         "checkQuestion": f"围绕“{handle}”，请你重新讲一遍，重点补上上次漏掉的关键点。",
     }
     context_packet = {
-        "mode": "review_drill",
+        "mode": "review_practice",
         "phase": "revisit",
         "review_item": {
             "id": item.get("id", ""),

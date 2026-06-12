@@ -51,11 +51,11 @@ const decomposeProxy = async (_method, pathname) => {
   throw new Error(`unexpected proxy call: ${pathname}`);
 };
 
-test("campaign path helper parses detail, drill, debrief, archive", () => {
+test("campaign path helper parses detail, practice, debrief, archive", () => {
   assert.deepEqual(parseCampaignPath("/api/campaigns/c%201"), { id: "c 1", action: "detail", topicId: "" });
   assert.deepEqual(parseCampaignPath("/api/campaigns/c1/archive"), { id: "c1", action: "archive", topicId: "" });
   assert.deepEqual(parseCampaignPath("/api/campaigns/c1/debrief"), { id: "c1", action: "debrief", topicId: "" });
-  assert.deepEqual(parseCampaignPath("/api/campaigns/c1/topics/topic-2/drill"), { id: "c1", action: "drill", topicId: "topic-2" });
+  assert.deepEqual(parseCampaignPath("/api/campaigns/c1/topics/topic-2/practice"), { id: "c1", action: "practice", topicId: "topic-2" });
   assert.equal(parseCampaignPath("/api/campaigns"), null);
 });
 
@@ -101,7 +101,7 @@ test("create decomposes the JD into a per-goal coverage checklist", async () => 
   );
 });
 
-test("passing a topic drill marks coverage solid without touching the ledger", async () => {
+test("passing a topic practice marks coverage solid without touching the ledger", async () => {
   await withDomain(
     async ({ domain, reviewItemStore }) => {
       const { campaign } = await domain.create({
@@ -110,7 +110,7 @@ test("passing a topic drill marks coverage solid without touching the ledger", a
         jdText: "JD 内容",
       });
 
-      const result = await domain.answerTopicDrill({
+      const result = await domain.answerTopicPractice({
         id: campaign.id,
         topicId: campaign.topics[0].id,
         question: "线程池核心参数怎么定？",
@@ -138,7 +138,7 @@ test("passing a topic drill marks coverage solid without touching the ledger", a
   );
 });
 
-test("failed topic drill writes a deadline-capped ledger item and rescue material", async () => {
+test("failed topic practice writes a deadline-capped ledger item and rescue material", async () => {
   await withDomain(
     async ({ domain, reviewItemStore }) => {
       const { campaign } = await domain.create({
@@ -147,7 +147,7 @@ test("failed topic drill writes a deadline-capped ledger item and rescue materia
         jdText: "JD 内容",
       });
 
-      const result = await domain.answerTopicDrill({
+      const result = await domain.answerTopicPractice({
         id: campaign.id,
         topicId: campaign.topics[0].id,
         question: "Redis 缓存一致性怎么保证？",
@@ -164,7 +164,7 @@ test("failed topic drill writes a deadline-capped ledger item and rescue materia
       assert.ok(Date.parse(items[0].next_due_at) <= Date.parse("2026-06-13T00:00:00.000Z"));
 
       // 同话题再崩：更新已有项，不重复建。
-      await domain.answerTopicDrill({
+      await domain.answerTopicPractice({
         id: campaign.id,
         topicId: campaign.topics[0].id,
         question: "再问一次缓存一致性？",
@@ -263,7 +263,7 @@ test("campaign without a deadline writes uncapped ledger items on failure", asyn
       });
       assert.equal(campaign.readiness.daysLeft, null);
 
-      const result = await domain.answerTopicDrill({
+      const result = await domain.answerTopicPractice({
         id: campaign.id,
         topicId: campaign.topics[0].id,
         question: "缓存一致性怎么保证？",

@@ -532,7 +532,7 @@ def review_generate_question(payload: ReviewQuestionRequest) -> Dict[str, Any]:
     )
 
 
-# JD 拆扁平话题（PRODUCT.md「面试战役 ②定范围」）。产出 per-Goal 覆盖度清单种子，无状态、不入库。
+# JD 拆扁平话题（PRODUCT.md「面试冲刺 ②定范围」）。产出 per-Goal 覆盖度清单种子，无状态、不入库。
 @app.post("/api/campaign/decompose-jd")
 def campaign_decompose_jd(payload: JdDecomposeRequest) -> Dict[str, Any]:
     try:

@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { createReviewItemStore } from "../../src/ledger/review-item-store.js";
-import { createDrillPassthrough } from "../../src/ledger/drill-passthrough.js";
+import { createPracticePassthrough } from "../../src/ledger/practice-passthrough.js";
 
 async function withPassthrough(judgeFn, run) {
   const dir = await mkdtemp(path.join(tmpdir(), "passthrough-"));
@@ -16,7 +16,7 @@ async function withPassthrough(judgeFn, run) {
     return judgeFn(args);
   };
   const silent = { warn() {} };
-  const record = createDrillPassthrough({ store, judge, logger: silent });
+  const record = createPracticePassthrough({ store, judge, logger: silent });
   try {
     await run({ record, store, calls });
   } finally {

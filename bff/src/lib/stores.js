@@ -1,5 +1,5 @@
 import { createCampaignGoalStore } from "../../../src/goals/campaign-goal-store.js";
-import { createDrillPassthrough } from "../../../src/ledger/drill-passthrough.js";
+import { createPracticePassthrough } from "../../../src/ledger/practice-passthrough.js";
 import { createReviewItemStore } from "../../../src/ledger/review-item-store.js";
 import { createLoopAssistRescuePlaylistStore } from "../../../src/loopassist/rescue-playlist-store.js";
 import { createMemoryProfileStore } from "../../../src/tutor/memory-profile-store.js";
@@ -20,10 +20,10 @@ export const rescuePlaylistStore = createLoopAssistRescuePlaylistStore();
 
 export const reviewItemStore = createReviewItemStore();
 
-// 面试战役 Goal（PRODUCT.md 持久实体 ①）：deadline + per-Goal 覆盖度清单，随战役生灭。
+// 面试冲刺 Goal（PRODUCT.md 持久实体 ①）：deadline + per-Goal 覆盖度清单，随战役生灭。
 export const campaignGoalStore = createCampaignGoalStore();
 
-export const drillPassthrough = createDrillPassthrough({ store: reviewItemStore });
+export const practicePassthrough = createPracticePassthrough({ store: reviewItemStore });
 
-// loopassist 复盘里每道题就是一轮 drill。逐题喂一次性锚点判分、答崩写账本。
+// loopassist 复盘里每道题就是一轮 practice。逐题喂一次性锚点判分、答崩写账本。
 // detached：每条是一次 LLM 判分，不阻塞复盘响应；passthrough 自带兜底吞错。

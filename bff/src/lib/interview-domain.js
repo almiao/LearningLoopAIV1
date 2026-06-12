@@ -1,12 +1,12 @@
 import { createBaselinePackDecomposition, createBaselinePackSource, defaultBaselinePackId, getBaselinePackById } from "../../../src/baseline/baseline-packs.js";
 import { readSourceDocument } from "../../../src/knowledge/source-document-resolver.js";
-import { extractLastDrillRound } from "../../../src/ledger/extract-drill-round.js";
+import { extractLastPracticeRound } from "../../../src/ledger/extract-practice-round.js";
 import { applyDocumentTrainingAnswered, applyDocumentTrainingSession, applyDocumentTrainingStarted, applyDocumentTrainingUnavailable, readDocumentTrainingSession } from "../../../src/user/document-progress-state.js";
 import { parseSseEvent, serializeSseEvent, withStreamHeaders } from "./http-utils.js";
 import { getDocumentLearningText, hasSufficientKnowledgeContent } from "./knowledge-domain.js";
 import { getMemoryProfile, getUserProfile, persistInteractionPreferenceRule } from "./profile-domain.js";
 import { aiServiceUrl, proxyJson } from "./service-proxy.js";
-import { drillPassthrough, memoryProfileStore, sessionSummariesStore, userProfileStore } from "./stores.js";
+import { practicePassthrough, memoryProfileStore, sessionSummariesStore, userProfileStore } from "./stores.js";
 
 export function stripSessionPayload(session = {}) {
   const nextSession = {
@@ -348,14 +348,14 @@ export async function handleAnswer(body) {
     await userProfileStore.save(user);
   }
   await persistSessionSummaryIfCompleted(result);
-  // 失败账本（阶段 3）：把刚答完的这一轮 drill 喂给一次性锚点判分，答崩就写复习项。
+  // 失败账本（阶段 3）：把刚答完的这一轮 practice 喂给一次性锚点判分，答崩就写复习项。
   // passthrough 自带旁路兜底——判分/写盘任何报错都吞掉，绝不影响这次 answer 的返回。
-  const drillRound = extractLastDrillRound(result.turns);
-  if (drillRound) {
-    await drillPassthrough({
-      handle: drillRound.handle,
-      question: drillRound.question,
-      answer: drillRound.answer,
+  const practiceRound = extractLastPracticeRound(result.turns);
+  if (practiceRound) {
+    await practicePassthrough({
+      handle: practiceRound.handle,
+      question: practiceRound.question,
+      answer: practiceRound.answer,
       sourceRef: result.source?.metadata?.docPath || "",
     });
   }

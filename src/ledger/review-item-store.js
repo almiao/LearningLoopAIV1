@@ -43,6 +43,64 @@ function parseMs(iso, fallback = 0) {
   return Number.isFinite(ms) ? ms : fallback;
 }
 
+function normalizeMatchKey(value = "") {
+  return normalizeText(value).replace(/\s+/g, " ").toLowerCase();
+}
+
+function enrichCampaignPriority(items = [], campaign = null) {
+  const gaps = Array.isArray(campaign?.readiness?.gaps) ? campaign.readiness.gaps : [];
+  if (!gaps.length) {
+    return items;
+  }
+  const priorityByTopic = new Map(
+    gaps.map((gap, index) => [
+      normalizeMatchKey(gap.topic),
+      {
+        priority: Number(gap.priority || 0),
+        rank: index,
+        topicId: gap.topicId || "",
+        coverage: gap.coverage || "",
+        daysLeft: campaign?.readiness?.daysLeft ?? null,
+      },
+    ])
+  );
+  return items.map((item) => {
+    const match = priorityByTopic.get(normalizeMatchKey(item.handle));
+    if (!match) {
+      return item;
+    }
+    return {
+      ...item,
+      campaign_priority: match.priority,
+      campaign_rank: match.rank,
+      campaign_topic_id: match.topicId,
+      campaign_coverage: match.coverage,
+      campaign_days_left: match.daysLeft,
+    };
+  });
+}
+
+function compareDueItems(left, right) {
+  const leftPriority = Number(left?.campaign_priority ?? -1);
+  const rightPriority = Number(right?.campaign_priority ?? -1);
+  const leftTagged = leftPriority >= 0;
+  const rightTagged = rightPriority >= 0;
+  if (leftTagged !== rightTagged) {
+    return leftTagged ? -1 : 1;
+  }
+  if (leftTagged && rightTagged) {
+    if (leftPriority !== rightPriority) {
+      return rightPriority - leftPriority;
+    }
+    const leftRank = Number(left?.campaign_rank ?? Number.MAX_SAFE_INTEGER);
+    const rightRank = Number(right?.campaign_rank ?? Number.MAX_SAFE_INTEGER);
+    if (leftRank !== rightRank) {
+      return leftRank - rightRank;
+    }
+  }
+  return parseMs(left?.next_due_at) - parseMs(right?.next_due_at);
+}
+
 function normalizeEvidence(evidence = {}) {
   const source = evidence && typeof evidence === "object" ? evidence : {};
   const missed = Array.isArray(source.missedAnchors) ? source.missedAnchors : [];
@@ -132,17 +190,18 @@ export function createReviewItemStore({ ledgerDir = defaultLedgerDir } = {}) {
     },
 
     // Today Queue 的「今日复习」块就是这个：账本按 next_due 渲染（§3④）。
-    async listDue({ now = nowIso() } = {}) {
+    async listDue({ now = nowIso(), campaign = null } = {}) {
       const cutoff = parseMs(now, Date.now());
       const items = await readLedger();
-      return items
+      const dueItems = items
         .filter((item) => parseMs(item.next_due_at) <= cutoff)
         .sort((a, b) => parseMs(a.next_due_at) - parseMs(b.next_due_at));
+      return enrichCampaignPriority(dueItems, campaign).sort(compareDueItems);
     },
 
     // ——— 写入口（阶段 3 的穿透适配器调用） ———
     // 失败驱动：只在答崩、有漏掉的锚点时调用（§4）。一次过的话题不写任何状态。
-    // deadline（可选）：面试战役的 deadline 感知调度——next_due 不能排到面试之后（封顶在 review-scheduling 里）。
+    // deadline（可选）：面试冲刺的 deadline 感知调度——next_due 不能排到面试之后（封顶在 review-scheduling 里）。
     async recordMiss({ handle, source_ref = "", evidence = {}, state = "shaky", now = nowIso(), deadline = null } = {}) {
       const cleanHandle = normalizeText(handle);
       if (!cleanHandle) {
@@ -150,7 +209,26 @@ export function createReviewItemStore({ ledgerDir = defaultLedgerDir } = {}) {
       }
       const safeState = VALID_STATES.has(state) ? state : "shaky";
       return mutate(async (items) => {
-        const schedule = scheduleNextReview({ state: safeState, priorStreak: 0, now, deadline });
+        const existing = items.find((item) => normalizeMatchKey(item.handle) === normalizeMatchKey(cleanHandle));
+        const schedule = scheduleNextReview({
+          state: safeState,
+          priorStreak: existing?.streak || 0,
+          now,
+          deadline,
+        });
+        if (existing) {
+          const updated = normalizeItem({
+            ...existing,
+            source_ref: normalizeText(source_ref) || existing.source_ref,
+            evidence,
+            state: safeState,
+            streak: schedule.streak,
+            last_seen_at: now,
+            next_due_at: schedule.nextDueAt,
+          });
+          await writeLedgerAtomically(items.map((item) => (item.id === existing.id ? updated : item)));
+          return updated;
+        }
         const item = normalizeItem({
           id: buildId(cleanHandle),
           handle: cleanHandle,

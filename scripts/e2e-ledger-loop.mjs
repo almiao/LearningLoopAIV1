@@ -2,8 +2,8 @@
 // 真·端到端测试 (full §8 MVP chain through BFF):
 //   登录 → start-target → answer → ledger write → /api/review/today
 //
-// 关键:走 BFF /api/interview/answer,触发 handleAnswer 里的 extractLastDrillRound +
-// drillPassthrough。这才是真实用户路径,不是绕开 BFF 的 unit smoke。
+// 关键:走 BFF /api/interview/answer,触发 handleAnswer 里的 extractLastPracticeRound +
+// practicePassthrough。这才是真实用户路径,不是绕开 BFF 的 unit smoke。
 //
 // 跑法 (前提:npm start 跑着):  node scripts/e2e-ledger-loop.mjs
 import { readFile, rm } from "node:fs/promises";
@@ -108,21 +108,21 @@ if (!Array.isArray(ledger?.items) || ledger.items.length === 0) fail("5", "ledge
 const last = ledger.items[ledger.items.length - 1];
 log("5", `ok: ledger has ${ledger.items.length} item(s), latest:`);
 log("5", `    handle:     ${last.handle}`);
-log("5", `    source_ref: ${last.source_ref || "(empty — drill was unsourced)"}`);
+log("5", `    source_ref: ${last.source_ref || "(empty — practice was unsourced)"}`);
 log("5", `    state:      ${last.state}, missed anchors: ${last.evidence.missedAnchors.length}`);
 log("5", `    next_due_at: ${last.next_due_at}`);
 
 // The source_ref should match the docPath we sent — this is the integration point
 // that the home page uses to decide whether the row is clickable.
 if (last.source_ref !== docPath) {
-  fail("5", `source_ref mismatch — expected ${docPath}, got "${last.source_ref}". Re-drill click will not work.`);
+  fail("5", `source_ref mismatch — expected ${docPath}, got "${last.source_ref}". Re-practice click will not work.`);
 }
-log("5", `ok: source_ref matches docPath — re-drill click from home will land at /learn?doc=${docPath}`);
+log("5", `ok: source_ref matches docPath — re-practice click from home will land at /learn?doc=${docPath}`);
 
 // 6. /api/review/today — only items due by `now` should appear. A fresh shaky item is +1d.
 const today = await get(`${bff}/api/review/today`);
 log("6", `GET /api/review/today → count=${today.count} (fresh shaky items are next_due_at = +1d; 0 here is correct)`);
 
 console.log("\n✅ FULL E2E LOOP VERIFIED through BFF.");
-console.log("   /learn drill → BFF handleAnswer → anchor-judge LLM → ledger write → /api/review/today");
+console.log("   /learn practice → BFF handleAnswer → anchor-judge LLM → ledger write → /api/review/today");
 console.log("   Item will appear on home page tomorrow (correct interval-review behavior).");

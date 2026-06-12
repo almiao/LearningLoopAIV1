@@ -44,7 +44,7 @@ const pythonFiles = [
 const nodeCheckFiles = [
   "bff/src/server.js",
   "bff/src/lib/campaign-domain.js",
-  "bff/src/lib/review-drill-domain.js",
+  "bff/src/lib/review-practice-domain.js",
   "src/goals/campaign-goal-store.js",
   "scripts/service-runtime.mjs",
   "scripts/start-services.mjs",
@@ -66,7 +66,7 @@ const testFiles = [
   "tests/unit/campaign-domain.test.js",
   "tests/unit/campaign-goal-store.test.js",
   "tests/unit/reentry-actions.test.js",
-  "tests/unit/review-drill-domain.test.js",
+  "tests/unit/review-practice-domain.test.js",
   "tests/unit/review-item-store.test.js",
   "tests/unit/review-scheduling.test.js",
   "tests/unit/user/resume-version-store.test.js",

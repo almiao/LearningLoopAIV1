@@ -1,11 +1,11 @@
-// 从一段 session turns 里抽出「最近一轮已完成的 drill」：
+// 从一段 session turns 里抽出「最近一轮已完成的 practice」：
 // 最后一条真正的学习者回答 + 它前面最近的那道 tutor 提问。
 //
 // turn 形状见 src/view/chat-transcript.js：
 //   - tutor 提问：role="tutor", kind="question", content=问题文本, conceptTitle=话题
 //   - 学习者回答：role="learner", content=回答文本（kind="control" 的是「请求讲解/切题」，不是回答）
 
-export function extractLastDrillRound(turns = []) {
+export function extractLastPracticeRound(turns = []) {
   if (!Array.isArray(turns) || turns.length === 0) {
     return null;
   }
