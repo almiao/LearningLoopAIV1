@@ -6,7 +6,7 @@ import queue
 import threading
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
@@ -26,6 +26,7 @@ from app.engine.session_engine import (
     apply_focus_domain,
     create_session,
     create_tutor_message_turn,
+    generate_review_question,
     get_tutor_intelligence,
     get_session,
     get_current_checkpoint_concept,
@@ -329,6 +330,11 @@ class AnchorJudgeRequest(BaseModel):
     sourceExcerpt: str = ""
 
 
+class ReviewQuestionRequest(BaseModel):
+    reviewItem: Dict[str, Any]
+    sourceExcerpt: str = ""
+
+
 app = FastAPI(title="Learning Loop AI Service")
 snapshot_store = SnapshotStore()
 app.add_middleware(
@@ -507,6 +513,14 @@ def anchor_judge(payload: AnchorJudgeRequest) -> Dict[str, Any]:
     return judge_anchors(
         question=payload.question,
         answer=payload.answer,
+        source_excerpt=payload.sourceExcerpt,
+    )
+
+
+@app.post("/api/review/generate-question")
+def review_generate_question(payload: ReviewQuestionRequest) -> Dict[str, Any]:
+    return generate_review_question(
+        review_item=payload.reviewItem,
         source_excerpt=payload.sourceExcerpt,
     )
 

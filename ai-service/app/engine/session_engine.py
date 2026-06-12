@@ -558,6 +558,76 @@ def generate_prompt_for_concept(
     return static_probe_for_concept(concept, session, revisit=revisit)
 
 
+def _clean_review_text(value: Any, fallback: str = "") -> str:
+    text = str(value or "").strip()
+    return text or fallback
+
+
+def generate_review_question(*, review_item: Dict[str, Any], source_excerpt: str = "") -> Dict[str, Any]:
+    """Generate one review drill question from a persisted review item.
+
+    This is a thin wrapper over the existing runtime question generator: the
+    review item is only a seed, not a new engine or a new persistent model.
+    """
+    item = review_item if isinstance(review_item, dict) else {}
+    handle = _clean_review_text(item.get("handle"), "这条薄弱点")
+    evidence = item.get("evidence") if isinstance(item.get("evidence"), dict) else {}
+    prior_question = _clean_review_text(evidence.get("question"))
+    missed_anchors = [
+        _clean_review_text(anchor)
+        for anchor in (evidence.get("missedAnchors") if isinstance(evidence.get("missedAnchors"), list) else [])
+        if _clean_review_text(anchor)
+    ][:5]
+    excerpt = _clean_review_text(source_excerpt)
+    evidence_snippet = excerpt or prior_question or "；".join(missed_anchors) or handle
+    concept = {
+        "id": _clean_review_text(item.get("id"), "review-item"),
+        "title": handle,
+        "summary": handle,
+        "evidenceSnippet": evidence_snippet,
+        "misconceptionAnchors": missed_anchors or ["上次回答没有讲清关键机制、边界或取舍。"],
+        "discriminators": [f"必须补上：{anchor}" for anchor in missed_anchors] or [f"能换个场景讲清：{handle}"],
+        "importance": "core",
+        "retryQuestion": f"换一个场景复练：{handle}。上次没讲稳的点是什么？这次请按机制、边界、取舍说清。",
+        "checkQuestion": f"围绕“{handle}”，请你重新讲一遍，重点补上上次漏掉的关键点。",
+    }
+    context_packet = {
+        "mode": "review_drill",
+        "phase": "revisit",
+        "review_item": {
+            "id": item.get("id", ""),
+            "handle": handle,
+            "state": item.get("state", "shaky"),
+            "streak": item.get("streak", 0),
+            "prior_question": prior_question,
+            "missed_anchors": missed_anchors,
+        },
+        "source_excerpt": excerpt,
+        "recent_turns": [],
+        "instruction": "Generate a variant question from the handle, missed anchors, and prior question. Do not replay the same wording unless necessary.",
+    }
+
+    intelligence = get_tutor_intelligence()
+    if intelligence and getattr(intelligence, "configured", False) and hasattr(intelligence, "generate_probe_question"):
+        generated = intelligence.generate_probe_question(
+            concept=concept,
+            context_packet=context_packet,
+            phase="revisit",
+            revisit=True,
+        )
+        question = _clean_review_text((generated or {}).get("question"))
+        if question:
+            return {
+                "question": question,
+                "intent": _clean_review_text((generated or {}).get("intent"), "review_item_revisit"),
+            }
+
+    return {
+        "question": static_probe_for_concept(concept, None, revisit=True),
+        "intent": "review_item_revisit",
+    }
+
+
 def initial_probe(concept: Dict[str, Any], session: Optional[Dict[str, Any]] = None) -> str:
     return generate_prompt_for_concept(session=session, concept=concept, phase="diagnostic")
 

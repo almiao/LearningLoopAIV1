@@ -7,8 +7,11 @@ import { handleAnswer, handleAnswerStream, handleFocusConcept, handleFocusDomain
 import { handleKnowledgeAnswer } from "./lib/knowledge-domain.js";
 import { handleLoopAssistStart, handleLoopAssistStream, recordLoopAssistDrillRounds } from "./lib/loopassist-domain.js";
 import { buildProfilePayload, getUserProfile, handleIgnoredDocument, handleListResumeVersions, handleReadingProgress, handleRecommendationSnooze, handleSaveResumeVersion, handleSkippedTraining } from "./lib/profile-domain.js";
+import { createReviewDrillDomain, parseReviewDrillPath } from "./lib/review-drill-domain.js";
 import { aiServiceUrl, proxyBinary, proxyJson, ttsServiceUrl } from "./lib/service-proxy.js";
 import { rescuePlaylistStore, reviewItemStore, userProfileStore } from "./lib/stores.js";
+
+const reviewDrillDomain = createReviewDrillDomain({ store: reviewItemStore });
 
 const server = http.createServer(async (request, response) => {
   try {
@@ -29,6 +32,24 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/review/today") {
       const items = await reviewItemStore.listDue({});
       sendJson(response, 200, { items, count: items.length });
+      return;
+    }
+
+    const reviewDrillItemId = parseReviewDrillPath(url.pathname);
+    if (request.method === "POST" && reviewDrillItemId) {
+      const body = await readJsonBody(request);
+      const payload = body.action === "answer" || body.answer
+        ? await reviewDrillDomain.answer({
+            id: reviewDrillItemId,
+            userId: body.userId || "",
+            question: body.question || "",
+            answer: body.answer || "",
+          })
+        : await reviewDrillDomain.start({
+            id: reviewDrillItemId,
+            userId: body.userId || "",
+          });
+      sendJson(response, 200, payload);
       return;
     }
 

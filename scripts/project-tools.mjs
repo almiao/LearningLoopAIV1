@@ -35,11 +35,13 @@ const pythonFiles = [
   "ai-service/app/engine/session_engine.py",
   "ai-service/app/loopassist/__init__.py",
   "ai-service/app/loopassist/service.py",
+  "ai-service/tests/test_review_question.py",
   "ai-service/tests/test_tutor_provider_config.py",
 ];
 
 const nodeCheckFiles = [
   "bff/src/server.js",
+  "bff/src/lib/review-drill-domain.js",
   "scripts/service-runtime.mjs",
   "scripts/start-services.mjs",
   "scripts/stop-services.mjs",
@@ -58,7 +60,7 @@ const testFiles = [
   "tests/unit/loopassist-contract.test.js",
   "tests/unit/loopassist-corpus.test.js",
   "tests/unit/reentry-actions.test.js",
-  "tests/unit/superapp/reminder-candidate.test.js",
+  "tests/unit/review-drill-domain.test.js",
   "tests/unit/user/resume-version-store.test.js",
 ];
 

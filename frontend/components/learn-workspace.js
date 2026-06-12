@@ -452,6 +452,148 @@ function ReadingReentryCard({
   );
 }
 
+function ReviewDrillWorkspace({
+  drill,
+  answer,
+  setAnswer,
+  loading,
+  error,
+  onSubmit,
+  onRefreshQuestion,
+  onHome,
+}) {
+  const item = drill?.reviewItem || {};
+  const evidence = item.evidence || {};
+  const missedAnchors = Array.isArray(evidence.missedAnchors) ? evidence.missedAnchors : [];
+  const misses = Array.isArray(drill?.judgment?.misses) ? drill.judgment.misses : [];
+  const hits = Array.isArray(drill?.judgment?.hits) ? drill.judgment.hits : [];
+  const answered = Boolean(drill?.judgment);
+  const passed = Boolean(drill?.passed);
+  const stateLabel = item.state === "solid" ? "扎实" : "生疏";
+
+  return (
+    <main className="learn-shell ll-review-drill-page" data-testid="review-drill-workspace">
+      <header className="ll-training-topbar">
+        <div className="ll-training-title">
+          <button type="button" className="ll-training-back" onClick={onHome}>‹</button>
+          <div>
+            <span>今日复习</span>
+            <h1>{item.handle || "复习项重练"}</h1>
+          </div>
+        </div>
+        <div className="ll-training-tabs">
+          <button type="button" className="active">复练</button>
+          <button type="button" onClick={onHome}>回首页</button>
+        </div>
+      </header>
+
+      {error ? <section className="feedback-banner error-banner narrow-banner">{error}</section> : null}
+
+      <section className="ll-review-drill-main">
+        <article className="ll-training-card ll-review-drill-card">
+          <div className="ll-training-card-chip-row">
+            <span className="ll-training-chip">{`失败账本 · ${stateLabel}`}</span>
+            <span className="ll-training-status-label">{drill?.source?.available ? "已带原文上下文" : "无原文也可练"}</span>
+          </div>
+          <h2>{drill?.question || "正在生成这条复习项的变体题..."}</h2>
+          {evidence.question ? (
+            <div className="ll-review-drill-evidence">
+              <span>上次答崩的问题</span>
+              <p>{evidence.question}</p>
+            </div>
+          ) : null}
+          {missedAnchors.length ? (
+            <div className="ll-review-drill-anchor-list">
+              {missedAnchors.map((anchor) => (
+                <span key={anchor}>{anchor}</span>
+              ))}
+            </div>
+          ) : null}
+
+          {!answered ? (
+            <form
+              className="ll-next-answer-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                onSubmit();
+              }}
+            >
+              <textarea
+                rows="6"
+                value={answer}
+                onChange={(event) => setAnswer(event.target.value)}
+                placeholder="一次性写下你的回答。先结论，再机制、边界和取舍。"
+                disabled={loading || !drill?.question}
+              />
+              <div className="ll-next-answer-actions">
+                <button type="button" className="ll-tool-button" onClick={onRefreshQuestion} disabled={loading}>
+                  换一道变体
+                </button>
+                <button type="submit" className="ll-training-primary" disabled={loading || !answer.trim() || !drill?.question}>
+                  {loading ? "判分中..." : "提交回答"}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <section className="ll-review-drill-result">
+              <div
+                className={`ll-thread-score-summary tone-${passed ? "solid" : "weak"}`}
+                style={{
+                  "--thread-score-color": passed ? "#1D9E75" : "#E27272",
+                }}
+              >
+                <div className="ll-thread-score-main">
+                  <strong>{passed ? "过线，已转扎实" : "还没过线，已安排复练"}</strong>
+                  <span>{passed ? "solid" : "shaky"}</span>
+                </div>
+                <p>{passed ? "这条复习项会被拉长间隔，暂时放你走。" : "这条复习项仍保留在短间隔队列里，先补上漏点。"}</p>
+              </div>
+              <div className="ll-thread-message user">
+                <div className="ll-answer-label">你的回答</div>
+                <pre className="ll-answer-snapshot">{drill.answer}</pre>
+              </div>
+              {hits.length || misses.length ? (
+                <div className="ll-thread-support-grid">
+                  {hits.length ? (
+                    <article className="ll-thread-support-card takeaway">
+                      <strong>命中的锚点</strong>
+                      <p>{hits.join("；")}</p>
+                    </article>
+                  ) : null}
+                  {misses.length ? (
+                    <article className="ll-thread-support-card improve">
+                      <strong>漏掉的锚点</strong>
+                      <p>{misses.join("；")}</p>
+                    </article>
+                  ) : null}
+                </div>
+              ) : null}
+              {!passed && drill.rescue?.markdown ? (
+                <div className="ll-thread-message assistant explanation">
+                  <TrainingGenerationPanel
+                    embedded
+                    complete
+                    markdown={drill.rescue.markdown}
+                    testId="review-drill-rescue-card"
+                  />
+                </div>
+              ) : null}
+              <div className="ll-next-answer-actions">
+                <button type="button" className="ll-tool-button" onClick={onRefreshQuestion} disabled={loading}>
+                  再来一道变体
+                </button>
+                <button type="button" className="ll-training-primary" onClick={onHome}>
+                  回今日队列
+                </button>
+              </div>
+            </section>
+          )}
+        </article>
+      </section>
+    </main>
+  );
+}
+
 function buildTrainingCompletion(session = null, points = []) {
   if (!session || session.currentProbe || !points.length) {
     return null;
@@ -504,6 +646,7 @@ export function LearnWorkspace() {
   const focusParamEnabled = searchParams.get("focus") === "1";
   const rescuePlaylistId = searchParams.get("rescuePlaylist") || "";
   const rescueItemIdParam = searchParams.get("rescueItem") || "";
+  const reviewItemId = searchParams.get("reviewItem") || "";
   const autostartRef = useRef(false);
   const entryIntentHandledRef = useRef("");
   const resumePositionAppliedRef = useRef("");
@@ -560,6 +703,10 @@ export function LearnWorkspace() {
   const [rescuePlaylist, setRescuePlaylist] = useState(null);
   const [rescuePlaylistMenuOpen, setRescuePlaylistMenuOpen] = useState(false);
   const [rescueDocumentPayload, setRescueDocumentPayload] = useState(null);
+  const [reviewDrill, setReviewDrill] = useState(null);
+  const [reviewDrillAnswer, setReviewDrillAnswer] = useState("");
+  const [reviewDrillLoading, setReviewDrillLoading] = useState(false);
+  const [reviewDrillError, setReviewDrillError] = useState("");
   const deferredSession = useDeferredValue(session);
   const visibleView = buildVisibleSessionView(deferredSession || {});
   const chatTimeline = visibleView.chatTimeline || [];
@@ -597,6 +744,45 @@ export function LearnWorkspace() {
   useEffect(() => () => {
     trainingAnswerStreamAbortRef.current?.abort();
   }, []);
+
+  useEffect(() => {
+    if (!reviewItemId) {
+      setReviewDrill(null);
+      setReviewDrillAnswer("");
+      setReviewDrillError("");
+      setReviewDrillLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadReviewDrill() {
+      try {
+        setReviewDrillLoading(true);
+        setReviewDrillError("");
+        setReviewDrillAnswer("");
+        const data = await postJson(`/api/review/${encodeURIComponent(reviewItemId)}/drill`, {
+          action: "start",
+          userId: getStoredUserId(),
+        });
+        if (!cancelled) {
+          setReviewDrill(data);
+        }
+      } catch (nextError) {
+        if (!cancelled) {
+          setReviewDrillError(nextError.message || "复习题生成失败。");
+        }
+      } finally {
+        if (!cancelled) {
+          setReviewDrillLoading(false);
+        }
+      }
+    }
+
+    void loadReviewDrill();
+    return () => {
+      cancelled = true;
+    };
+  }, [reviewItemId]);
 
   useEffect(() => {
     setSummaryDismissed(false);
@@ -707,7 +893,7 @@ export function LearnWorkspace() {
   const rescueDocumentPath = rescueDocumentPayload?.documentPath
     || rescueActiveItem?.docPath
     || (rescueActiveItem ? `rescue://${rescuePlaylistId}/${rescueActiveItem.id}` : "");
-  const activeDocPath = rescueDocumentPath || searchParams.get("doc") || currentSource?.path || knowledgeDocuments[0]?.path || "";
+  const activeDocPath = reviewItemId ? "" : (rescueDocumentPath || searchParams.get("doc") || currentSource?.path || knowledgeDocuments[0]?.path || "");
   const documentTitle = knowledgeDoc?.title || currentSource?.title || "开始学习";
   const autostart = searchParams.get("autostart") === "1";
   const entryIntent = searchParams.get("intent") || "";
@@ -1835,6 +2021,49 @@ export function LearnWorkspace() {
     }
   }
 
+  async function refreshReviewDrillQuestion() {
+    if (!reviewItemId) {
+      return;
+    }
+    try {
+      setReviewDrillLoading(true);
+      setReviewDrillError("");
+      setReviewDrillAnswer("");
+      const data = await postJson(`/api/review/${encodeURIComponent(reviewItemId)}/drill`, {
+        action: "start",
+        userId: profile?.user?.id || getStoredUserId(),
+      });
+      setReviewDrill(data);
+    } catch (nextError) {
+      setReviewDrillError(nextError.message || "复习题生成失败。");
+    } finally {
+      setReviewDrillLoading(false);
+    }
+  }
+
+  async function submitReviewDrillAnswer() {
+    const submittedAnswer = reviewDrillAnswer.trim();
+    if (!reviewItemId || !reviewDrill?.question || !submittedAnswer) {
+      return;
+    }
+    try {
+      setReviewDrillLoading(true);
+      setReviewDrillError("");
+      const data = await postJson(`/api/review/${encodeURIComponent(reviewItemId)}/drill`, {
+        action: "answer",
+        userId: profile?.user?.id || getStoredUserId(),
+        question: reviewDrill.question,
+        answer: submittedAnswer,
+      });
+      setReviewDrill(data);
+      setReviewDrillAnswer("");
+    } catch (nextError) {
+      setReviewDrillError(nextError.message || "复习判分失败。");
+    } finally {
+      setReviewDrillLoading(false);
+    }
+  }
+
   async function restartTraining() {
     setTrainingUnlocked(true);
     setWorkspaceMode("training");
@@ -2364,6 +2593,21 @@ export function LearnWorkspace() {
       onNextItem={openNextRescueItem}
     />
   ) : null;
+
+  if (reviewItemId) {
+    return (
+      <ReviewDrillWorkspace
+        drill={reviewDrill}
+        answer={reviewDrillAnswer}
+        setAnswer={setReviewDrillAnswer}
+        loading={reviewDrillLoading}
+        error={reviewDrillError}
+        onSubmit={submitReviewDrillAnswer}
+        onRefreshQuestion={refreshReviewDrillQuestion}
+        onHome={() => router.push("/?mode=status&panel=home")}
+      />
+    );
+  }
 
   if (activeWorkspaceMode === "training" && trainingCompletion && !summaryDismissed && !liveTrainingTimeline.length && !rescuePlaylistId) {
     return (

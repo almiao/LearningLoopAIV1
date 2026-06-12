@@ -30,6 +30,13 @@
 - ✅ 砍文档库 4 分组(在读/已掌握/未学)、砍"系统记住了什么"、砍七日点阵
 - ✅ 复习项点击 → 跳 `/learn` 重练(有原文指针的可点)
 
+### 复习 drill 编排(闭环下半段)
+- ✅ ai-service:`generate_review_question(复习项)` —— 薄封装 `generate_probe_question`,种子=handle+漏的锚点+上次的题,不起文档 session、不重跑拆解(`/api/review/generate-question`)
+- ✅ BFF:`POST /api/review/{id}/drill`(`bff/src/lib/review-drill-domain.js`)—— 出题 → 锚点判分 → 过线转扎实 / 答崩补讲(复用 loopassist `rescue-material`,带确定性 fallback)→ `updateState`
+- ✅ 前端:`/learn?reviewItem=` 进 ReviewDrillWorkspace;首页今日复习所有项可点,删"来源不可达"
+- ✅ 守 §1.3:纯现成零件编排,无新引擎、无新状态库;有 source_ref 带原文上下文,没有也可练
+- ✅ 测试:`ai-service/tests/test_review_question.py` + `tests/unit/review-drill-domain.test.js`;真 LLM 全链路实测(出题/判崩/补讲/回写)
+
 ### 文档
 - ✅ [ARCHITECTURE.md](ARCHITECTURE.md) + 流程图 + 术语表
 - ✅ [docs/designs/product-target-form-v1.md](designs/product-target-form-v1.md) —— 目标形态(线框 + 页面改动映射)
@@ -37,14 +44,6 @@
 ---
 
 ## 待做 🔴 (按价值排序)
-
-### P0 · 复习 drill 编排(闭环下半段)
-> 当前复习项点击只能"跳回原文从头练"。正解是:种子=复习项,test-first。
-- 🔴 ai-service:`generate_review_question(复习项)` —— 薄封装 `generate_probe_question`,种子=handle+漏的锚点+上次的题,**不起文档 session、不重跑拆解**
-- 🔴 编排:出题 → 判分 → 过线则转扎实 / 答崩则补讲(复用 loopassist `rescue-material`)→ `updateState`
-- 🔴 BFF:`/api/review/{id}/drill`(或 `/learn?reviewItem=`)
-- 🔴 前端:复习项点击进这条流程(所有项都可点,删"来源不可达")
-- 守 §1.3:全是现成零件的编排,不写新引擎
 
 ### P1 · Practice 合并
 - 🔴 `learn-workspace`(4634)+ `loopassist-workspace`(2373)→ 一个 Practice 组件
@@ -73,7 +72,7 @@
 
 - 🟡 `capability-memory` + `src/mastery/` + `memory-profile-store` 链:首页已不渲染,但 BFF/profile-aggregator 还读。退役要跟首页/档案重构一起做(是"关开关",不是重写)
 - 🟡 LibraryBrowser 内仍有 per-doc "在读/已掌握/未学" status badge(`tone-${group}`)
-- 🟡 baseline-pack 训练写不出可点 source_ref(产品正确,但这类复习项点不了)——等 baseline-pack 自己的 re-drill 入口
+- ~~baseline-pack 训练写不出可点 source_ref(这类复习项点不了)~~ → 已被复习 drill 编排解决:re-drill 不再依赖 source_ref,所有复习项可练
 - 🟡 账本去重/陈旧归档:反复 drill 会建重复项(§4 软肋,接受"冗余不是错误");需要陈旧项归档机制
 - 🟡 判分跨模型校准:当前只测过 DeepSeek,OpenAI/Anthropic 未测
 
@@ -92,5 +91,7 @@
 
 ## 下一步建议
 
-**P0 复习 drill 编排** 是当前最该做的——它把"测→判→答崩补讲"串成真东西,
-让账本里的复习项真正可练,闭环才算闭上。其余按真实使用反馈再排。
+~~P0 复习 drill 编排~~ 已完成(2026-06-12),闭环正式闭上:账本里每条复习项都能
+test-first 重练,过线转扎实、答崩补讲。下一刀在两个 P1 里选:
+**面试就绪度**(产品差异化,纯增量、风险低)或 **Practice 合并**(两个巨型组件
+合一,动现有行为、风险高,建议单独一刀)。其余按真实使用反馈再排。
