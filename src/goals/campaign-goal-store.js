@@ -57,6 +57,8 @@ function normalizeTopic(topic = {}, index = 0) {
     importance: VALID_IMPORTANCE.has(topic.importance) ? topic.importance : "core",
     coverage: VALID_COVERAGE.has(topic.coverage) ? topic.coverage : "uncovered",
     source: VALID_SOURCE.has(source) ? source : "jd-topic",
+    // 主题为自由文本（来自 AI 拆题或来源兜底），仅做长度封顶；缺失留空 → 前端降级为扁平。
+    theme: normalizeText(topic.theme).slice(0, 12),
     source_id: normalizeText(topic.source_id || topic.sourceId),
     source_excerpt: normalizeText(topic.source_excerpt || topic.sourceExcerpt),
     risk_rank: Number.isFinite(Number(topic.risk_rank || topic.riskRank)) ? Number(topic.risk_rank || topic.riskRank) : index,

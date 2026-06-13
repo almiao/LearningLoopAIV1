@@ -28,6 +28,18 @@ export function sendErrorJson(response, statusCode, payload) {
   sendJson(response, statusCode, payload);
 }
 
+export function buildErrorResponsePayload(error, fallbackMessage = "Unknown error") {
+  const message = error instanceof Error
+    ? error.message
+    : String(error || fallbackMessage);
+  const errorMeta = error && typeof error === "object" && error.errorMeta && typeof error.errorMeta === "object"
+    ? error.errorMeta
+    : null;
+  return errorMeta
+    ? { error: message, errorMeta }
+    : { error: message || fallbackMessage };
+}
+
 export function sendBuffer(response, statusCode, body, extraHeaders = {}) {
   response.writeHead(statusCode, {
     "access-control-allow-origin": "*",

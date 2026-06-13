@@ -42,6 +42,7 @@ export function createTrainingWaitState({ submittedAnswer = "", intent = "" } = 
     currentStepKey: "understand_question",
     completedStepKeys: [],
     streamingText: "",
+    error: "",
     slow: false,
     startedAt: Date.now(),
   };
@@ -453,6 +454,7 @@ function TrainingPendingThreadCard({ question, submission, onRetryGeneration, on
         <TrainingGenerationPanel
           embedded
           streamingText={submission.streamingText}
+          error={submission.error}
           label={waitCopy.label}
           statusDetail={waitCopy.detail}
           slow={submission.slow}

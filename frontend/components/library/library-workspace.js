@@ -5,7 +5,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState, startTransition
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, postJson } from "../../lib/api";
 import { buildReentryPlan } from "../../lib/reentry-actions";
-import { getStoredUserId } from "../../lib/user-session";
+import { ensureLocalUserId } from "../../lib/user-session";
 import {
   rootLibraryKey,
   groupMeta,
@@ -309,7 +309,9 @@ export function LibraryWorkspace() {
   const selectedNodeKeyParam = searchParams.get("node") || "";
 
   useEffect(() => {
-    setUserId(getStoredUserId());
+    ensureLocalUserId()
+      .then((storedUserId) => setUserId(storedUserId || ""))
+      .catch((nextError) => setError(nextError.message));
   }, []);
 
   useEffect(() => {
@@ -405,7 +407,7 @@ export function LibraryWorkspace() {
 
   async function toggleIgnoredDocument(document) {
     if (!userId) {
-      setError("请先回首页登录，再管理资料。");
+      setError("本机档案准备好后才能管理资料。");
       return;
     }
     try {

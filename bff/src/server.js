@@ -2,12 +2,13 @@ import { convertRemoteMaterialUrl, convertUploadedMaterial } from "../../src/ing
 import { listCustomMaterials, listSourceDocuments, readCustomMaterialOriginal, readCustomMaterialRender, readSourceAsset, readSourceDocument, saveCustomMaterial } from "../../src/knowledge/source-document-resolver.js";
 import { buildLoopAssistOptions, previewLoopAssistScope } from "../../src/loopassist/corpus.js";
 import http from "node:http";
-import { buildMissingAssetPlaceholder, buildSafeContentDisposition, buildServiceBaseUrl, port, readJsonBody, sendBuffer, sendErrorJson, sendJson, withCorsHeaders } from "./lib/http-utils.js";
+import { buildErrorResponsePayload, buildMissingAssetPlaceholder, buildSafeContentDisposition, buildServiceBaseUrl, port, readJsonBody, sendBuffer, sendErrorJson, sendJson, withCorsHeaders } from "./lib/http-utils.js";
 import { handleAnswer, handleAnswerStream, handleFocusConcept, handleFocusDomain, handleStartTarget, isCompletedDocumentSession, isResumableDocumentSession, stripSessionPayload } from "./lib/interview-domain.js";
 import { handleKnowledgeAnswer } from "./lib/knowledge-domain.js";
 import { handleLoopAssistStart, handleLoopAssistStream, recordLoopAssistPracticeRounds } from "./lib/loopassist-domain.js";
 import { buildProfilePayload, getUserProfile, handleIgnoredDocument, handleListResumeVersions, handleReadingProgress, handleRecommendationSnooze, handleSaveResumeVersion, handleSkippedTraining } from "./lib/profile-domain.js";
 import { buildReadiness, createCampaignDomain, parseCampaignPath } from "./lib/campaign-domain.js";
+import { getLibraryItem, searchLibrary } from "./lib/corpus-library.js";
 import { createReviewPracticeDomain, parseReviewPracticePath } from "./lib/review-practice-domain.js";
 import { aiServiceUrl, proxyBinary, proxyJson, ttsServiceUrl } from "./lib/service-proxy.js";
 import { campaignGoalStore, rescuePlaylistStore, reviewItemStore, userProfileStore } from "./lib/stores.js";
@@ -72,6 +73,31 @@ const server = http.createServer(async (request, response) => {
       }
     }
 
+    // 选库明细：按 id 取全文（选中后展示原文用，列表只回摘要不带全文）。
+    const libraryDetail = /^\/api\/campaign\/library\/(jd|interview)\/(.+)$/.exec(url.pathname);
+    if (request.method === "GET" && libraryDetail) {
+      const item = getLibraryItem({ kind: libraryDetail[1], id: decodeURIComponent(libraryDetail[2]) });
+      if (!item) {
+        sendJson(response, 404, { error: { message: "库内条目不存在。" } });
+        return;
+      }
+      sendJson(response, 200, item);
+      return;
+    }
+
+    // 选库里的 JD/面经：只读检索（关键词 + 岗位过滤 + 分页），列表只回摘要。
+    if (request.method === "GET" && (url.pathname === "/api/campaign/library/jd" || url.pathname === "/api/campaign/library/interview")) {
+      const kind = url.pathname.endsWith("/interview") ? "interview" : "jd";
+      sendJson(response, 200, searchLibrary({
+        kind,
+        q: url.searchParams.get("q") || "",
+        role: url.searchParams.get("role") || "",
+        page: url.searchParams.get("page") || 1,
+        pageSize: url.searchParams.get("pageSize") || 20,
+      }));
+      return;
+    }
+
     const campaignRoute = parseCampaignPath(url.pathname);
     if (campaignRoute) {
       if (request.method === "GET" && campaignRoute.action === "detail") {
@@ -92,6 +118,17 @@ const server = http.createServer(async (request, response) => {
               topicId: campaignRoute.topicId,
             });
         sendJson(response, 200, payload);
+        return;
+      }
+      if (request.method === "POST" && campaignRoute.action === "rescue") {
+        const body = await readJsonBody(request);
+        sendJson(response, 200, await campaignDomain.rescueTopicPractice({
+          id: campaignRoute.id,
+          topicId: campaignRoute.topicId,
+          question: body.question || "",
+          hits: body.hits || [],
+          misses: body.misses || [],
+        }));
         return;
       }
       if (request.method === "POST" && campaignRoute.action === "debrief") {
@@ -464,7 +501,8 @@ const server = http.createServer(async (request, response) => {
     sendJson(response, 404, { error: "Not found." });
   } catch (error) {
     console.error(error);
-    sendErrorJson(response, 400, { error: error instanceof Error ? error.message : "Unknown error" });
+    const statusCode = Number(error?.statusCode) || 400;
+    sendErrorJson(response, statusCode, buildErrorResponsePayload(error));
   }
 });
 

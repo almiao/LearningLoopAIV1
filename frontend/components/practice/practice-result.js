@@ -12,6 +12,7 @@ export function PracticeResult({
   hits = [],
   misses = [],
   rescueMarkdown = "",
+  rescuePending = false,
   passLabel = "过了",
   failLabel = "还没讲稳",
   passDetail = "",
@@ -32,7 +33,7 @@ export function PracticeResult({
   const normalizedMisses = Array.isArray(misses) ? misses.filter(Boolean) : [];
   const detail = passed ? passDetail : failDetail;
   const threadScoreStyle = {
-    "--thread-score-color": scoreColor || (passed ? "#1D9E75" : "#E27272"),
+    "--thread-score-color": scoreColor || (passed ? "var(--green)" : "var(--danger)"),
   };
   if (scoreBackground) {
     threadScoreStyle["--thread-score-bg"] = scoreBackground;
@@ -83,6 +84,12 @@ export function PracticeResult({
               <p>{normalizedMisses.join("；")}</p>
             </article>
           ) : null}
+        </div>
+      ) : null}
+
+      {rescuePending ? (
+        <div className="ll-thread-message assistant explanation">
+          <p className="ll-practice-rescue-pending">正在生成补讲，判分结果已经记下来了。</p>
         </div>
       ) : null}
 

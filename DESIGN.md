@@ -39,6 +39,8 @@
 - **顶栏**：所有一级页面用 `ll-topbar` + `ll-brand`（方块标 + LearningLoop 字标），
   右侧动作用 `ll-secondary-button`；返回统一写"← 返回首页"。
   LoopAssist 保留自己的子品牌顶栏（产品决策：模拟面试是一级产品点）。
+  训练/冲刺类沉浸态页面（learn 训练态、复习重练、面试冲刺）用 `ll-training-topbar`
+  （kicker + 大标题 + "‹" 返回），不挂品牌栏——进入这些页的用户已在任务中。
 - **主按钮**：黑底白字圆角（`primary-pill` / `ll-*` 黑按钮），一个视图只有一个主按钮。
 - **空态 / 拦截页**：`gate-card`（白卡 + 标题 + 一句说明 + 黑色主按钮），见 learn / profile。
 - **状态徽标**：圆角胶囊（`ll-status-pill`），底色用弱底色系，语义色只用绿/红/琥珀。

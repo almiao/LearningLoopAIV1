@@ -15,21 +15,30 @@ test("home page is a single-column act-led view; library lives on its own second
   const learnSource = await readFile(`${root}/frontend/components/learn-workspace.js`, "utf8");
   const styles = await readFile(`${root}/frontend/app/globals.css`, "utf8");
 
-  // 首页：单栏 act-led，三件事（继续学 / 今日复习 / 学点新的），不再承载资料树。
-  assert.match(source, /LoginModal/);
-  assert.match(source, /postJson\("\/api\/auth\/login"/);
+  // 首页：单栏 act-led，三行清单（接着学 / 学新的 / 补复习），不再承载资料树或登录门槛。
+  assert.match(source, /ensureLocalUserProfile/);
   assert.match(source, /buildReentryPlan/);
-  assert.match(source, /今天先做什么/);
-  assert.match(source, /今日复习/);
+  assert.match(source, /今天从这里推进/);
+  assert.match(source, /接着学/);
   assert.match(source, /学点新的/);
-  assert.match(source, /备选动作/);
-  assert.match(source, /开始新的一篇/);
+  assert.match(source, /补今天到期的复习/);
+  assert.doesNotMatch(source, /扩展资料库/);
+  assert.doesNotMatch(source, /三件事互不依赖/);
+  assert.match(source, /开始读这篇/);
+  assert.doesNotMatch(source, /打开候选材料/);
+  assert.doesNotMatch(source, /未读完正文/);
+  assert.doesNotMatch(source, /今日无复习/);
+  assert.match(source, /设置面试日期/);
+  assert.match(source, /添加新材料/);
   assert.match(source, /今天先不练这个/);
   assert.match(source, /今天先不读这个/);
   assert.match(source, /面试冲刺/);
-  assert.match(source, /登录 \/ 创建账号/);
-  assert.match(source, /isLoggedIn=\{Boolean\(profile\?\.user\?\.id\)\}/);
+  assert.match(source, /本机档案/);
+  assert.doesNotMatch(source, /LoginModal/);
+  assert.doesNotMatch(source, /登录 \/ 创建账号/);
+  assert.doesNotMatch(source, /isLoggedIn=\{Boolean\(profile\?\.user\?\.id\)\}/);
   assert.match(source, /href="\/library"/);
+  assert.match(source, /href="\/materials"/);
   assert.match(source, /ll-home-main/);
   // 旧资料库深链迁移。
   assert.match(source, /searchParams\.get\("mode"\) === "library"/);
@@ -40,7 +49,6 @@ test("home page is a single-column act-led view; library lives on its own second
   assert.doesNotMatch(source, /ll-sidebar/);
   assert.doesNotMatch(source, /ll-workspace/);
   assert.doesNotMatch(source, /搜索资料/);
-  assert.doesNotMatch(source, /mode=library/);
   assert.doesNotMatch(source, /打开阅读页/);
   assert.doesNotMatch(source, /buildDetailHref/);
   assert.doesNotMatch(source, /查看准备页/);
@@ -73,7 +81,6 @@ test("home page is a single-column act-led view; library lives on its own second
 
   assert.match(learnSource, /TrainingWorkspace/);
   assert.match(learnSource, /RescuePlaylistStrip/);
-  assert.match(learnSource, /TrainingGenerationPanel/);
   assert.match(learnSource, /TrainingCompletionSummaryPage/);
   assert.match(learnSource, /ReadingDocumentContent/);
   assert.match(learnSource, /ReadingSelectionPopover/);

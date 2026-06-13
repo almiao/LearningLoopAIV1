@@ -42,11 +42,22 @@ class JdDecomposeTests(unittest.TestCase):
 
         topics = result["topics"]
         self.assertEqual(len(topics), 3)
-        self.assertEqual(topics[0], {"topic": "线程池参数与拒绝策略的取舍", "importance": "core"})
+        self.assertEqual(topics[0], {"topic": "线程池参数与拒绝策略的取舍", "importance": "core", "theme": ""})
         self.assertEqual(topics[1]["importance"], "core")
-        self.assertEqual(topics[2], {"topic": "Kafka 重平衡的影响与规避", "importance": "core"})
+        self.assertEqual(topics[2], {"topic": "Kafka 重平衡的影响与规避", "importance": "core", "theme": ""})
         self.assertIn("Java 后端", prompts[0])
         self.assertIn("订单系统", prompts[0])
+
+    def test_normalize_captures_and_truncates_theme(self):
+        raw = {
+            "topics": [
+                {"topic": "线程池调优", "importance": "core", "theme": "并发与性能"},
+                {"topic": "超长主题名会被截断到上限以内不至于撑爆", "importance": "core", "theme": "这个主题名字特别特别特别长应当被截断"},
+            ],
+        }
+        topics = normalize_jd_topics(raw)
+        self.assertEqual(topics[0]["theme"], "并发与性能")
+        self.assertLessEqual(len(topics[1]["theme"]), 12)
 
     def test_normalize_caps_topic_count(self):
         raw = {"topics": [{"topic": f"话题 {index}", "importance": "secondary"} for index in range(40)]}

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { postJson } from "../lib/api";
-import { getStoredUserId } from "../lib/user-session";
+import { ensureLocalUserId } from "../lib/user-session";
 import {
   getLoopAssistResumeVersions,
   getLoopAssistOptions,
@@ -646,7 +646,9 @@ export function LoopAssistWorkspace() {
   }, [session]);
 
   useEffect(() => {
-    setUserId(getStoredUserId());
+    ensureLocalUserId()
+      .then((storedUserId) => setUserId(storedUserId || ""))
+      .catch(() => setUserId(""));
   }, []);
 
   useEffect(() => {
@@ -1144,7 +1146,7 @@ export function LoopAssistWorkspace() {
     if (isPdf) {
       if (!userId) {
         setResumeLibraryState("error");
-        setResumeLibraryNotice("请先登录后再上传 PDF 文件。");
+        setResumeLibraryNotice("本机档案准备好后才能上传 PDF 文件。");
         if (resumeInputRef.current) {
           resumeInputRef.current.value = "";
         }

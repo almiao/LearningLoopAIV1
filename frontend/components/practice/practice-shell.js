@@ -125,7 +125,14 @@ export function PracticeShell({
       {error && !practice?.question ? <p className="ll-campaign-error">{error}</p> : null}
       {showQuestion ? <h2>{practice?.question || questionFallback}</h2> : null}
       {typeof renderEvidence === "function" ? renderEvidence({ practice, seed }) : null}
-      {error && practice?.question ? <p className="ll-campaign-error">{error}</p> : null}
+      {error && practice?.question ? (
+        <div className="ll-practice-error" role="alert">
+          <p className="ll-campaign-error">{error}</p>
+          {!answered && String(answer || "").trim() ? (
+            <p className="ll-practice-error-note">你的回答已保留，点下面「重试判分」直接重发。</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {!answered ? (
         <form
@@ -159,9 +166,14 @@ export function PracticeShell({
               disabled={loading || !String(answer || "").trim() || !practice?.question}
               data-testid={submitTestId || undefined}
             >
-              {loading ? (actions.loading || "判分中...") : (actions.submit || "提交回答")}
+              {loading
+                ? (actions.loading || "判分中...")
+                : (error && practice?.question ? "重试判分" : (actions.submit || "提交回答"))}
             </button>
           </div>
+          {loading && practice?.question ? (
+            <p className="ll-practice-judging-hint">判分通常十几秒，稍候即可，回答不会丢。</p>
+          ) : null}
         </form>
       ) : (
         <PracticeResult
@@ -169,6 +181,7 @@ export function PracticeShell({
           hits={hits}
           misses={misses}
           rescueMarkdown={practice?.rescue?.markdown || ""}
+          rescuePending={Boolean(practice?.rescue?.pending)}
           passLabel={resultLabels.passLabel}
           failLabel={resultLabels.failLabel}
           passDetail={resultLabels.passDetail}

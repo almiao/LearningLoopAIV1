@@ -134,6 +134,48 @@ async function mockCampaignApi(page) {
   return state;
 }
 
+const themedCampaign = {
+  id: "camp-themed",
+  role: "Java 后端",
+  deadline: "",
+  created_at: "2026-06-10T08:00:00.000Z",
+  archived_at: null,
+  topics: [
+    { id: "t1", topic: "线程池参数与拒绝策略", importance: "core", coverage: "uncovered", source: "jd-topic", theme: "并发与性能" },
+    { id: "t2", topic: "JVM GC 选型", importance: "core", coverage: "shaky", source: "jd-topic", theme: "并发与性能" },
+    { id: "t3", topic: "Kafka 消息可靠性", importance: "core", coverage: "uncovered", source: "jd-topic", theme: "分布式" },
+    { id: "t4", topic: "分布式事务与最终一致性", importance: "core", coverage: "solid", source: "jd-topic", theme: "分布式" },
+  ],
+  readiness: {
+    daysLeft: null,
+    coverageRate: 0.25,
+    gaps: [{ topicId: "t1" }, { topicId: "t3" }, { topicId: "t2" }],
+  },
+};
+
+test("campaign list folds to today's focus and expands into theme groups", async ({ page }) => {
+  await page.route("**/api/campaigns", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ campaigns: [themedCampaign] }) });
+  });
+
+  await page.goto("/campaign", { waitUntil: "networkidle" });
+
+  // 折叠态：只摊开前 3 个，标题是「今天先练这 3 个」，且不分组。
+  const head = page.getByTestId("campaign-readiness");
+  await expect(head).toBeVisible();
+  await expect(page.getByTestId("campaign-topic-list").locator(".ll-campaign-topic-row")).toHaveCount(3);
+  await expect(page.locator(".ll-campaign-section-head h3")).toContainText("今天先练这 3 个");
+  await expect(page.locator(".ll-campaign-theme-head")).toHaveCount(0);
+
+  // 展开：4 个考点按主题分组（并发与性能 / 分布式），组内带讲稳读数。
+  await page.getByTestId("campaign-topic-toggle").click();
+  await expect(page.getByTestId("campaign-topic-list").locator(".ll-campaign-topic-row")).toHaveCount(4);
+  const themeHeads = page.locator(".ll-campaign-theme-head");
+  await expect(themeHeads).toHaveCount(2);
+  await expect(themeHeads.first()).toContainText("并发与性能");
+  await expect(page.locator(".ll-campaign-theme-head", { hasText: "分布式" })).toContainText("讲稳 1/2");
+});
+
 test("campaign dashboard covers the full path: create → practice → debrief → archive", async ({ page }) => {
   await mockCampaignApi(page);
   page.on("dialog", (dialog) => void dialog.accept());
@@ -144,12 +186,12 @@ test("campaign dashboard covers the full path: create → practice → debrief �
   const createForm = page.getByTestId("campaign-create-form");
   await expect(createForm).toBeVisible();
   await createForm.getByLabel("岗位").fill("Java 后端");
-  await createForm.getByLabel(/职位描述/).fill("负责订单系统，要求熟悉 Redis 与 Kafka。");
+  await createForm.getByPlaceholder(/把职位描述整段贴进来/).fill("负责订单系统，要求熟悉 Redis 与 Kafka。");
   await createForm.getByRole("button", { name: "生成练习清单" }).click();
 
   await expect(page.getByTestId("campaign-readiness")).toBeVisible();
-  await expect(page.getByTestId("campaign-readiness")).toContainText("已练话题");
-  await expect(page.getByTestId("campaign-readiness")).toContainText("0/2");
+  await expect(page.getByTestId("campaign-readout")).toContainText("2 个考点");
+  await expect(page.getByTestId("campaign-readout")).toContainText("没练过 2");
   const topicList = page.getByTestId("campaign-topic-list");
   await expect(topicList).toContainText("Redis 缓存一致性");
   await expect(topicList).toContainText("Kafka 消息可靠性");
@@ -173,8 +215,9 @@ test("campaign dashboard covers the full path: create → practice → debrief �
   await expect(practicePanel).toContainText("过了 · 标记为扎实");
 
   // 回清单：覆盖状态已更新。
-  await practicePanel.getByRole("button", { name: "‹ 待练清单" }).click();
-  await expect(page.getByTestId("campaign-readiness")).toContainText("2/2");
+  await page.locator(".ll-training-back").click();
+  await expect(page.getByTestId("campaign-readout")).toContainText("扎实 1");
+  await expect(page.getByTestId("campaign-readout")).toContainText("没练过 0");
   await expect(topicList).toContainText("生疏");
   await expect(topicList).toContainText("扎实");
 

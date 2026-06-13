@@ -1,6 +1,7 @@
 import { getLatestResumeVersion } from "../../../src/user/resume-version-store.js";
 import { selectLoopAssistSeeds } from "../../../src/loopassist/corpus.js";
 import { getUserProfile } from "./profile-domain.js";
+import { getLibraryItem } from "./corpus-library.js";
 import { proxyJson } from "./service-proxy.js";
 
 // 面试冲刺域 — PRODUCT.md「面试冲刺」的 BFF 编排层。
@@ -43,6 +44,10 @@ export function parseCampaignPath(pathname = "") {
   const practice = /^\/api\/campaigns\/([^/]+)\/topics\/([^/]+)\/practice$/.exec(pathname);
   if (practice) {
     return { id: decodeURIComponent(practice[1]), action: "practice", topicId: decodeURIComponent(practice[2]) };
+  }
+  const rescue = /^\/api\/campaigns\/([^/]+)\/topics\/([^/]+)\/rescue$/.exec(pathname);
+  if (rescue) {
+    return { id: decodeURIComponent(rescue[1]), action: "rescue", topicId: decodeURIComponent(rescue[2]) };
   }
   return null;
 }
@@ -117,15 +122,26 @@ export function buildReadiness(campaign = {}, { now = new Date() } = {}) {
   };
 }
 
+// 简历/面经种子没有 AI 主题，按来源给一个固定主题；JD 话题没标主题就留空，前端据此降级为扁平。
+const sourceThemeFallback = {
+  "resume-claim": "简历声称",
+  "report-seed": "面经常考",
+};
+
 function normalizeTopicList(topics = [], source = "jd-topic") {
   return (Array.isArray(topics) ? topics : [])
-    .map((topic) => ({
-      topic: normalizeText(topic?.topic || topic?.title || topic),
-      importance: topic?.importance === "secondary" ? "secondary" : "core",
-      source: topic?.source || source,
-      source_id: normalizeText(topic?.source_id || topic?.sourceId),
-      source_excerpt: normalizeText(topic?.source_excerpt || topic?.sourceExcerpt),
-    }))
+    .map((topic) => {
+      const resolvedSource = topic?.source || source;
+      const theme = normalizeText(topic?.theme);
+      return {
+        topic: normalizeText(topic?.topic || topic?.title || topic),
+        importance: topic?.importance === "secondary" ? "secondary" : "core",
+        source: resolvedSource,
+        theme: theme || sourceThemeFallback[resolvedSource] || "",
+        source_id: normalizeText(topic?.source_id || topic?.sourceId),
+        source_excerpt: normalizeText(topic?.source_excerpt || topic?.sourceExcerpt),
+      };
+    })
     .filter((topic) => topic.topic);
 }
 
@@ -186,11 +202,52 @@ function fallbackRescueMarkdown({ topic, question, judgment }) {
   ].join("\n");
 }
 
+async function generateTopicRescue({ campaign, topic, question, judgment, proxy }) {
+  const misses = Array.isArray(judgment?.misses) ? judgment.misses : [];
+  const hits = Array.isArray(judgment?.hits) ? judgment.hits : [];
+  try {
+    const { data, traceId } = await proxy("POST", "/api/loopassist/rescue-material", {
+      scope: {
+        role: campaign.role,
+        round: "面试冲刺",
+        topics: [topic.topic],
+      },
+      gap: {
+        topic: topic.topic,
+        title: topic.topic,
+        questionText: question,
+        summary: "",
+        misses,
+        keyPoints: hits,
+        likelyFollowups: [],
+      },
+    });
+    const markdown = normalizeText(data?.markdown);
+    return {
+      rescue: {
+        markdown: markdown || fallbackRescueMarkdown({ topic: topic.topic, question, judgment }),
+        fallback: !markdown,
+      },
+      traceId,
+    };
+  } catch (error) {
+    return {
+      rescue: {
+        markdown: fallbackRescueMarkdown({ topic: topic.topic, question, judgment }),
+        fallback: true,
+        reason: error instanceof Error ? error.message : String(error),
+      },
+      traceId: "",
+    };
+  }
+}
+
 export function createCampaignDomain({
   store,
   reviewItemStore,
   proxy = proxyJson,
   loadUserProfile = getUserProfile,
+  loadLibraryItem = getLibraryItem,
   now = () => new Date(),
 } = {}) {
   if (!store) {
@@ -198,6 +255,57 @@ export function createCampaignDomain({
   }
   if (!reviewItemStore) {
     throw new Error("review item store is required.");
+  }
+
+  // 主轴解析：把「贴 JD / 选库 JD / 选面经」三种来源统一成 {spineText, primaryTopics, addReportSeeds}。
+  // 贴/选 JD 走 decompose-jd（话题 source=jd-topic，并自动叠加面经种子）；
+  // 选面经走 decompose-interview（话题 source=report-seed，面经本身即来源，不再另叠种子）。
+  async function resolveSpine({ spine, jdText, role }) {
+    const cleanRole = normalizeText(role);
+    let kind = normalizeText(spine?.source);
+    let text = "";
+
+    if (kind === "jd-library" || kind === "interview-library") {
+      const libraryKind = kind === "interview-library" ? "interview" : "jd";
+      const item = loadLibraryItem({ kind: libraryKind, id: normalizeText(spine?.libraryId) });
+      if (!item) {
+        throw new Error("选中的库内条目不存在，请重新选择。");
+      }
+      text = normalizeText(item.text);
+    } else {
+      // 默认 / jd-paste：直接用贴进来的 JD 文本（向后兼容旧 jdText 入参）。
+      kind = "jd-paste";
+      text = normalizeText(spine?.text || jdText);
+    }
+
+    if (!text) {
+      throw new Error("缺少冲刺来源：贴 JD、选库内 JD 或选一篇面经其中之一。");
+    }
+
+    if (kind === "interview-library") {
+      const { data, traceId } = await proxy("POST", "/api/campaign/decompose-interview", {
+        reportText: text,
+        role: cleanRole,
+      });
+      return {
+        spineText: text,
+        primaryTopics: normalizeTopicList(data?.topics, "report-seed"),
+        addReportSeeds: false,
+        traceId,
+      };
+    }
+
+    const { data, traceId } = await proxy("POST", "/api/campaign/decompose-jd", {
+      jdText: text,
+      resumeText: "",
+      role: cleanRole,
+    });
+    return {
+      spineText: text,
+      primaryTopics: normalizeTopicList(data?.topics, "jd-topic"),
+      addReportSeeds: true,
+      traceId,
+    };
   }
 
   async function getCampaignOrThrow(id = "") {
@@ -220,12 +328,8 @@ export function createCampaignDomain({
     return topic;
   }
 
-  // ① 立项 + ② 定范围：建 campaign Goal，JD 当场拆扁平话题（与已存简历交叉）。
-  async function create({ company = "", role = "", deadline = "", jdText = "", resumeText = "", userId = "" } = {}) {
-    const cleanJd = normalizeText(jdText);
-    if (!cleanJd) {
-      throw new Error("jdText is required.");
-    }
+  // ① 立项 + ② 定范围：建 campaign Goal，主轴（JD 或面经）当场拆扁平话题（与已存简历交叉）。
+  async function create({ company = "", role = "", deadline = "", jdText = "", resumeText = "", spine = null, userId = "" } = {}) {
     let resolvedResumeText = normalizeText(resumeText);
     if (!resolvedResumeText && userId) {
       try {
@@ -235,11 +339,9 @@ export function createCampaignDomain({
         resolvedResumeText = "";
       }
     }
-    const { data, traceId } = await proxy("POST", "/api/campaign/decompose-jd", {
-      jdText: cleanJd,
-      resumeText: resolvedResumeText,
-      role: normalizeText(role),
-    });
+
+    const { spineText, primaryTopics, addReportSeeds, traceId } = await resolveSpine({ spine, jdText, role });
+
     let resumeTopics = [];
     if (resolvedResumeText) {
       const { data: resumeData } = await proxy("POST", "/api/campaign/decompose-resume", {
@@ -250,17 +352,17 @@ export function createCampaignDomain({
     }
     const topics = dedupeAndRankTopics([
       resumeTopics,
-      normalizeTopicList(data?.topics, "jd-topic"),
-      normalizeTopicList(buildReportSeedTopics({ role, jdText: cleanJd }), "report-seed"),
+      primaryTopics,
+      addReportSeeds ? normalizeTopicList(buildReportSeedTopics({ role, jdText: spineText }), "report-seed") : [],
     ]);
     if (!topics.length) {
-      throw new Error("JD 拆解没有产出任何话题，请检查 JD 内容后重试。");
+      throw new Error("来源拆解没有产出任何话题，请检查内容后重试。");
     }
     const campaign = await store.create({
       company,
       role,
       deadline,
-      jdText: cleanJd,
+      jdText: spineText,
       resumeText: resolvedResumeText,
       topics,
       now: now().toISOString(),
@@ -306,7 +408,8 @@ export function createCampaignDomain({
     };
   }
 
-  // ③ 冲刺：判分 → 覆盖度写 Goal；答崩 → 失败写全局账本（next_due 被 deadline 封顶）+ 补讲。
+  // ③ 冲刺：判分 → 覆盖度写 Goal；答崩 → 失败写全局账本（next_due 被 deadline 封顶）。
+  // 补讲改为单独请求，避免主提交流程被生成补讲拖到前端超时。
   async function answerTopicPractice({ id, topicId, question = "", answer: learnerAnswer = "" } = {}) {
     const campaign = await getCampaignOrThrow(id);
     const topic = getTopicOrThrow(campaign, topicId);
@@ -334,7 +437,6 @@ export function createCampaignDomain({
     });
 
     let reviewItem = null;
-    let rescue = null;
     if (!passed) {
       const misses = Array.isArray(judgment?.misses) ? judgment.misses : [];
       // 真实失败进全局账本（战役结束后流回日常 = 留存桥）。同 handle 已有项就更新，不重复建。
@@ -353,36 +455,6 @@ export function createCampaignDomain({
             now: nowIso,
             deadline: campaign.deadline || null,
           });
-
-      try {
-        const { data } = await proxy("POST", "/api/loopassist/rescue-material", {
-          scope: {
-            role: campaign.role,
-            round: "面试冲刺",
-            topics: [topic.topic],
-          },
-          gap: {
-            topic: topic.topic,
-            title: topic.topic,
-            questionText: cleanQuestion,
-            summary: "",
-            misses,
-            keyPoints: Array.isArray(judgment?.hits) ? judgment.hits : [],
-            likelyFollowups: [],
-          },
-        });
-        const markdown = normalizeText(data?.markdown);
-        rescue = {
-          markdown: markdown || fallbackRescueMarkdown({ topic: topic.topic, question: cleanQuestion, judgment }),
-          fallback: !markdown,
-        };
-      } catch (error) {
-        rescue = {
-          markdown: fallbackRescueMarkdown({ topic: topic.topic, question: cleanQuestion, judgment }),
-          fallback: true,
-          reason: error instanceof Error ? error.message : String(error),
-        };
-      }
     }
 
     return {
@@ -394,9 +466,25 @@ export function createCampaignDomain({
       judgment,
       passed,
       reviewItem,
-      rescue,
+      rescue: passed ? null : { pending: true, markdown: "" },
       traceId,
     };
+  }
+
+  async function rescueTopicPractice({ id, topicId, question = "", hits = [], misses = [] } = {}) {
+    const campaign = await getCampaignOrThrow(id);
+    const topic = getTopicOrThrow(campaign, topicId);
+    const cleanQuestion = normalizeText(question);
+    if (!cleanQuestion) {
+      throw new Error("question is required.");
+    }
+    return generateTopicRescue({
+      campaign,
+      topic,
+      question: cleanQuestion,
+      judgment: { hits, misses },
+      proxy,
+    });
   }
 
   // ⑦ 面试后回灌：真被问到却答不上的，直接转复习项（最值钱的失败，不经判分）。
@@ -439,6 +527,7 @@ export function createCampaignDomain({
     detail,
     startTopicPractice,
     answerTopicPractice,
+    rescueTopicPractice,
     debrief,
     archive,
   };

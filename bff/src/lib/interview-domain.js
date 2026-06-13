@@ -8,6 +8,27 @@ import { getMemoryProfile, getUserProfile, persistInteractionPreferenceRule } fr
 import { aiServiceUrl, proxyJson } from "./service-proxy.js";
 import { practicePassthrough, memoryProfileStore, sessionSummariesStore, userProfileStore } from "./stores.js";
 
+function buildUpstreamStreamError(rawText = "", fallbackStatus = 502) {
+  let data;
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    data = { error: rawText || "Downstream AI service stream failed." };
+  }
+  const errorMeta = data?.errorMeta || (data?.error && typeof data.error === "object" ? data.error : null);
+  const error = new Error(
+    errorMeta?.message
+      || data?.detail
+      || (typeof data?.error === "string" ? data.error : "")
+      || "Downstream AI service stream failed."
+  );
+  error.statusCode = Number(errorMeta?.statusCode) || fallbackStatus;
+  if (errorMeta) {
+    error.errorMeta = errorMeta;
+  }
+  return error;
+}
+
 export function stripSessionPayload(session = {}) {
   const nextSession = {
     ...session,
@@ -440,13 +461,7 @@ export async function handleAnswerStream(body, response) {
 
   if (!upstream.ok || !upstream.body) {
     const rawText = await upstream.text();
-    let data;
-    try {
-      data = rawText ? JSON.parse(rawText) : {};
-    } catch {
-      data = { error: rawText || "Downstream AI service stream failed." };
-    }
-    throw new Error(data.detail || data.error || "Downstream AI service stream failed.");
+    throw buildUpstreamStreamError(rawText, upstream.status || 502);
   }
 
   withStreamHeaders(response, 200);

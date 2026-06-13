@@ -1475,10 +1475,6 @@ button {
   box-shadow: 0 24px 48px rgba(25, 25, 23, 0.12);
 }
 
-.ll-login-modal {
-  width: min(380px, 100%);
-}
-
 .ll-modal-head h3 {
   margin: 4px 0 0;
   font-size: 16px;
@@ -1493,61 +1489,6 @@ button {
   color: var(--ll-text-secondary);
   font-size: 18px;
   cursor: pointer;
-}
-
-.ll-login-form {
-  display: grid;
-  gap: 12px;
-  margin-top: 18px;
-}
-
-.ll-login-form label {
-  display: grid;
-  gap: 6px;
-  color: var(--ll-text-secondary);
-  font-size: 12px;
-}
-
-.ll-login-form input {
-  height: 38px;
-  border: 1px solid var(--ll-border);
-  border-radius: 8px;
-  background: var(--paper-tint);
-  color: var(--ll-text);
-  padding: 0 10px;
-  font-size: 13px;
-  outline: none;
-}
-
-.ll-login-form input:focus {
-  border-color: var(--brand-purple);
-  box-shadow: 0 0 0 3px var(--brand-purple-soft);
-}
-
-.ll-login-form .ll-primary-button {
-  width: 100%;
-  justify-content: center;
-  margin-top: 4px;
-}
-
-.ll-login-form .ll-primary-button:disabled {
-  cursor: wait;
-  opacity: 0.72;
-}
-
-.ll-login-error,
-.ll-login-hint {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.ll-login-error {
-  color: #e27272;
-}
-
-.ll-login-hint {
-  color: var(--ll-text-muted);
 }
 
 .ll-training-page {
@@ -1595,6 +1536,11 @@ button {
   font-size: 24px;
 }
 
+/* 让标题列能收缩，h1 的单行省略号才生效（否则长话题名会换行撑高顶栏）。 */
+.ll-training-title > div {
+  min-width: 0;
+}
+
 .ll-training-title h1 {
   overflow: hidden;
   margin: 0;
@@ -1626,6 +1572,40 @@ button {
 .ll-training-tabs button.active {
   background: var(--ink);
   color: var(--paper);
+}
+
+.ll-campaign-tabs {
+  gap: 8px;
+  padding: 6px;
+  border-radius: 18px;
+}
+
+.ll-campaign-tab-button {
+  min-width: 112px;
+  padding: 0 16px;
+}
+
+.ll-campaign-tab-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 2px;
+  background: var(--line-strong);
+}
+
+.ll-campaign-tab-create {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: auto;
+  padding: 0 18px;
+  border: 1px dashed var(--line-strong);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.ll-campaign-tab-create.active {
+  border-style: solid;
 }
 
 .ll-training-main {
@@ -1788,6 +1768,13 @@ button {
   margin-top: 12px;
 }
 
+.ll-practice-rescue-pending {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
 .ll-thread-message.assistant.tldr {
   border-color: #cfe8dc;
   background: #eef8f2;
@@ -1827,7 +1814,7 @@ button {
   margin-top: 16px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: #f7f1e8;
+  background: var(--paper-soft);
 }
 
 .ll-review-practice-evidence span {
@@ -1847,14 +1834,14 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 4px;
 }
 
 .ll-review-practice-anchor-list span {
   padding: 7px 10px;
   border-radius: 999px;
-  background: #fff8ea;
-  color: #8b5a11;
+  background: var(--paper);
+  color: var(--amber);
   font-size: 12px;
   font-weight: 600;
 }
@@ -1865,15 +1852,14 @@ button {
   margin-top: 18px;
 }
 
-.ll-campaign-page {
+/* 复合选择器压过靠后定义的 .learn-shell（height:100vh; overflow:hidden），让整页可滚动。 */
+.learn-shell.ll-campaign-page {
   height: auto;
   min-height: 100vh;
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  background:
-    radial-gradient(circle at 85% 0%, rgba(239, 159, 39, 0.12), transparent 32%),
-    linear-gradient(180deg, var(--paper-tint), var(--paper-warm));
+  background: linear-gradient(180deg, var(--paper-tint), var(--paper-warm));
 }
 
 .ll-campaign-main {
@@ -1895,12 +1881,21 @@ button {
   gap: 12px;
 }
 
-.ll-campaign-practice-topic {
-  min-width: 0;
-  color: #3b3126;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.55;
+.ll-practice-error {
+  display: grid;
+  gap: 4px;
+}
+
+.ll-practice-error-note {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.ll-practice-judging-hint {
+  margin: 10px 0 0;
+  color: var(--ink-3);
+  font-size: 12px;
 }
 
 .ll-campaign-detail,
@@ -1916,7 +1911,7 @@ button {
 
 .ll-campaign-create-card h2 {
   margin: 0 0 6px;
-  color: #34322e;
+  color: var(--ink);
   font-size: 24px;
   letter-spacing: -0.02em;
 }
@@ -1949,8 +1944,8 @@ button {
   padding: 10px 12px;
   border: 1px solid var(--ll-border-soft);
   border-radius: 10px;
-  background: #fffdf9;
-  color: #34322e;
+  background: var(--paper);
+  color: var(--ink);
   font-size: 14px;
   font-family: inherit;
 }
@@ -1959,9 +1954,246 @@ button {
   margin-bottom: 14px;
 }
 
+/* 简历叠加层：收起态是一个轻量入口，展开态视觉低于主轴。 */
+.ll-campaign-resume-toggle {
+  display: block;
+  width: fit-content;
+  margin-bottom: 14px;
+  padding: 9px 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+
+.ll-campaign-resume-toggle:hover {
+  background: var(--paper-soft);
+  border-color: var(--ink-3);
+}
+
+.ll-campaign-resume {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--line-warm);
+  border-radius: 14px;
+  background: var(--paper-soft);
+}
+
+.ll-campaign-resume-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ll-campaign-resume-collapse {
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ll-campaign-resume-collapse:hover {
+  color: var(--ink);
+}
+
+.ll-campaign-field-hint {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ll-campaign-resume textarea {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--ll-border-soft);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.ll-campaign-spine {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.ll-campaign-spine-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--paper-soft);
+  width: fit-content;
+}
+
+.ll-campaign-spine-tabs button {
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+
+.ll-campaign-spine-tabs button.active {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(25, 25, 23, 0.08);
+}
+
+.ll-campaign-library {
+  display: grid;
+  gap: 10px;
+}
+
+.ll-campaign-library-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.ll-campaign-library-controls input {
+  flex: 1 1 auto;
+  padding: 10px 12px;
+  border: 1px solid var(--ll-border-soft);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.ll-campaign-library-controls select {
+  flex: none;
+  padding: 10px 12px;
+  border: 1px solid var(--ll-border-soft);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.ll-campaign-library-list {
+  display: grid;
+  gap: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.ll-campaign-library-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-warm);
+  border-radius: 14px;
+  background: var(--paper);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+
+.ll-campaign-library-item:hover {
+  border-color: var(--line-strong);
+}
+
+.ll-campaign-library-item.is-selected {
+  border-color: var(--ink);
+  background: var(--paper-warm);
+}
+
+.ll-campaign-library-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ll-campaign-library-item-title {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ll-campaign-library-item-role {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--paper-soft);
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ll-campaign-library-item-excerpt {
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ll-campaign-library-empty,
+.ll-campaign-library-more {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.ll-campaign-library-picked {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--ink);
+  border-radius: 14px;
+  background: var(--paper);
+}
+
+.ll-campaign-library-picked-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ll-campaign-library-fulltext {
+  margin: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--paper-soft);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .ll-campaign-error {
   margin: 0 0 12px;
-  color: #b3402f;
+  color: var(--danger);
   font-size: 13px;
 }
 
@@ -1981,11 +2213,9 @@ button {
   gap: 16px;
   padding: 24px;
   border-radius: 24px;
-  border: 1px solid rgba(120, 88, 38, 0.12);
-  background:
-    radial-gradient(circle at top right, rgba(239, 159, 39, 0.14), transparent 28%),
-    linear-gradient(180deg, rgba(255, 250, 240, 0.96), rgba(255, 247, 231, 0.98));
-  box-shadow: 0 18px 48px rgba(79, 54, 18, 0.08);
+  border: 1px solid var(--line-warm);
+  background: var(--paper);
+  box-shadow: 0 18px 48px rgba(25, 25, 23, 0.06);
 }
 
 .ll-campaign-summary-hero {
@@ -2013,29 +2243,29 @@ button {
   min-height: 30px;
   padding: 0 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(120, 88, 38, 0.1);
-  color: #785826;
+  background: var(--paper-soft);
+  border: 1px solid var(--line-warm);
+  color: var(--ink-2);
   font-size: 12px;
   font-weight: 600;
 }
 
 .ll-campaign-status-pill.is-dated {
-  background: rgba(239, 159, 39, 0.12);
-  border-color: rgba(239, 159, 39, 0.2);
+  color: var(--danger);
+  border-color: var(--line-strong);
 }
 
 .ll-campaign-summary-copy h2 {
   margin: 0;
-  color: #2f2820;
-  font-size: clamp(26px, 3vw, 34px);
-  line-height: 1.12;
-  letter-spacing: -0.035em;
+  color: var(--ink);
+  font-size: clamp(24px, 2.6vw, 30px);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
 }
 
-.ll-campaign-summary-copy p {
+.ll-campaign-summary-explain {
   margin: 0;
-  color: #6b5a44;
+  color: var(--ink-2);
   font-size: 14px;
   line-height: 1.7;
 }
@@ -2053,18 +2283,18 @@ button {
   justify-content: center;
   min-height: 36px;
   padding: 0 14px;
-  border: 1px solid rgba(120, 88, 38, 0.14);
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.7);
-  color: #4b4033;
+  background: var(--paper);
+  color: var(--ink-2);
   font-size: 13px;
   font-weight: 600;
   transition: transform .06s, background .15s, border-color .15s;
 }
 
 .ll-campaign-action:hover {
-  background: rgba(255, 255, 255, 0.92);
-  border-color: rgba(120, 88, 38, 0.22);
+  background: var(--paper-warm);
+  border-color: var(--line-strong);
 }
 
 .ll-campaign-action:active {
@@ -2072,84 +2302,58 @@ button {
 }
 
 .ll-campaign-action-danger {
-  color: #8a4331;
+  color: var(--danger);
 }
 
-.ll-campaign-summary-stats {
+.ll-campaign-progress {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.ll-campaign-stat-card {
-  display: grid;
-  gap: 6px;
-  padding: 16px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(120, 88, 38, 0.1);
-}
-
-.ll-campaign-stat-card span {
-  color: var(--ll-text-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.ll-campaign-stat-card strong {
-  color: #3a2e21;
-  font-size: clamp(24px, 2.6vw, 34px);
-  letter-spacing: -0.04em;
-}
-
-.ll-campaign-stat-card.tone-solid strong {
-  color: #0f7a5e;
-}
-
-.ll-campaign-stat-card.tone-alert strong {
-  color: #9b5e11;
-}
-
-.ll-campaign-priority-strip {
-  display: grid;
-  gap: 10px;
-  padding-top: 4px;
-}
-
-.ll-campaign-priority-strip > span {
-  color: #6b5a44;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.ll-campaign-priority-topics {
-  display: flex;
-  flex-wrap: wrap;
   gap: 8px;
 }
 
-.ll-campaign-priority-chip {
-  display: inline-flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 14px;
-  border-radius: 999px;
-  background: rgba(239, 159, 39, 0.12);
-  color: #8b5a11;
+.ll-campaign-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.ll-campaign-progress-head span:last-child {
+  color: var(--ink-2);
   font-size: 13px;
   font-weight: 600;
 }
 
-.ll-campaign-priority-chip:hover {
-  background: rgba(239, 159, 39, 0.18);
+.ll-campaign-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--paper-soft);
+  overflow: hidden;
 }
 
-.ll-campaign-footnote {
+.ll-campaign-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--green);
+  transition: width .3s ease;
+}
+
+.ll-campaign-readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 0;
   margin: 0;
-  color: var(--ll-text-muted);
-  font-size: 12px;
-  line-height: 1.6;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ll-campaign-readout span + span::before {
+  content: "·";
+  margin: 0 8px;
+  color: var(--ink-3);
 }
 
 .ll-campaign-topic-section {
@@ -2167,20 +2371,45 @@ button {
 
 .ll-campaign-section-head h3 {
   margin: 0;
-  color: #2f2820;
+  color: var(--ink);
   font-size: 20px;
   letter-spacing: -0.02em;
 }
 
-.ll-campaign-section-head p {
-  margin: 4px 0 0;
-  color: var(--ll-text-secondary);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
 .ll-campaign-section-head > span {
   color: var(--ll-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ll-campaign-theme-groups {
+  display: grid;
+  gap: 22px;
+}
+
+.ll-campaign-theme-group {
+  display: grid;
+  gap: 10px;
+}
+
+.ll-campaign-theme-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 2px 2px;
+  border-bottom: 1px solid var(--line-warm);
+}
+
+.ll-campaign-theme-name {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.ll-campaign-theme-count {
+  color: var(--ink-3);
   font-size: 12px;
   font-weight: 600;
 }
@@ -2200,10 +2429,10 @@ button {
   gap: 14px;
   width: 100%;
   padding: 16px 18px;
-  border: 1px solid rgba(120, 88, 38, 0.1);
+  border: 1px solid var(--line-warm);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.82);
-  color: #34322e;
+  background: var(--paper);
+  color: var(--ink);
   font-size: 14px;
   text-align: left;
   cursor: pointer;
@@ -2211,9 +2440,8 @@ button {
 }
 
 .ll-campaign-topic-row:hover {
-  background: rgba(255, 255, 255, 0.96);
-  border-color: rgba(120, 88, 38, 0.18);
-  box-shadow: 0 12px 28px rgba(64, 42, 13, 0.06);
+  border-color: var(--line-strong);
+  box-shadow: 0 12px 28px rgba(25, 25, 23, 0.06);
 }
 
 .ll-campaign-topic-row:active {
@@ -2221,8 +2449,8 @@ button {
 }
 
 .ll-campaign-topic-row.is-priority {
-  border-color: rgba(239, 159, 39, 0.24);
-  background: linear-gradient(180deg, rgba(255, 251, 243, 0.96), rgba(255, 247, 236, 0.92));
+  border-color: var(--line-strong);
+  background: var(--paper-warm);
 }
 
 .ll-campaign-topic-main {
@@ -2239,17 +2467,26 @@ button {
 
 .ll-campaign-topic-text {
   min-width: 0;
-  color: #2f2820;
+  color: var(--ink);
   font-size: 16px;
   font-weight: 600;
   line-height: 1.45;
 }
 
+.ll-campaign-topic-theme {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent-green-bg);
+  color: var(--accent-green);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .ll-campaign-topic-core {
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(239, 159, 39, 0.14);
-  color: #8b5a11;
+  background: var(--paper-soft);
+  color: var(--ink);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -2258,8 +2495,8 @@ button {
 .ll-campaign-topic-source {
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(49, 92, 111, 0.1);
-  color: #315c6f;
+  background: var(--paper-soft);
+  color: var(--ink-3);
   font-size: 11px;
   font-weight: 700;
 }
@@ -2267,8 +2504,8 @@ button {
 .ll-campaign-topic-priority {
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(18, 122, 94, 0.1);
-  color: #0f7a5e;
+  background: var(--paper-soft);
+  color: var(--danger);
   font-size: 11px;
   font-weight: 700;
 }
@@ -2280,23 +2517,17 @@ button {
   flex: none;
 }
 
-.ll-campaign-topic-arrow {
-  color: var(--ll-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
 .ll-campaign-debrief {
   display: grid;
   gap: 8px;
   padding: 18px 20px;
   border-radius: 18px;
-  border: 1px dashed rgba(120, 88, 38, 0.18);
-  background: rgba(251, 247, 240, 0.9);
+  border: 1px dashed var(--line-strong);
+  background: var(--paper-warm);
 }
 
 .ll-campaign-debrief summary {
-  color: #2f2820;
+  color: var(--ink);
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
@@ -2304,7 +2535,7 @@ button {
 
 .ll-campaign-debrief h3 {
   margin: 0;
-  color: #34322e;
+  color: var(--ink);
   font-size: 15px;
 }
 
@@ -2319,17 +2550,45 @@ button {
   padding: 10px 12px;
   border: 1px solid var(--ll-border-soft);
   border-radius: 10px;
-  background: #fffdf9;
-  color: #34322e;
+  background: var(--paper);
+  color: var(--ink);
   font-size: 14px;
   font-family: inherit;
 }
 
 .ll-campaign-debrief-done {
   margin: 0;
-  color: #1d9e75;
+  color: var(--green-deep);
   font-size: 13px;
   font-weight: 600;
+}
+
+.ll-campaign-topic-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  min-height: 38px;
+  margin-top: 2px;
+  padding: 0 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+
+.ll-campaign-topic-toggle:hover {
+  background: var(--paper-warm);
+}
+
+.ll-campaign-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
 }
 
 .ll-campaign-loading {
@@ -2349,10 +2608,6 @@ button {
   .ll-campaign-summary-actions .ll-training-primary,
   .ll-campaign-summary-actions .ll-campaign-action {
     flex: 1 1 180px;
-  }
-
-  .ll-campaign-summary-stats {
-    grid-template-columns: 1fr;
   }
 
   .ll-campaign-topic-row {
@@ -3175,7 +3430,8 @@ button {
   font-size: 13px;
 }
 
-.ll-training-summary-page {
+/* 总结页是完整长页，不沿用训练态 learn-shell 的 100vh 锁高。 */
+.learn-shell.ll-training-summary-page {
   --ll-purple: var(--brand-purple);
   --ll-text: var(--ink);
   --ll-text-secondary: var(--ink-2);
@@ -3185,7 +3441,11 @@ button {
   --ll-card: var(--paper);
   --ll-border: var(--line-soft);
   --ll-border-soft: var(--line-warm);
+  height: auto;
   min-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background: var(--paper-tint);
   color: var(--ink);
 }
@@ -3295,6 +3555,7 @@ button {
   font-size: 30px;
   font-weight: 600;
   letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
 }
 
 .ll-summary-outcome.is-passed {
@@ -3348,6 +3609,7 @@ button {
   font-size: 28px;
   font-weight: 600;
   letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
 }
 
 .ll-summary-metrics em {
@@ -3358,6 +3620,12 @@ button {
 
 .ll-summary-section {
   padding: 20px;
+}
+
+.ll-summary-section-caption {
+  margin: 10px 0 0;
+  color: var(--ink-3);
+  font-size: 12px;
 }
 
 .ll-summary-section h2,
@@ -3377,7 +3645,7 @@ button {
 
 .ll-summary-point-row {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr) 54px;
+  grid-template-columns: minmax(0, 190px) minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
 }
@@ -3406,13 +3674,23 @@ button {
   border-radius: 7px;
   font-size: 12px;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .ll-summary-point-row em {
+  min-width: 62px;
   color: var(--ink-2);
   font-size: 12px;
   font-style: normal;
   text-align: right;
+}
+
+.ll-summary-point-row em.is-passed {
+  color: #0f6e56;
+}
+
+.ll-summary-point-row em.is-review {
+  color: #ba4747;
 }
 
 .ll-summary-weak {
@@ -11284,8 +11562,8 @@ button {
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
-.ll-state-uncovered { background: #f3efe7; color: #766959; }
-.ll-state-shaky { background: #fbf0dd; color: #8a5d12; }
+.ll-state-uncovered { background: var(--paper-soft); color: var(--ink-2); }
+.ll-state-shaky { background: var(--paper-soft); color: var(--amber); }
 .ll-state-solid { background: var(--accent-green-bg); color: var(--accent-green); }
 
 .ll-review-empty {
@@ -11589,19 +11867,6 @@ button {
   font-size: 12px;
 }
 
-.ll-home-foot-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 26px;
-  padding: 16px 20px;
-  border: 1px solid var(--line-warm);
-  border-radius: 16px;
-  background: var(--paper);
-  font-size: 13.5px;
-  font-weight: 650;
-}
-
 @media (max-width: 960px) {
   .ll-sprint-stats {
     flex-wrap: wrap;
@@ -11662,6 +11927,29 @@ button {
   font-weight: 700;
 }
 
+.ll-sprint-date-link {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.ll-sprint-gap-link {
+  display: inline-block;
+  max-width: 380px;
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.ll-sprint-gap-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .ll-sprint-strip-progress {
   width: 180px;
   flex: 0 0 auto;
@@ -11676,24 +11964,27 @@ button {
 }
 
 .ll-today-heading {
-  margin: 0 0 16px;
+  margin: 0 0 8px;
   font-size: 21px;
   font-weight: 800;
   letter-spacing: -0.01em;
 }
 
 .ll-step-card {
+  display: grid;
+  grid-template-columns: 1fr;
   border: 1px solid var(--line-warm);
   border-radius: 16px;
   background: var(--paper);
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+  overflow: hidden;
 }
 
 .ll-step {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
-  gap: 18px;
-  align-items: center;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: start;
   padding: 22px 24px;
 }
 
@@ -11702,22 +11993,17 @@ button {
 }
 
 .ll-step-num {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: 1.5px solid var(--line-soft);
-  border-radius: 999px;
+  display: block;
+  margin-top: 4px;
   color: var(--ink-2);
-  font-size: 14px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .ll-step-num.is-on {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
+  color: var(--accent);
 }
 
 .ll-step-body {
@@ -11725,35 +12011,33 @@ button {
 }
 
 .ll-step-title {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: 15.5px;
   font-weight: 750;
 }
 
+.ll-step-title .ll-title-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .ll-step-sub {
-  margin: 0;
+  margin: 8px 0 0;
   color: var(--ink-2);
   font-size: 13px;
   line-height: 1.5;
 }
 
-.ll-step-doc {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.ll-step-doc-title {
-  margin: 0;
-  font-size: 13.5px;
-  font-weight: 700;
-}
-
 .ll-step-doc-meta {
+  display: block;
+  margin-top: 2px;
   color: var(--ink-3);
   font-size: 12.5px;
+}
+
+.ll-step-body .ll-reentry-badge {
+  display: inline-block;
+  margin-bottom: 8px;
 }
 
 .ll-step .ll-recommendation-facts {
@@ -11769,15 +12053,6 @@ button {
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
-}
-
-.ll-step-idle {
-  padding: 9px 16px;
-  border: 1px solid var(--line-warm);
-  border-radius: 999px;
-  color: var(--ink-3);
-  font-size: 13px;
-  font-weight: 600;
 }
 
 .ll-step-footnote {
@@ -11801,11 +12076,15 @@ button {
   }
 
   .ll-step {
-    grid-template-columns: 34px minmax(0, 1fr);
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .ll-step-num {
+    margin-top: 0;
   }
 
   .ll-step-actions {
-    grid-column: 2;
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;

@@ -13,7 +13,7 @@ import {
   parseCampaignPath,
 } from "../../bff/src/lib/campaign-domain.js";
 
-async function withDomain(run, { proxy, now } = {}) {
+async function withDomain(run, { proxy, now, loadLibraryItem } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), "campaign-domain-"));
   const store = createCampaignGoalStore({ goalsDir: path.join(dir, "goals") });
   const reviewItemStore = createReviewItemStore({ ledgerDir: path.join(dir, "ledger") });
@@ -26,6 +26,7 @@ async function withDomain(run, { proxy, now } = {}) {
       return proxy(method, pathname, payload);
     },
     loadUserProfile: async () => ({ resumeLibrary: null }),
+    loadLibraryItem: loadLibraryItem || (() => null),
     now: now || (() => new Date("2026-06-12T00:00:00.000Z")),
   });
   try {
@@ -51,11 +52,12 @@ const decomposeProxy = async (_method, pathname) => {
   throw new Error(`unexpected proxy call: ${pathname}`);
 };
 
-test("campaign path helper parses detail, practice, debrief, archive", () => {
+test("campaign path helper parses detail, practice, rescue, debrief, archive", () => {
   assert.deepEqual(parseCampaignPath("/api/campaigns/c%201"), { id: "c 1", action: "detail", topicId: "" });
   assert.deepEqual(parseCampaignPath("/api/campaigns/c1/archive"), { id: "c1", action: "archive", topicId: "" });
   assert.deepEqual(parseCampaignPath("/api/campaigns/c1/debrief"), { id: "c1", action: "debrief", topicId: "" });
   assert.deepEqual(parseCampaignPath("/api/campaigns/c1/topics/topic-2/practice"), { id: "c1", action: "practice", topicId: "topic-2" });
+  assert.deepEqual(parseCampaignPath("/api/campaigns/c1/topics/topic-2/rescue"), { id: "c1", action: "rescue", topicId: "topic-2" });
   assert.equal(parseCampaignPath("/api/campaigns"), null);
 });
 
@@ -147,6 +149,134 @@ test("create mixes resume claims, JD topics, and interview-report seeds by risk"
   );
 });
 
+test("create keeps AI themes on JD topics and gives resume/report seeds fallback themes", async () => {
+  await withDomain(
+    async ({ domain }) => {
+      const { campaign } = await domain.create({
+        role: "Java 后端",
+        jdText: "要求 Redis、Kafka 和并发基础。",
+        resumeText: "负责订单系统。",
+      });
+
+      const kafka = campaign.topics.find((topic) => topic.topic === "Kafka 消息可靠性");
+      const noTheme = campaign.topics.find((topic) => topic.topic === "没标主题的 JD 点");
+      const resume = campaign.topics.find((topic) => topic.source === "resume-claim");
+      const report = campaign.topics.find((topic) => topic.source === "report-seed");
+
+      assert.equal(kafka.theme, "分布式");
+      assert.equal(noTheme.theme, ""); // JD 没标主题 → 留空 → 前端降级扁平
+      assert.equal(resume.theme, "简历声称");
+      if (report) {
+        assert.equal(report.theme, "面经常考");
+      }
+    },
+    {
+      proxy: async (_method, pathname) => {
+        if (pathname === "/api/campaign/decompose-jd") {
+          return {
+            data: {
+              topics: [
+                { topic: "Kafka 消息可靠性", importance: "core", theme: "分布式" },
+                { topic: "没标主题的 JD 点", importance: "core" },
+              ],
+            },
+            traceId: "jd",
+          };
+        }
+        if (pathname === "/api/campaign/decompose-resume") {
+          return { data: { topics: [{ topic: "订单系统设计", importance: "core" }] }, traceId: "resume" };
+        }
+        throw new Error(`unexpected proxy call: ${pathname}`);
+      },
+    },
+  );
+});
+
+test("create from a library JD resolves the item, decomposes it, and adds report seeds", async () => {
+  await withDomain(
+    async ({ domain, calls }) => {
+      const { campaign } = await domain.create({
+        role: "Java 后端",
+        spine: { source: "jd-library", libraryId: "jd-7" },
+      });
+      const paths = calls.map((c) => c.pathname);
+      assert.ok(paths.includes("/api/campaign/decompose-jd"));
+      // 库内 JD 全文被取出当作拆解输入。
+      assert.equal(calls.find((c) => c.pathname === "/api/campaign/decompose-jd").payload.jdText, "库内 JD 全文：要求 Kafka 与并发。");
+      assert.ok(campaign.topics.some((topic) => topic.source === "jd-topic"));
+      assert.ok(campaign.topics.some((topic) => topic.source === "report-seed")); // JD 主轴自动叠面经种子
+      assert.equal(campaign.jd_text, "库内 JD 全文：要求 Kafka 与并发。");
+    },
+    {
+      loadLibraryItem: ({ kind, id }) => {
+        assert.equal(kind, "jd");
+        assert.equal(id, "jd-7");
+        return { id, kind: "jd", text: "库内 JD 全文：要求 Kafka 与并发。" };
+      },
+      proxy: async (_method, pathname) => {
+        if (pathname === "/api/campaign/decompose-jd") {
+          return { data: { topics: [{ topic: "Kafka 可靠性", importance: "core", theme: "分布式" }] }, traceId: "jd" };
+        }
+        throw new Error(`unexpected proxy call: ${pathname}`);
+      },
+    },
+  );
+});
+
+test("create from a library interview uses the interview decomposer and skips extra report seeds", async () => {
+  await withDomain(
+    async ({ domain, calls }) => {
+      const { campaign } = await domain.create({
+        role: "算法",
+        spine: { source: "interview-library", libraryId: "iv-3" },
+      });
+      const paths = calls.map((c) => c.pathname);
+      assert.ok(paths.includes("/api/campaign/decompose-interview"));
+      assert.ok(!paths.includes("/api/campaign/decompose-jd")); // 面经主轴不走 JD 拆解
+      // 面经话题落 report-seed 来源；面经本身即来源，不再另叠 loopassist 种子。
+      assert.ok(campaign.topics.every((topic) => topic.source === "report-seed"));
+      assert.equal(campaign.jd_text, "面经全文：1. RAG 怎么做？2. Transformer Decoder？");
+    },
+    {
+      loadLibraryItem: ({ kind, id }) => {
+        assert.equal(kind, "interview");
+        assert.equal(id, "iv-3");
+        return { id, kind: "interview", text: "面经全文：1. RAG 怎么做？2. Transformer Decoder？" };
+      },
+      proxy: async (_method, pathname) => {
+        if (pathname === "/api/campaign/decompose-interview") {
+          return { data: { topics: [{ topic: "RAG 检索精度", importance: "core", theme: "大模型" }] }, traceId: "iv" };
+        }
+        throw new Error(`unexpected proxy call: ${pathname}`);
+      },
+    },
+  );
+});
+
+test("create throws when the picked library item is missing", async () => {
+  await withDomain(
+    async ({ domain }) => {
+      await assert.rejects(
+        domain.create({ role: "Java", spine: { source: "jd-library", libraryId: "gone" } }),
+        /不存在/,
+      );
+    },
+    {
+      loadLibraryItem: () => null,
+      proxy: async () => { throw new Error("should not proxy when item missing"); },
+    },
+  );
+});
+
+test("create rejects when no spine source is provided", async () => {
+  await withDomain(
+    async ({ domain }) => {
+      await assert.rejects(domain.create({ role: "Java" }), /缺少冲刺来源/);
+    },
+    { proxy: async () => ({ data: { topics: [] } }) },
+  );
+});
+
 test("passing a topic practice marks coverage solid without touching the ledger", async () => {
   await withDomain(
     async ({ domain, reviewItemStore }) => {
@@ -184,9 +314,9 @@ test("passing a topic practice marks coverage solid without touching the ledger"
   );
 });
 
-test("failed topic practice writes a deadline-capped ledger item and rescue material", async () => {
+test("failed topic practice writes a deadline-capped ledger item and defers rescue generation", async () => {
   await withDomain(
-    async ({ domain, reviewItemStore }) => {
+    async ({ domain, reviewItemStore, calls }) => {
       const { campaign } = await domain.create({
         role: "后端",
         deadline: "2026-06-13T00:00:00.000Z",
@@ -202,10 +332,11 @@ test("failed topic practice writes a deadline-capped ledger item and rescue mate
 
       assert.equal(result.passed, false);
       assert.equal(result.topic.coverage, "shaky");
-      assert.match(result.rescue.markdown, /补讲/);
+      assert.equal(result.rescue.pending, true);
       const items = await reviewItemStore.list();
       assert.equal(items.length, 1);
       assert.equal(items[0].handle, "Redis 缓存一致性");
+      assert.ok(!calls.some((call) => call.pathname === "/api/loopassist/rescue-material"));
       // deadline 封顶：shaky 本来 +1 天 = 06-13，正好等于 deadline，不超过它。
       assert.ok(Date.parse(items[0].next_due_at) <= Date.parse("2026-06-13T00:00:00.000Z"));
 
@@ -226,8 +357,50 @@ test("failed topic practice writes a deadline-capped ledger item and rescue mate
         if (pathname === "/api/anchor-judge") {
           return { data: { verdict: "fail", hits: [], misses: ["旁路缓存模式", "双删与过期兜底"], confidence: 0.8 }, traceId: "t" };
         }
+        throw new Error(`unexpected proxy call: ${pathname}`);
+      },
+    },
+  );
+});
+
+test("topic rescue generates rescue material on demand and falls back when AI rescue fails", async () => {
+  await withDomain(
+    async ({ domain }) => {
+      const { campaign } = await domain.create({
+        role: "后端",
+        deadline: "2026-06-20",
+        jdText: "JD 内容",
+      });
+
+      const success = await domain.rescueTopicPractice({
+        id: campaign.id,
+        topicId: campaign.topics[0].id,
+        question: "Redis 缓存一致性怎么保证？",
+        hits: ["知道要控制并发"],
+        misses: ["旁路缓存模式", "双删与过期兜底"],
+      });
+      assert.match(success.rescue.markdown, /先讲旁路缓存/);
+
+      const fallback = await domain.rescueTopicPractice({
+        id: campaign.id,
+        topicId: campaign.topics[0].id,
+        question: "Redis 缓存一致性怎么保证？",
+        hits: [],
+        misses: ["旁路缓存模式"],
+      });
+      assert.match(fallback.rescue.markdown, /补讲/);
+      assert.equal(fallback.rescue.fallback, true);
+    },
+    {
+      proxy: async (_method, pathname, payload) => {
+        if (pathname === "/api/campaign/decompose-jd") {
+          return { data: { topics: [{ topic: "Redis 缓存一致性", importance: "core" }] }, traceId: "t" };
+        }
         if (pathname === "/api/loopassist/rescue-material") {
-          return { data: { markdown: "### Redis 缓存一致性 · 补讲\n\n先讲旁路缓存。" }, traceId: "t" };
+          if (Array.isArray(payload?.gap?.keyPoints) && payload.gap.keyPoints.length) {
+            return { data: { markdown: "### Redis 缓存一致性 · 补讲\n\n先讲旁路缓存。" }, traceId: "t" };
+          }
+          throw new Error("rescue service slow");
         }
         throw new Error(`unexpected proxy call: ${pathname}`);
       },
@@ -328,9 +501,6 @@ test("campaign without a deadline writes uncapped ledger items on failure", asyn
         }
         if (pathname === "/api/anchor-judge") {
           return { data: { verdict: "fail", hits: [], misses: ["旁路缓存"], confidence: 0.8 }, traceId: "t" };
-        }
-        if (pathname === "/api/loopassist/rescue-material") {
-          return { data: { markdown: "### 补讲" }, traceId: "t" };
         }
         throw new Error(`unexpected proxy call: ${pathname}`);
       },

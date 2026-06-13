@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
+from app.core.public_errors import build_public_error_payload
 from app.core.tracing import (
     bind_request_context,
     current_trace_context,
@@ -20,6 +21,7 @@ from app.core.tracing import (
 )
 from app.engine.anchor_judge import judge_anchors
 from app.engine.jd_decompose import decompose_jd
+from app.engine.interview_decompose import decompose_interview
 from app.engine.resume_decompose import decompose_resume
 from app.engine.control_intents import detect_control_intent
 from app.engine.session_engine import (
@@ -348,7 +350,24 @@ class ResumeDecomposeRequest(BaseModel):
     role: str = ""
 
 
+class InterviewDecomposeRequest(BaseModel):
+    reportText: str
+    role: str = ""
+
+
 app = FastAPI(title="Learning Loop AI Service")
+
+
+@app.exception_handler(RuntimeError)
+async def runtime_error_handler(_: Request, exc: RuntimeError) -> JSONResponse:
+    error_meta = build_public_error_payload(exc)
+    return JSONResponse(
+        status_code=int(error_meta.get("statusCode") or 503),
+        content={
+            "error": error_meta["message"],
+            "errorMeta": error_meta,
+        },
+    )
 snapshot_store = SnapshotStore()
 app.add_middleware(
     CORSMiddleware,
@@ -451,9 +470,9 @@ def loopassist_answer_stream(payload: LoopAssistAnswerRequest) -> StreamingRespo
                     emit=emit,
                 )
             except KeyError as exc:  # pragma: no cover - streamed back to client
-                event_queue.put(("error", {"error": str(exc)}))
+                event_queue.put(("error", {"error": build_public_error_payload(exc)}))
             except Exception as exc:  # pragma: no cover - streamed back to client
-                event_queue.put(("error", {"error": str(exc) or "LoopAssist stream failed."}))
+                event_queue.put(("error", {"error": build_public_error_payload(exc)}))
             finally:
                 event_queue.put(("done", {}))
 
@@ -563,6 +582,18 @@ def campaign_decompose_resume(payload: ResumeDecomposeRequest) -> Dict[str, Any]
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+# 面经拆扁平话题（面经当主轴）。与 JD 拆解同形，供 campaign 选面经起一场。
+@app.post("/api/campaign/decompose-interview")
+def campaign_decompose_interview(payload: InterviewDecomposeRequest) -> Dict[str, Any]:
+    try:
+        return decompose_interview(
+            report_text=payload.reportText,
+            role=payload.role,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/interview/start-target")
 def start_target(payload: StartTargetRequest) -> Dict[str, Any]:
     session = create_session(payload)
@@ -646,7 +677,7 @@ def answer_stream(payload: AnswerRequest) -> StreamingResponse:
                 SESSIONS[payload.sessionId] = session
                 event_queue.put(("turn_result", result))
             except Exception as exc:  # pragma: no cover - streamed back to client
-                event_queue.put(("error", {"error": str(exc) or "Answer stream failed."}))
+                event_queue.put(("error", {"error": build_public_error_payload(exc)}))
             finally:
                 event_queue.put(("done", {}))
 

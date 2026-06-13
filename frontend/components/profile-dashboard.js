@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
-import { getStoredUserId } from "../lib/user-session";
+import { ensureLocalUserId } from "../lib/user-session";
 
 function progressTone(progress) {
   if (progress >= 70) {
@@ -34,17 +34,17 @@ function formatReviewWindow(nextReviewAt = "") {
   return `${diffDays} 天内适合复习`;
 }
 
+function formatLocalProfileHandle(handle = "") {
+  return String(handle || "").startsWith("local_profile") ? "本机档案" : handle;
+}
+
 export function ProfileDashboard() {
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const userId = getStoredUserId();
-    if (!userId) {
-      setError("当前没有已连接的学习档案。");
-      return;
-    }
-    apiFetch(`/api/profile/${userId}`)
+    ensureLocalUserId()
+      .then((userId) => apiFetch(`/api/profile/${userId}`))
       .then((data) => setProfile(data))
       .catch((nextError) => setError(nextError.message));
   }, []);
@@ -87,6 +87,7 @@ export function ProfileDashboard() {
   const totalEvidenceCount = useMemo(() => (
     documentItems.reduce((sum, document) => sum + Number(document.evidenceCount || 0), 0)
   ), [documentItems]);
+  const displayHandle = formatLocalProfileHandle(profile?.user?.handle || "");
 
   if (!profile) {
     return (
@@ -102,13 +103,13 @@ export function ProfileDashboard() {
         </header>
         <section className="profile-header">
           <div className="profile-header-copy">
-            <h1>个人档案</h1>
-            <p>查看文档阅读、训练进展、记忆内容与下一步建议。</p>
+            <h1>本机档案</h1>
+            <p>查看这台机器上的阅读、训练、简历和面试准备记录。</p>
           </div>
         </section>
         <section className="gate-card">
           <h2>{error || "正在载入档案..."}</h2>
-          <p>先从首页连接学习档案，再回来查看文档进展和长期记忆。</p>
+          <p>本地档案会自动创建；如果这里仍打不开，请确认 BFF 服务正在运行。</p>
           <Link className="primary-pill" href="/">返回首页</Link>
         </section>
       </main>
@@ -130,21 +131,21 @@ export function ProfileDashboard() {
       </header>
       <section className="profile-header">
         <div className="profile-header-copy">
-          <h1>个人档案</h1>
-          <p>查看文档阅读、训练进展、记忆内容与下一步建议。</p>
+          <h1>本机档案</h1>
+          <p>查看这台机器上的阅读、训练、简历和面试准备记录。</p>
         </div>
         <div className="memory-status-pill">
           <span className="status-dot" />
-          <span>学习记录已同步</span>
+          <span>本机记录已同步</span>
         </div>
       </section>
 
       <section className="profile-body">
         <section className="profile-main-column">
           <article className="learner-summary-card">
-            <div className="avatar-tile">{profile.user.handle.slice(0, 3)}</div>
+            <div className="avatar-tile">{displayHandle.slice(0, 2)}</div>
             <div className="learner-summary-copy">
-              <h2>{profile.user.handle} 的学习档案</h2>
+              <h2>{displayHandle}</h2>
               <p>
                 当前聚焦 {primaryDocument?.docTitle || "文档学习"}，系统会持续记录阅读、训练证据、对话反馈和下一步建议。
               </p>

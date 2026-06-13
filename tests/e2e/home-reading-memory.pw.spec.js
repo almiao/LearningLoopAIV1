@@ -74,11 +74,11 @@ test("home page keeps a single act-led column and the library lives on its own s
 
   await page.goto("/", { waitUntil: "networkidle" });
 
-  await expect(page.getByText(/今天先做什么|为了这场面试，今天做三件事/)).toBeVisible();
+  await expect(page.getByText("今天从这里推进")).toBeVisible();
   await expect(page.getByRole("heading", { name: currentDocTitle })).toBeVisible();
-  await expect(page.getByRole("link", { name: "开始新的一篇 →" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "开始读这篇 →" })).toBeVisible();
   await expect(page.getByRole("button", { name: "今天先不读这个" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "浏览我的资料 →" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "添加新材料" })).toBeVisible();
   // 首页不再承载资料树。
   await expect(page.getByTestId("library-tree")).toHaveCount(0);
 
@@ -86,7 +86,7 @@ test("home page keeps a single act-led column and the library lives on its own s
   await expect(page).toHaveURL(/\/learn\?doc=docs%2Fai%2Fagent%2Fmcp\.md/);
   await expect(page.getByTestId("reader-header")).toContainText(currentDocTitle);
   await page.goBack();
-  await expect(page.getByText(/今天先做什么|为了这场面试，今天做三件事/)).toBeVisible();
+  await expect(page.getByText("今天从这里推进")).toBeVisible();
 
   // 旧资料库深链跳到二级页。
   await page.goto("/?mode=library&panel=library", { waitUntil: "networkidle" });
@@ -154,20 +154,12 @@ test("home page can snooze the current recommendation without ignoring the docum
   expect(profilePayload.documentProgress.ignoredDocPaths).not.toContain(currentDocPath);
 });
 
-test("guest avatar opens a lightweight login dialog on the home page", async ({ page }) => {
+test("home page auto-connects the local profile and opens the local profile menu", async ({ page }) => {
   await page.goto("/", { waitUntil: "networkidle" });
 
-  await page.getByRole("button", { name: "登录 LearningLoop" }).click();
-  await expect(page.getByRole("dialog", { name: "登录 LearningLoop" })).toBeVisible();
-
-  const handle = `home_login_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  await page.getByPlaceholder("lee_backend").fill(handle);
-  await page.getByPlaceholder("4-12 位数字").fill("1234");
-  await page.getByRole("button", { name: "登录 / 创建账号" }).click();
-
-  await expect(page.getByRole("dialog", { name: "登录 LearningLoop" })).toBeHidden();
-  await page.getByRole("button", { name: "打开账户菜单" }).click();
-  await expect(page.locator(".ll-avatar-menu")).toContainText("个人档案");
+  await page.getByRole("button", { name: "打开本机档案菜单" }).click();
+  await expect(page.locator(".ll-avatar-menu")).toContainText("本机档案");
+  await expect(page.locator(".ll-avatar-menu")).toContainText("资料库");
 });
 
 test("legacy document route redirects to learning page with document actions", async ({ page, request }) => {

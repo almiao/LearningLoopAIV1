@@ -27,10 +27,6 @@ export function ReviewPracticeWorkspace({
             <h1>{item.handle || "重练这个点"}</h1>
           </div>
         </div>
-        <div className="ll-training-tabs">
-          <button type="button" className="active">复练</button>
-          <button type="button" onClick={onHome}>回首页</button>
-        </div>
       </header>
 
       {error ? <section className="feedback-banner error-banner narrow-banner">{error}</section> : null}
@@ -64,7 +60,7 @@ export function ReviewPracticeWorkspace({
           }}
           beforeQuestion={(
             <div className="ll-training-card-chip-row">
-              <span className="ll-training-chip">{`待复习 · ${stateLabel}`}</span>
+              <span className="ll-training-chip">{stateLabel}</span>
               <span className="ll-training-status-label">{practice?.source?.available ? "已结合原文出题" : "没有原文也能练"}</span>
             </div>
           )}
@@ -77,10 +73,13 @@ export function ReviewPracticeWorkspace({
                 </div>
               ) : null}
               {missedAnchors.length ? (
-                <div className="ll-review-practice-anchor-list">
-                  {missedAnchors.map((anchor) => (
-                    <span key={anchor}>{anchor}</span>
-                  ))}
+                <div className="ll-review-practice-evidence">
+                  <span>上次漏讲的点</span>
+                  <div className="ll-review-practice-anchor-list">
+                    {missedAnchors.map((anchor) => (
+                      <span key={anchor}>{anchor}</span>
+                    ))}
+                  </div>
                 </div>
               ) : null}
             </>

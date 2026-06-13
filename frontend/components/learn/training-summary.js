@@ -3,12 +3,23 @@
 import { useState } from "react";
 import { MiniIcon } from "./shared";
 
+const ACTIVE_GAP_CAP_MS = 15 * 60 * 1000;
+
 function normalizeScore(value, fallback = 0) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) {
     return fallback;
   }
   return Math.max(0, Math.min(100, Math.round(numericValue)));
+}
+
+function normalizeTimestamp(value) {
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue) && numericValue > 0) {
+    return numericValue;
+  }
+  const parsedValue = Date.parse(String(value || ""));
+  return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : 0;
 }
 
 function getScoreBand(score = 0) {
@@ -43,6 +54,28 @@ function uniqueStrings(items = []) {
   return Array.from(new Set(items.map((item) => String(item || "").trim()).filter(Boolean)));
 }
 
+function estimateActiveDurationMinutes(turns = []) {
+  const timestamps = (turns || [])
+    .map((turn) => normalizeTimestamp(turn?.timestamp))
+    .filter((value) => value > 0);
+  if (timestamps.length < 2) {
+    return 0;
+  }
+  let activeDurationMs = 0;
+  for (let index = 1; index < timestamps.length; index += 1) {
+    const gap = timestamps[index] - timestamps[index - 1];
+    if (gap <= 0) {
+      continue;
+    }
+    activeDurationMs += Math.min(gap, ACTIVE_GAP_CAP_MS);
+  }
+  return activeDurationMs > 0 ? Math.max(1, Math.round(activeDurationMs / 60000)) : 0;
+}
+
+function isWeakPointRow(row = {}) {
+  return row.average < 70 || row.scores.some((score) => score < 60);
+}
+
 // 收尾只给真实结果与下一步（PRODUCT §3④）：没有判分就显示没有，不用 demo 数据补位。
 
 export function buildTrainingCompletionSummary({
@@ -74,12 +107,9 @@ export function buildTrainingCompletionSummary({
   const averageScore = allScores.length
     ? Math.round(allScores.reduce((sum, score) => sum + score, 0) / allScores.length)
     : 0;
-  const timestamps = (session?.turns || []).map((turn) => Number(turn.timestamp || 0)).filter((value) => value > 0);
-  const durationMinutes = timestamps.length >= 2
-    ? Math.max(1, Math.round((Math.max(...timestamps) - Math.min(...timestamps)) / 60000))
-    : 0;
+  const activeDurationMinutes = estimateActiveDurationMinutes(session?.turns || []);
   const weakRows = rows
-    .filter((row) => row.average < 70 || row.scores.some((score) => score < 60))
+    .filter((row) => isWeakPointRow(row))
     .map((row) => {
       const relatedExchanges = exchanges.filter((exchange) => row.conceptIds.includes(exchange.checkpointId) || row.title === exchange.pointTitle);
       const reasons = uniqueStrings(relatedExchanges.map((exchange) => exchange.scoreSummary?.reason || exchange.improvement));
@@ -100,7 +130,7 @@ export function buildTrainingCompletionSummary({
     completedCount,
     totalCount,
     averageScore,
-    durationMinutes,
+    activeDurationMinutes,
     pointRows: rows,
     weakPoints: weakRows,
     takeaways,
@@ -108,22 +138,24 @@ export function buildTrainingCompletionSummary({
 }
 
 function TrainingSummaryHero({ summary }) {
+  const hasPartialCoverage = summary.totalCount > summary.completedCount;
   return (
     <section className="ll-summary-hero">
       <div className="ll-summary-chip">
         <MiniIcon name="confetti" />
         本轮训练完成
       </div>
-      <p>{summary.practicedPointCount ? `这轮一共练了 ${summary.practicedPointCount} 个点` : "这轮还没有可判分的回答"}</p>
+      <p>{summary.practicedPointCount ? `这轮覆盖了 ${summary.practicedPointCount} 个训练点 · 已判分 ${summary.completedCount} 题` : "这轮还没有可判分的回答"}</p>
       <div className="ll-summary-mastery-row">
         <strong className="ll-summary-outcome is-passed">{`过线 ${summary.passedPointCount}`}</strong>
         <span className="ll-summary-outcome-divider" aria-hidden="true">·</span>
         <strong className="ll-summary-outcome is-review">{`待复习 ${summary.weakPoints.length}`}</strong>
       </div>
       <small>
+        {hasPartialCoverage ? `当前文档共 ${summary.totalCount} 题，这里只统计本轮已经完成判分的部分。` : ""}
         {summary.weakPoints.length
-          ? "没讲稳的点到期后会出现在首页「今日复习」。"
-          : "这轮没有新的薄弱点要复习。"}
+          ? `${hasPartialCoverage ? " " : ""}没讲稳的点到期后会出现在首页「今日复习」。`
+          : `${hasPartialCoverage ? " " : ""}这轮没有新的薄弱点要复习。`}
       </small>
     </section>
   );
@@ -131,9 +163,9 @@ function TrainingSummaryHero({ summary }) {
 
 function TrainingSummaryMetricGrid({ summary }) {
   const metrics = [
-    { label: "完成", value: `${summary.completedCount} / ${summary.totalCount}`, unit: "题" },
+    { label: "已判分", value: `${summary.completedCount}/${summary.totalCount}`, unit: "题" },
     { label: "平均分", value: summary.averageScore, unit: "分", color: getAverageScoreColor(summary.averageScore) },
-    { label: "用时", value: summary.durationMinutes, unit: "分钟" },
+    { label: "有效用时", value: summary.activeDurationMinutes, unit: "分钟" },
   ];
   return (
     <section className="ll-summary-metrics">
@@ -152,6 +184,7 @@ function TrainingPointDistribution({ rows }) {
   return (
     <section className="ll-summary-section ll-summary-distribution">
       <h2>{`${rows.length} 个训练点分布`}</h2>
+      <p className="ll-summary-section-caption">每个色块代表一次作答，右侧显示当前训练状态。</p>
       <div className="ll-summary-point-list">
         {rows.map((row) => (
           <div key={row.id} className="ll-summary-point-row">
@@ -166,7 +199,7 @@ function TrainingPointDistribution({ rows }) {
                 );
               })}
             </div>
-            <em>{`${row.average} 分`}</em>
+            <em className={isWeakPointRow(row) ? "is-review" : "is-passed"}>{isWeakPointRow(row) ? "待复习" : "已过线"}</em>
           </div>
         ))}
       </div>

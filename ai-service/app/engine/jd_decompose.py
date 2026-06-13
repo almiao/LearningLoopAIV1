@@ -17,6 +17,7 @@ from app.engine.tutor_intelligence import stream_provider_text_chunks
 #   - 复用现有 LLM 管线（stream_provider_text_chunks + parse_provider_json_text），不是新引擎。
 
 MAX_TOPICS = 24
+THEME_MAX_LEN = 12
 
 VALID_IMPORTANCE = {"core", "secondary"}
 
@@ -41,14 +42,14 @@ JD 原文：
 {jd_text.strip()}
 
 拆解规则：
-- 扁平一列，不要层级、不要分组、不要概念图。
-- 每条是一个可以被当面追问的具体话题（如「线程池参数与拒绝策略的取舍」），不是空泛的方向（如「Java 基础」）。
+- 扁平一列，每条仍是一个可以被当面追问的具体话题（如「线程池参数与拒绝策略的取舍」），不是空泛的方向（如「Java 基础」）。
 - 8 到 {MAX_TOPICS} 条。importance 只有两档：core（JD 核心要求 / 简历声称会的 / 简历缺口）和 secondary（加分项）。
 - 用 JD 和简历的语言，不要自己发明 JD 没要求的话题。
+- 给每条打一个 theme（所属主题），用来把清单归类。全表只用 4 到 6 个主题，名称必须复用、不要发明同义词；theme 是 2 到 6 个字的短名词（如「并发与性能」「分布式」「框架与生态」「工程落地」），不是一句话。
 
 只输出 JSON，不要任何解释，格式：
 {{
-  "topics": [{{"topic": "话题（一句话，可被追问）", "importance": "core" 或 "secondary"}}]
+  "topics": [{{"topic": "话题（一句话，可被追问）", "importance": "core" 或 "secondary", "theme": "所属主题（短名词）"}}]
 }}"""
 
 
@@ -64,15 +65,19 @@ def normalize_jd_topics(raw: Any) -> List[Dict[str, Any]]:
         if isinstance(entry, dict):
             topic = str(entry.get("topic", "")).strip()
             importance = str(entry.get("importance", "")).strip().lower()
+            theme = str(entry.get("theme", "")).strip()
         else:
             topic = str(entry).strip()
             importance = ""
+            theme = ""
         if not topic or topic in seen:
             continue
         seen.add(topic)
         topics.append({
             "topic": topic,
             "importance": importance if importance in VALID_IMPORTANCE else "core",
+            # 主题为可选：缺失或过长时留空，前端按「无主题」优雅降级为扁平。
+            "theme": theme[:THEME_MAX_LEN] if theme else "",
         })
         if len(topics) >= MAX_TOPICS:
             break

@@ -13,8 +13,8 @@ import { buildReentryPlan, isReadingAction, isTrainingAction } from "../lib/reen
 import { readHeading, renderMarkdownContent, slugifyHeading } from "../lib/render-markdown-content";
 import { getDocumentOutline, getReaderRenderer } from "../lib/document-reader-renderers";
 import {
+  ensureLocalUserId,
   getStoredUserId,
-  setStoredUserId,
 } from "../lib/user-session";
 import { buildChatTimeline } from "../../src/view/chat-transcript";
 import { buildVisibleSessionView } from "../../src/view/visible-session-view";
@@ -598,11 +598,8 @@ export function LearnWorkspace() {
   }, []);
 
   useEffect(() => {
-    const userId = getStoredUserId();
-    if (!userId) {
-      return;
-    }
-    apiFetch(`/api/profile/${userId}`)
+    ensureLocalUserId()
+      .then((userId) => apiFetch(`/api/profile/${userId}`))
       .then((data) => {
         setProfile(data);
         const preferred = resolveInteractionPreferenceFromRules(data.userRules || []);
@@ -610,7 +607,7 @@ export function LearnWorkspace() {
           setInteractionPreference(preferred);
         }
       })
-      .catch(() => setStoredUserId(""));
+      .catch((nextError) => setError(nextError.message));
   }, []);
 
   useEffect(() => {
@@ -1449,7 +1446,7 @@ export function LearnWorkspace() {
 
   async function toggleIgnoredDocument() {
     if (!profile?.user?.id || !activeDocPath) {
-      appendReadingSystemNote("请先登录后再标记忽略文档。");
+      appendReadingSystemNote("本机档案准备好后才能标记忽略文档。");
       return;
     }
     try {
@@ -1918,9 +1915,6 @@ export function LearnWorkspace() {
             setLiveTrainingTurns([]);
             setTrainingWaitState(null);
           }
-          if (event === "error") {
-            throw new Error(data.error || "流式回答失败。");
-          }
         },
         {
           signal: abortController.signal,
@@ -1932,7 +1926,18 @@ export function LearnWorkspace() {
       }
     } catch (nextError) {
       if (nextError?.name !== "AbortError") {
-        setError(nextError.message);
+        const streamErrorMessage = nextError?.message || "流式回答失败。";
+        setError("");
+        setTrainingWaitState((current) => (
+          current
+            ? {
+                ...current,
+                currentStepKey: current.currentStepKey || "generate_followup",
+                error: streamErrorMessage,
+                slow: true,
+              }
+            : current
+        ));
         if (shouldClearComposer) {
           setAnswer(submittedAnswer);
         }
@@ -1943,7 +1948,7 @@ export function LearnWorkspace() {
         setIsAnswering(false);
         if (!finalSession) {
           setLiveTrainingTurns([]);
-          setTrainingWaitState(null);
+          setTrainingWaitState((current) => (current?.error ? current : null));
         }
       }
     }
@@ -2279,8 +2284,8 @@ export function LearnWorkspace() {
           </div>
         </header>
         <section className="gate-card">
-          <h1>先连接学习档案，再进入学习页。</h1>
-          <p>首页会保存你的账号、目标和长期记忆；连接后再回来，这里会直接回到学习页。</p>
+          <h1>正在准备本机档案。</h1>
+          <p>LearningLoop 会在这台机器上保存阅读、训练和长期记忆；准备好后会直接进入学习页。</p>
           <Link className="primary-pill" href="/">返回首页</Link>
         </section>
       </main>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { apiFetch, buildApiUrl, postJson } from "../lib/api";
 import { getReaderRenderer } from "../lib/document-reader-renderers";
-import { getStoredUserId } from "../lib/user-session";
+import { ensureLocalUserId } from "../lib/user-session";
 
 function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
@@ -76,17 +76,20 @@ export function MaterialIngestionPage() {
   }
 
   useEffect(() => {
-    const storedUserId = getStoredUserId();
-    setUserId(storedUserId || "");
-    if (storedUserId) {
-      void refreshMaterials(storedUserId).catch(() => {});
-    }
+    ensureLocalUserId()
+      .then((storedUserId) => {
+        setUserId(storedUserId || "");
+        if (storedUserId) {
+          void refreshMaterials(storedUserId).catch(() => {});
+        }
+      })
+      .catch((nextError) => setError(nextError.message));
   }, []);
 
   async function ingestUrlValue(rawUrl = url) {
     const nextUrl = String(rawUrl || "").trim();
     if (!userId) {
-      setError("请先在首页登录，再录入资料。");
+      setError("本机档案准备好后才能录入资料。");
       return;
     }
     if (!nextUrl || !isLikelyMaterialUrl(nextUrl) || submittedUrlRef.current === nextUrl) {
@@ -111,7 +114,7 @@ export function MaterialIngestionPage() {
 
   async function uploadSelectedFile(nextFile) {
     if (!userId) {
-      setError("请先在首页登录，再上传资料。");
+      setError("本机档案准备好后才能上传资料。");
       return;
     }
     if (!nextFile) {

@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 from typing import Any, Callable, Dict, List
 
+from app.core.config import versions
 from app.domain.interview.parsers import parse_provider_json_text
-from app.engine.tutor_intelligence import stream_provider_text_chunks
+from app.engine.tutor_intelligence import call_provider_raw_text
+from app.infra.llm.client import TracedLLMClient
 
 # 一次性锚点判分 (one-shot anchor judging) — PRODUCT.md §0.1.
 #
@@ -14,9 +16,36 @@ from app.engine.tutor_intelligence import stream_provider_text_chunks
 #     它与 context_packet 里的 `anchorIdentity`（持久 concept 本体）同名但相反，绝不复用那套。
 #   - 输出「命中/漏掉哪几个」而非裸分数。漏掉的就是复习项的种子（§4）。
 #   - 默认防判太松：宁可判 fail 也不放水；低置信 → 标 lowConfidence、不算过线（§0.1）。
-#   - 复用现有 LLM 管线（stream_provider_text_chunks + parse_provider_json_text），不是新引擎。
+#   - 复用现有 LLM 管线与 debug bundle 观测能力，不另起一套判分引擎。
 
 DEFAULT_CONFIDENCE_FLOOR = 0.5
+ANCHOR_JUDGE_SYSTEM_PROMPT = (
+    "You are the cognition layer for an AI tutor. Return valid json only. "
+    "Judge the submitted answer strictly against the current question only. "
+    "Do not add motivational filler or markdown."
+)
+ANCHOR_JUDGE_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "anchors": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "point": {"type": "string"},
+                    "hit": {"type": "boolean"},
+                },
+                "required": ["point", "hit"],
+                "additionalProperties": False,
+            },
+        },
+        "verdict": {"type": "string"},
+        "confidence": {"type": "number"},
+    },
+    "required": ["anchors", "verdict", "confidence"],
+    "additionalProperties": False,
+}
+traced_anchor_judge_client = TracedLLMClient()
 
 
 def _allow_mock() -> bool:
@@ -137,14 +166,28 @@ def _provider_complete_json(prompt: str) -> Dict[str, Any]:
         base_url = os.environ.get("OPENAI_BASE_URL", "")
     if not api_key:
         raise RuntimeError("No LLM API key configured for anchor judging.")
-    text = "".join(stream_provider_text_chunks(
-        provider=provider,
-        api_key=api_key,
+    result = traced_anchor_judge_client.call_json(
+        call_type="anchor_judge",
         model=model,
-        prompt=prompt,
-        base_url=base_url,
-    ))
-    return parse_provider_json_text(text)
+        parser_version=versions.parser_version,
+        system_prompt=ANCHOR_JUDGE_SYSTEM_PROMPT,
+        messages=[
+            {"role": "system", "content": ANCHOR_JUDGE_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        provider=provider,
+        request_fn=lambda: call_provider_raw_text(
+            provider=provider,
+            api_key=api_key,
+            model=model,
+            prompt=prompt,
+            schema=ANCHOR_JUDGE_RESPONSE_SCHEMA,
+            base_url=base_url,
+        ),
+        parser=parse_provider_json_text,
+        validator=None,
+    )
+    return result.parsed
 
 
 def judge_anchors(

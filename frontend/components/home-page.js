@@ -5,12 +5,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, postJson } from "../lib/api";
 import { buildReentryPlan } from "../lib/reentry-actions";
-import { getStoredUserId, setStoredUserId } from "../lib/user-session";
+import { ensureLocalUserId, ensureLocalUserProfile, getStoredUserId } from "../lib/user-session";
 import {
   buildLearningHref,
   buildSidebarDocument,
   formatLastActivity,
-  getSignalColor,
   getTypeIcon,
 } from "./library/shared";
 
@@ -26,6 +25,9 @@ function getHeroMetric(document) {
   }
   if (document.group === "finished") {
     return "已读完";
+  }
+  if (!Number(document.progressPercentage)) {
+    return "还没开始";
   }
   return `阅读 ${document.progressPercentage}%`;
 }
@@ -56,7 +58,8 @@ function buildHeroCopy(document = {}, plan = buildReentryPlan(document)) {
   }
   if (plan.intent === "resume_reading") {
     return {
-      badge: "阅读中",
+      // 进度信息已经在 meta 行里（阅读 N%），不再用 badge 重复。
+      badge: "",
       title: "从上次位置接着读",
       reason: "上下文已经建立好，顺着这一篇推进最省心。",
     };
@@ -91,7 +94,6 @@ function buildRecommendationFacts(document = {}, plan = buildReentryPlan(documen
   const facts = [];
 
   if (plan.intent === "resume_reading") {
-    facts.push("未读完正文");
     const lastFolder = document.folderLabels?.at(-1);
     if (document.readingChapter && document.readingChapter !== lastFolder) {
       facts.push(`上次在 ${document.readingChapter}`);
@@ -179,131 +181,55 @@ function getCampaignCoveragePercent(campaign = {}) {
   return Math.round((Number(campaign?.readiness?.coverageRate || 0) || 0) * 100);
 }
 
-function LoginModal({ onClose, onLoginSuccess }) {
-  const [handle, setHandle] = useState("");
-  const [pin, setPin] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [loginError, setLoginError] = useState("");
-
-  async function onSubmit(event) {
-    event.preventDefault();
-    try {
-      setBusy(true);
-      setLoginError("");
-      const data = await postJson("/api/auth/login", {
-        handle: handle.trim(),
-        pin,
-      });
-      onLoginSuccess(data.profile);
-    } catch (nextError) {
-      setLoginError(nextError.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="ll-modal-backdrop" role="presentation" onClick={onClose}>
-      <div
-        className="ll-modal ll-login-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label="登录 LearningLoop"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="ll-modal-head">
-          <div>
-            <p>登录</p>
-            <h3>接上你的学习档案</h3>
-          </div>
-          <button type="button" className="ll-icon-button" onClick={onClose} aria-label="关闭">
-            ×
-          </button>
-        </div>
-        <form className="ll-login-form" onSubmit={onSubmit}>
-          <label>
-            <span>昵称</span>
-            <input
-              value={handle}
-              onChange={(event) => setHandle(event.target.value)}
-              placeholder="lee_backend"
-              autoFocus
-              required
-            />
-          </label>
-          <label>
-            <span>PIN</span>
-            <input
-              type="password"
-              value={pin}
-              onChange={(event) => setPin(event.target.value)}
-              placeholder="4-12 位数字"
-              required
-            />
-          </label>
-          {loginError ? <p className="ll-login-error">{loginError}</p> : null}
-          <button type="submit" className="ll-primary-button" disabled={busy}>
-            {busy ? "登录中..." : "登录 / 创建账号"}
-          </button>
-          <p className="ll-login-hint">现在先用昵称 + PIN 进入，后续再接正式账号体系。</p>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function AvatarMenu({ open, onToggle, onLogout, onLoginClick, userName, isLoggedIn }) {
+function AvatarMenu({ open, onToggle, userName }) {
   return (
     <div className="ll-avatar-wrap">
       <button
         type="button"
-        className={`ll-avatar${isLoggedIn ? "" : " is-guest"}`}
-        onClick={isLoggedIn ? onToggle : onLoginClick}
-        aria-expanded={isLoggedIn ? open : undefined}
-        aria-label={isLoggedIn ? "打开账户菜单" : "登录 LearningLoop"}
+        className="ll-avatar"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-label="打开本机档案菜单"
       >
         {getInitials(userName)}
       </button>
-      {isLoggedIn && open ? (
+      {open ? (
         <div className="ll-avatar-menu">
-          <Link href="/profile">个人档案</Link>
-          <button type="button" onClick={onLogout}>退出登录</button>
+          <Link href="/profile">本机档案</Link>
+          <Link href="/library">资料库</Link>
         </div>
       ) : null}
     </div>
   );
 }
 
-function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue, materialPool, hasProfile, onSnoozeRecommendation }) {
+function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue, hasProfile, onSnoozeRecommendation }) {
   const reentryPlan = buildReentryPlan(featuredDocument);
   const action = reentryPlan.primaryAction;
-  const color = getSignalColor(featuredDocument);
   const heroCopy = buildHeroCopy(featuredDocument, reentryPlan);
   const recommendationFacts = buildRecommendationFacts(featuredDocument, reentryPlan);
   const snoozeLabel = getSnoozeLabel(reentryPlan);
   const reviewItems = Array.isArray(reviewDue) ? reviewDue : [];
-  const poolItems = Array.isArray(materialPool) ? materialPool : [];
 
   return (
     <section className="ll-default-view">
-      <h1 className="ll-today-heading">今天先做什么</h1>
+      <h1 className="ll-today-heading">今天从这里推进</h1>
       {!hasProfile ? (
-        <p className="ll-status-note">当前还没连接学习档案，先打开一篇 JavaGuide 文档，阅读与训练进度会自动回到这里。</p>
+        <p className="ll-status-note">正在准备本机档案；阅读、训练和面试冲刺都会记在这台机器上。</p>
       ) : null}
 
       <div className="ll-step-card">
         <section className="ll-step">
-          <span className="ll-step-num is-on">1</span>
+          <span className="ll-step-num is-on">接着学</span>
           <div className="ll-step-body">
-            <h2 className="ll-step-title">继续读上次的文档</h2>
-            <p className="ll-step-sub">{heroCopy.reason}</p>
-            <div className="ll-step-doc">
-              <span className="ll-reentry-badge">{heroCopy.badge}</span>
+            {heroCopy.badge ? <span className="ll-reentry-badge">{heroCopy.badge}</span> : null}
+            <h2 className="ll-step-title">
               <Link href={buildLearningHref(featuredDocument)} className="ll-title-link">
-                <h3 className="ll-step-doc-title">{featuredDocument.title}</h3>
+                {featuredDocument.title}
               </Link>
-              <span className="ll-step-doc-meta">{`${featuredDocument.providerLabel} · ${getHeroMetric(featuredDocument)}`}</span>
-            </div>
+            </h2>
+            <span className="ll-step-doc-meta">{`${featuredDocument.providerLabel} · ${getHeroMetric(featuredDocument)}`}</span>
+            <p className="ll-step-sub">{heroCopy.reason}</p>
             {recommendationFacts.length ? (
               <div className="ll-recommendation-facts" aria-label="推荐依据">
                 {recommendationFacts.map((fact) => (
@@ -316,17 +242,16 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
             <Link href={buildLearningHref(featuredDocument, { autostart: action.autostart, intent: action.kind })} className="ll-primary-button">
               {action.label}
             </Link>
-            {reentryPlan.secondaryActions?.length ? (
-              reentryPlan.secondaryActions.map((secondaryAction) => (
-                <Link
-                  key={`${featuredDocument.path}:${secondaryAction.kind}`}
-                  href={buildLearningHref(featuredDocument, { autostart: secondaryAction.autostart, intent: secondaryAction.kind })}
-                  className="ll-reentry-secondary-link"
-                >
-                  {secondaryAction.label}
-                </Link>
-              ))
-            ) : null}
+            {/* 首页只留一个辅助动作；「只打开原文」这类等价入口收进阅读页。 */}
+            {reentryPlan.secondaryActions?.filter((secondaryAction) => secondaryAction.kind !== "open-document").slice(0, 1).map((secondaryAction) => (
+              <Link
+                key={`${featuredDocument.path}:${secondaryAction.kind}`}
+                href={buildLearningHref(featuredDocument, { autostart: secondaryAction.autostart, intent: secondaryAction.kind })}
+                className="ll-reentry-secondary-link"
+              >
+                {secondaryAction.label}
+              </Link>
+            ))}
             {featuredDocument.group !== "unstarted" ? (
               <button
                 type="button"
@@ -340,9 +265,40 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
         </section>
 
         <section className="ll-step">
-          <span className="ll-step-num">2</span>
+          <span className="ll-step-num">学新的</span>
           <div className="ll-step-body">
-            <h2 className="ll-step-title">复习要巩固的点</h2>
+            {recommendedNewDocument ? (
+              <>
+                <h2 className="ll-step-title">
+                  <Link href={buildLearningHref(recommendedNewDocument)} className="ll-title-link">
+                    {recommendedNewDocument.title}
+                  </Link>
+                </h2>
+                <span className="ll-step-doc-meta">{`${recommendedNewDocument.providerLabel} · ${recommendedNewDocument.folderLabels?.join(" / ") || "资料库"}`}</span>
+                <p className="ll-step-sub">不想接着读上一篇时，从这篇新的开始。</p>
+              </>
+            ) : (
+              <>
+                <h2 className="ll-step-title">学点新的</h2>
+                <p className="ll-step-sub">还没有待开始的新材料。导入一篇，这里就会出现推荐。</p>
+              </>
+            )}
+          </div>
+          <div className="ll-step-actions">
+            <Link
+              href={recommendedNewDocument ? buildLearningHref(recommendedNewDocument) : "/library"}
+              className="ll-secondary-button"
+            >
+              {recommendedNewDocument ? "开始读这篇 →" : "浏览资料库 →"}
+            </Link>
+            <Link href="/materials" className="ll-reentry-secondary-link">添加新材料</Link>
+          </div>
+        </section>
+
+        <section className="ll-step">
+          <span className="ll-step-num">补复习</span>
+          <div className="ll-step-body">
+            <h2 className="ll-step-title">补今天到期的复习</h2>
             {reviewItems.length ? (
               <>
                 <p className="ll-step-sub">{reviewItems.length} 个没讲稳的点今天到期，先从最上面的开始。</p>
@@ -371,44 +327,11 @@ function DefaultFocusView({ featuredDocument, recommendedNewDocument, reviewDue,
           <div className="ll-step-actions">
             {reviewItems.length ? (
               <span className="ll-danger-badge">{reviewItems.length}</span>
-            ) : (
-              <span className="ll-step-idle">今日无复习</span>
-            )}
+            ) : null}
           </div>
         </section>
 
-        <section className="ll-step">
-          <span className="ll-step-num">3</span>
-          <div className="ll-step-body">
-            <h2 className="ll-step-title">再学一篇新的</h2>
-            <p className="ll-step-sub">从素材池里挑一篇：</p>
-            {recommendedNewDocument ? (
-              <div className="ll-step-doc">
-                <Link href={buildLearningHref(recommendedNewDocument)} className="ll-title-link">
-                  <h3 className="ll-step-doc-title">{recommendedNewDocument.title}</h3>
-                </Link>
-                <span className="ll-step-doc-meta">{`${recommendedNewDocument.providerLabel} · ${recommendedNewDocument.folderLabels?.join(" / ") || "资料库"}`}</span>
-              </div>
-            ) : (
-              <p className="ll-step-sub">素材池是空的。导入一篇，这里就会出现推荐。</p>
-            )}
-          </div>
-          <div className="ll-step-actions">
-            <Link
-              href={recommendedNewDocument ? buildLearningHref(recommendedNewDocument) : "/library"}
-              className="ll-secondary-button"
-            >
-              开始新的一篇 →
-            </Link>
-            <Link href="/library" className="ll-reentry-secondary-link">+ 丢一篇进来</Link>
-          </div>
-        </section>
       </div>
-
-      <section className="ll-home-foot-row">
-        <span>我的资料</span>
-        <Link href="/library" className="ll-section-link">浏览我的资料 →</Link>
-      </section>
     </section>
   );
 }
@@ -420,24 +343,36 @@ function CampaignHero({ campaign }) {
   const readiness = campaign?.readiness || {};
   const topGap = readiness.gaps?.[0] || null;
   const coveragePercent = getCampaignCoveragePercent(campaign);
+  const hasInterviewDate = readiness.daysLeft !== null && readiness.daysLeft !== undefined;
   return (
     <section className="ll-sprint-strip" aria-label="进行中的面试冲刺">
       <div className="ll-sprint-strip-copy">
         <span className="ll-sprint-pill">面试冲刺 · 进行中</span>
         <h2>{campaign.role || "当前岗位"}</h2>
         <p className="ll-sprint-strip-meta">
-          {getCampaignCountdownLabel(campaign)}
+          {hasInterviewDate ? (
+            getCampaignCountdownLabel(campaign)
+          ) : (
+            <Link href="/campaign" className="ll-sprint-date-link">设置面试日期 →</Link>
+          )}
           {" · "}
-          {topGap ? <>今天优先补：<b>{topGap.topic}</b></> : "先做一轮模拟，继续压实高风险话题"}
+          {topGap ? (
+            <>今天优先补：<Link href="/campaign" className="ll-sprint-gap-link">{topGap.topic}</Link></>
+          ) : (
+            "先做一轮模拟，继续压实高风险话题"
+          )}
         </p>
       </div>
       <div className="ll-sprint-strip-progress">
-        <span>{coveragePercent}% 覆盖</span>
+        <span>{`已覆盖 ${coveragePercent}%`}</span>
         <div className="ll-today-bar" role="presentation">
           <i style={{ width: `${coveragePercent}%` }} />
         </div>
       </div>
-      <Link href="/campaign" className="ll-primary-button ll-sprint-cta">
+      <Link
+        href="/campaign"
+        className={`${hasInterviewDate ? "ll-primary-button" : "ll-secondary-button"} ll-sprint-cta`}
+      >
         进入冲刺 →
       </Link>
     </section>
@@ -456,7 +391,6 @@ export function HomePage() {
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState("");
   const [avatarOpen, setAvatarOpen] = useState(false);
-  const [loginOpen, setLoginOpen] = useState(false);
 
   // 旧资料库深链（/?mode=library）迁移到二级页 /library。
   const legacyLibraryMode = searchParams.get("mode") === "library";
@@ -467,7 +401,26 @@ export function HomePage() {
   }, [legacyLibraryMode, router]);
 
   useEffect(() => {
-    setUserId(getStoredUserId());
+    let cancelled = false;
+
+    ensureLocalUserProfile()
+      .then((nextProfile) => {
+        if (cancelled) {
+          return;
+        }
+        setUserId(nextProfile?.user?.id || getStoredUserId());
+        setProfile(nextProfile || null);
+        lastProfileSyncRef.current = Date.now();
+      })
+      .catch((nextError) => {
+        if (!cancelled) {
+          setError(nextError.message);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -525,11 +478,10 @@ export function HomePage() {
     }
 
     async function refreshProfile() {
-      if (!getStoredUserId()) {
-        return;
-      }
       try {
-        const nextProfile = await apiFetch(`/api/profile/${getStoredUserId()}`);
+        const activeUserId = await ensureLocalUserId();
+        const nextProfile = await apiFetch(`/api/profile/${activeUserId}`);
+        setUserId(activeUserId);
         let nextCampaigns = [];
         try {
           const campaignPayload = await apiFetch("/api/campaigns");
@@ -641,20 +593,8 @@ export function HomePage() {
     )) || null;
   }, [featuredDocument?.path, groupedDocuments.unstarted, snoozedRecommendationDocPaths, uiDocuments]);
 
-  // 素材池(act-led 首页「学点新的」):还没开过的资料(后续 capability-memory 退役时
-  // 这里换成"所有导入但 reading-progress 为空"的派生即可,接口不变)。
-  const materialPool = useMemo(() => (
-    (groupedDocuments.unstarted || [])
-      .filter((document) => !document.ignored && !snoozedRecommendationDocPaths.has(document.path))
-      .slice(0, 6)
-  ), [groupedDocuments.unstarted, snoozedRecommendationDocPaths]);
-
   async function snoozeFeaturedDocument(document) {
-    const activeUserId = profile?.user?.id || userId;
-    if (!activeUserId) {
-      setLoginOpen(true);
-      return;
-    }
+    const activeUserId = profile?.user?.id || userId || await ensureLocalUserId();
     try {
       setError("");
       const nextProfile = await postJson("/api/profile/recommendation-snooze", {
@@ -670,23 +610,6 @@ export function HomePage() {
     }
   }
 
-  function handleLogout() {
-    setStoredUserId("");
-    setUserId("");
-    setProfile(null);
-    setAvatarOpen(false);
-  }
-
-  function handleLoginSuccess(nextProfile) {
-    setStoredUserId(nextProfile.user.id);
-    setUserId(nextProfile.user.id);
-    setProfile(nextProfile);
-    lastProfileSyncRef.current = Date.now();
-    setLoginOpen(false);
-    setAvatarOpen(false);
-    setError("");
-  }
-
   return (
     <main className="ll-home-page">
       <header className="ll-topbar">
@@ -696,7 +619,7 @@ export function HomePage() {
         </Link>
         <div className="ll-topbar-actions">
           <Link href="/library" className="ll-library-nav-link">
-            我的资料
+            资料库
           </Link>
           <Link href="/campaign" className="ll-interview-button">
             <span aria-hidden="true">AI</span>
@@ -705,10 +628,7 @@ export function HomePage() {
           <AvatarMenu
             open={avatarOpen}
             onToggle={() => setAvatarOpen((open) => !open)}
-            onLogout={handleLogout}
-            onLoginClick={() => setLoginOpen(true)}
-            userName={profile?.user?.handle || "未登录"}
-            isLoggedIn={Boolean(profile?.user?.id)}
+            userName={profile?.user?.handle || "本机"}
           />
         </div>
       </header>
@@ -721,14 +641,11 @@ export function HomePage() {
             featuredDocument={featuredDocument}
             recommendedNewDocument={recommendedNewDocument}
             reviewDue={reviewDue}
-            materialPool={materialPool}
             hasProfile={Boolean(profile?.user?.id)}
             onSnoozeRecommendation={snoozeFeaturedDocument}
           />
         ) : null}
       </div>
-
-      {loginOpen ? <LoginModal onClose={() => setLoginOpen(false)} onLoginSuccess={handleLoginSuccess} /> : null}
     </main>
   );
 }

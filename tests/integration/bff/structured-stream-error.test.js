@@ -23,11 +23,20 @@ function close(server) {
   });
 }
 
-test("BFF stays alive when a stream handler fails after headers are sent", async () => {
+test("BFF preserves structured upstream stream-start errors before headers are sent", async () => {
   const aiServer = http.createServer((request, response) => {
     if (request.url === "/api/interview/answer-stream") {
-      response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8" });
-      response.end("event: turn_result\ndata: {not-json}\n\n");
+      response.writeHead(503, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({
+        error: "AI 训练服务当前不可用，请检查模型服务配置或配额后重试。",
+        errorMeta: {
+          code: "llm_provider_http_error",
+          message: "AI 训练服务当前不可用，请检查模型服务配置或配额后重试。",
+          retryable: false,
+          statusCode: 503,
+          source: "llm-provider",
+        },
+      }));
       return;
     }
 
@@ -39,21 +48,20 @@ test("BFF stays alive when a stream handler fails after headers are sent", async
   process.env.NODE_ENV = "test";
   process.env.AI_SERVICE_URL = aiBaseUrl;
 
-  const { server } = await import(`../../../bff/src/server.js?test=headers-sent-${Date.now()}`);
+  const { server } = await import(`../../../bff/src/server.js?test=structured-error-${Date.now()}`);
   const bffBaseUrl = await listen(server);
 
   try {
     const streamResponse = await fetch(`${bffBaseUrl}/api/interview/answer-stream`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sessionId: "stream-regression" }),
+      body: JSON.stringify({ sessionId: "stream-structured-error" }),
     });
-    assert.equal(streamResponse.status, 200);
-    await streamResponse.text();
-
-    const healthResponse = await fetch(`${bffBaseUrl}/api/health`);
-    assert.equal(healthResponse.status, 200);
-    assert.deepEqual(await healthResponse.json(), { ok: true, aiServiceUrl: aiBaseUrl });
+    assert.equal(streamResponse.status, 503);
+    const data = await streamResponse.json();
+    assert.equal(data.error, "AI 训练服务当前不可用，请检查模型服务配置或配额后重试。");
+    assert.equal(data.errorMeta?.code, "llm_provider_http_error");
+    assert.equal(data.errorMeta?.retryable, false);
   } finally {
     await close(server);
     await close(aiServer);
